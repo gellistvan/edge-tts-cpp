@@ -432,6 +432,11 @@ Three chunk types flow from `Communicate.stream()`:
 **Offset and duration units:** 100-nanosecond ticks.
 `1 second = 10,000,000 ticks` (constant `TICKS_PER_SECOND = 10_000_000`).
 
+**Tick-to-microsecond conversion** (as used by Python SubMaker):
+```
+microseconds = ticks / 10
+```
+
 **Offset compensation:** Between text chunks, the cumulative audio byte count
 is used to compute an offset correction:
 ```
@@ -445,6 +450,18 @@ with `offset_compensation` before yielding.
 `Data.text.Text` field.
 
 **`stream()` is single-use:** calling it twice raises `RuntimeError`.
+
+**C++ chunk types** (`include/edge_tts/core/Chunk.hpp`):
+
+| Python dict | C++ type | Key fields |
+|-------------|----------|------------|
+| `{"type": "audio", "data": bytes}` | `AudioChunk` | `data: vector<byte>` |
+| `{"type": "WordBoundary", ...}` | `BoundaryChunk` with `type = BoundaryEventType::WordBoundary` | `text`, `offset_ticks`, `duration_ticks` |
+| `{"type": "SentenceBoundary", ...}` | `BoundaryChunk` with `type = BoundaryEventType::SentenceBoundary` | `text`, `offset_ticks`, `duration_ticks` |
+
+`TtsChunk = std::variant<AudioChunk, BoundaryChunk>`.  Use `is_audio()` and
+`is_boundary()` predicates to distinguish.  Zero-duration boundary chunks
+are valid (some sentence boundaries have `duration = 0`).
 
 **Match exactly:** Yes.
 

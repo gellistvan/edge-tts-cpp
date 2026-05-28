@@ -24,6 +24,7 @@ edge_tts_add_module_test(
         core/OutputFormatTests.cpp
         core/TtsConfigTests.cpp
         core/VoiceTests.cpp
+        core/ChunkTests.cpp
     LIBRARIES edge_tts::core
 )
 

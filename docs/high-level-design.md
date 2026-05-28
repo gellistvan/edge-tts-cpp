@@ -100,7 +100,7 @@ See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 
 | Header | Owns |
 |--------|------|
-| `Chunk.hpp` | `BoundaryEventType` (wire event classifier), `AudioChunk`, `BoundaryChunk`, `TtsChunk` (variant) |
+| `Chunk.hpp` | `BoundaryEventType` (wire event classifier: `WordBoundary`, `SentenceBoundary`), `AudioChunk` (raw MP3 `vector<byte>`), `BoundaryChunk` (text + offset_ticks + duration_ticks in 100 ns units), `TtsChunk = variant<AudioChunk, BoundaryChunk>`, `is_audio()`, `is_boundary()` predicates |
 | `TtsConfig.hpp` | `BoundaryType {word, sentence}` (request config), `TtsConfig` (with `defaults()`, `validate()`, and `OutputFormat`), `validate_tts_config()→Result<void>`, `boundary_type_from_string()`, `to_string(BoundaryType)`, `normalize_voice_name()` |
 | `OutputFormat.hpp` | `OutputFormat` — validated audio format string |
 | `Voice.hpp` | `VoiceGender`, `Voice` |
