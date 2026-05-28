@@ -32,6 +32,8 @@ Three cmake helper files manage module and test registration:
 | `Error.hpp` | `ErrorCode` enum + value-type `Error` class. Used with `Result<T>` for recoverable runtime failures. `to_string(ErrorCode)` for logging. |
 | `Result.hpp` | `Result<T>` and `Result<void>` — lightweight result types built on `std::variant<T, Error>`. `BadResultAccess` thrown on misuse. |
 | `Clock.hpp` | `IClock` abstract interface (UTC `time_point`), `SystemClock` (wraps `system_clock::now()`), `FixedClock` (deterministic test double). No protocol-specific epoch conversions — those live in the communication/serialization layer. |
+| `Hex.hpp` | `hex_encode_lower(span<byte>)`, `hex_encode_upper(span<byte>)`, `is_hex(string_view)`. Used by `IdGenerator` and the communication/DRM layer for encoding. |
+| `IdGenerator.hpp` | `IdGenerator` class: `uuid_v4()` (36-char hyphenated lowercase UUID v4), `uuid_v4_without_hyphens()` (32-char, matches Python `uuid.uuid4().hex`), `random_32_hex()` (32-char lowercase, matches Python `secrets.token_hex(16)`). Edge-specific header assignments (ConnectionId, X-RequestId, MUID) are in the communication layer. |
 | `Expected.hpp` | Generic `Expected<T,E>` / `Unexpected<E>` for cases that need a custom error type. |
 | `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `TextChunker` to avoid splitting mid-sequence. |
 

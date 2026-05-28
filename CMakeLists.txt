@@ -29,6 +29,8 @@ edge_tts_add_module(
     SOURCES
         src/common/Error.cpp
         src/common/Clock.cpp
+        src/common/Hex.cpp
+        src/common/IdGenerator.cpp
 )
 
 edge_tts_add_module(

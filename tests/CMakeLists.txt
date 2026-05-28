@@ -8,6 +8,8 @@ edge_tts_add_module_test(
         common/ErrorTests.cpp
         common/ResultTests.cpp
         common/ClockTests.cpp
+        common/HexTests.cpp
+        common/IdGeneratorTests.cpp
     LIBRARIES edge_tts::common
 )
 
