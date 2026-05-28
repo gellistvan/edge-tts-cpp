@@ -38,7 +38,10 @@ edge_tts_add_module_test(
 
 edge_tts_add_module_test(
     NAME serialization
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        serialization/XmlEscaperTests.cpp
+        serialization/TextNormalizerTests.cpp
     LIBRARIES edge_tts::serialization
 )
 

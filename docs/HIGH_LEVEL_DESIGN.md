@@ -153,9 +153,9 @@ Each module test target should prefer behavior-level tests over implementation-d
 
 | Module | Status |
 |--------|--------|
-| `common` | `Errors.hpp`, `Expected.hpp`, `Utf8.hpp` implemented |
-| `core` | `Chunk.hpp`, `Voice.hpp`, `TtsConfig.hpp` (full validation), `TextChunker` (UTF-8 aware) implemented |
-| `serialization` | Skeleton only |
+| `common` | `Error.hpp`, `Result.hpp`, `Clock.hpp`, `Hex.hpp`, `IdGenerator.hpp`, `Utf8.hpp`, `Errors.hpp`, `Expected.hpp` implemented |
+| `core` | `Chunk.hpp` (`AudioChunk`, `BoundaryChunk`, `TtsChunk`, `is_audio`/`is_boundary`), `Voice.hpp` (all reference fields), `TtsConfig.hpp` (full validation + `validate_tts_config()`), `OutputFormat.hpp`, `TextChunker` (UTF-8 aware) implemented |
+| `serialization` | `XmlEscaper.hpp` (`xml_escape`, `xml_unescape`), `TextNormalizer.hpp` (`normalize()→Result<string>`, UTF-8 validation, control-char replacement) implemented |
 | `subtitles` | `SrtComposer` implemented |
 | `communication` | Skeleton only |
 | `media` | Skeleton only |

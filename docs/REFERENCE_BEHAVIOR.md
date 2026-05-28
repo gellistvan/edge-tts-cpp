@@ -218,6 +218,21 @@ The `text` argument to `Communicate` must be `str`; passing anything else raises
 
 **Match exactly:** Yes — same replacement ranges.
 
+**C++ implementation** (`serialization::TextNormalizer`):
+- `TextNormalizer::normalize(input)` → `Result<std::string>` validates UTF-8 first
+  (rejects invalid sequences), then replaces the Python-documented control ranges.
+- CRLF (`\r\n`) is NOT normalised to LF — both bytes are preserved.
+- Leading/trailing whitespace is NOT trimmed (per-chunk stripping happens in the chunker).
+- Empty input returns `Result::ok("")`.
+
+**`xml_escape` / `xml_unescape`** (`serialization::XmlEscaper`):
+- `xml_escape` maps `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`.  Does NOT escape `"` or `'`
+  (matching `xml.sax.saxutils.escape` exactly).
+- `xml_escape` is NOT idempotent: `xml_escape("&amp;")` → `"&amp;amp;"`.
+- `xml_unescape` maps `&amp;`→`&`, `&lt;`→`<`, `&gt;`→`>`, `&quot;`→`"`, `&apos;`→`'`.
+  Unknown entities are passed through unchanged.
+- Pipeline order: `TextNormalizer::normalize()` → `xml_escape()` → chunker.
+
 ---
 
 # Text Chunking

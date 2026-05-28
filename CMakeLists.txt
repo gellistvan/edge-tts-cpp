@@ -50,6 +50,8 @@ edge_tts_add_module(
     SOURCES
         src/serialization/EdgeProtocol.cpp
         src/serialization/EdgeToken.cpp
+        src/serialization/XmlEscaper.cpp
+        src/serialization/TextNormalizer.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::common
