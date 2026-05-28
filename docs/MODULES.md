@@ -24,14 +24,43 @@ Three cmake helper files manage module and test registration:
 **CMake target:** `edge_tts_common` / `edge_tts::common`
 **Test target:** `edge_tts_common_tests`
 **Headers:** `include/edge_tts/common/`
+**Sources:** `src/common/Error.cpp`
 
 | File | Description |
 |------|-------------|
-| `Errors.hpp` | Exception hierarchy rooted at `Error : std::runtime_error`. Concrete types: `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError`. |
-| `Expected.hpp` | `Expected<T,E>` — variant-based result type for C++20, modelled after `std::expected` (C++23). Use for functions that can fail at runtime without throwing. `Unexpected<E>` is the error-state factory. |
+| `Errors.hpp` | Exception hierarchy rooted at `Exception : std::runtime_error`. Throw-based error types for API boundary violations: `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError`. |
+| `Error.hpp` | `ErrorCode` enum + value-type `Error` class. Used with `Result<T>` for recoverable runtime failures. `to_string(ErrorCode)` for logging. |
+| `Result.hpp` | `Result<T>` and `Result<void>` — lightweight result types built on `std::variant<T, Error>`. `BadResultAccess` thrown on misuse. |
+| `Expected.hpp` | Generic `Expected<T,E>` / `Unexpected<E>` for cases that need a custom error type. |
 | `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `TextChunker` to avoid splitting mid-sequence. |
 
 **Allowed dependencies:** none (foundational, must stay zero-dep).
+
+### Error strategy
+
+Two error propagation styles are used:
+
+| Style | When to use | Types |
+|-------|-------------|-------|
+| Exceptions (`throw`) | Programmer errors at API boundaries — invalid constructor arguments, pre-condition violations.  These are bugs, not recoverable conditions. | `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError` (all final, inherit `Exception`) |
+| `Result<T>` (return value) | Runtime failures that the caller can handle — I/O errors, network failures, parse errors, service refusals. | `Result<T>`, `Result<void>`, `Error`, `ErrorCode` |
+
+**Python → C++ ErrorCode mapping:**
+
+| Python exception | `ErrorCode` | Notes |
+|-----------------|-------------|-------|
+| `TypeError`, `ValueError` | `invalid_argument` | Validation failures on caller input |
+| `RuntimeError` (stream reuse) | `invalid_state` | Operation not permitted in current state |
+| `WebSocketError` | `network_error` | Transport-level failure |
+| `SkewAdjustmentError` | `network_error` | Clock skew; recoverable via retry |
+| `UnknownResponse` | `protocol_error` | Unexpected wire message type |
+| `UnexpectedResponse` | `protocol_error` | Well-formed but semantically unexpected |
+| `NoAudioReceived` | `service_error` | Service returned no audio data |
+| HTTP 4xx/5xx | `service_error` | Service refused the request |
+| File I/O failure | `io_error` | Local filesystem read/write |
+| JSON / header decode failure | `parse_error` | Could not interpret response body |
+| Connect/receive timeout | `timeout` | Timeout parameters exceeded |
+| ffmpeg/ffplay failure | `external_process_failed` | Non-zero process exit code |
 
 ---
 

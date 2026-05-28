@@ -23,14 +23,14 @@ void Communicate::save(const std::filesystem::path& media_path,
                        const std::optional<std::filesystem::path>& subtitles_path) const {
     std::ofstream media(media_path, std::ios::binary);
     if (!media) {
-        throw common::Error{"Failed to open media output file"};
+        throw common::AudioError{"Failed to open media output file"};
     }
     media << "";
 
     if (subtitles_path.has_value()) {
         std::ofstream subtitles(*subtitles_path);
         if (!subtitles) {
-            throw common::Error{"Failed to open subtitle output file"};
+            throw common::SubtitleError{"Failed to open subtitle output file"};
         }
         subtitles << "";
     }

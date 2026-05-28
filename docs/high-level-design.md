@@ -13,7 +13,7 @@ protocol details from assumptions — consult `REFERENCE_BEHAVIOR.md` first.
 
 | Module target | Source folder | Public include folder | Namespace | Responsibility |
 |---|---|---|---|---|
-| `edge_tts::common` | header-only | `include/edge_tts/common` | `edge_tts::common` | Shared errors (`Errors.hpp`), `Expected<T,E>`, and UTF-8 byte utilities (`Utf8.hpp`). Must not depend on other modules. |
+| `edge_tts::common` | `src/common` | `include/edge_tts/common` | `edge_tts::common` | `Exception` hierarchy (`Errors.hpp`), value-type `Error` + `ErrorCode` (`Error.hpp`), `Result<T>` / `Result<void>` (`Result.hpp`), `Expected<T,E>`, and UTF-8 utilities. Must not depend on other modules. |
 | `edge_tts::core` | `src/core` | `include/edge_tts/core` | `edge_tts::core` | Domain value types and pure business rules: `TtsConfig`, `Voice`/`VoiceGender`, `Chunk.hpp` types (`BoundaryType`, `AudioChunk`, `BoundaryChunk`, `TtsChunk`), `TextChunker`. No networking, filesystem, process execution, or protocol transport. |
 | `edge_tts::serialization` | `src/serialization` | `include/edge_tts/serialization` | `edge_tts::serialization` | Edge protocol serialization and parsing: SSML, speech config payloads, protocol headers, token and connection metadata. May depend on `core` and `common`. |
 | `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | Public orchestration and transport-facing services: `Communicate`, voice service, WebSocket transport abstraction and implementation stubs. May depend on all modules but should keep business rules delegated. |
@@ -62,9 +62,25 @@ Avoid adding new public headers at `include/edge_tts/` root unless they are deli
 
 | Header | Owns |
 |--------|------|
-| `Errors.hpp` | `Error`, `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError` |
-| `Expected.hpp` | `Expected<T,E>`, `Unexpected<E>` — lightweight result type for C++20 |
+| `Errors.hpp` | `Exception` base, `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError` — throw-based for programmer errors |
+| `Error.hpp` | `ErrorCode` enum, value-type `Error` (code + message + context), `to_string(ErrorCode)` |
+| `Result.hpp` | `Result<T>`, `Result<void>`, `BadResultAccess` — return-value error propagation |
+| `Expected.hpp` | `Expected<T,E>`, `Unexpected<E>` — generic result type for custom error types |
 | `Utf8.hpp` | `utf8::is_continuation`, `utf8::safe_boundary`, `utf8::is_valid` |
+
+### Error strategy
+
+**When to throw exceptions** — only at API entry points where a wrong argument
+is a programmer bug, not a recoverable runtime condition:
+- `TtsConfig::validate()` throws `ConfigurationError` for invalid voice/rate/pitch syntax.
+
+**When to return `Result<T>`** — all I/O paths, network operations, protocol
+parsing, and service calls where failure is expected and recoverable:
+- Networking failures → `Result<T>` with `ErrorCode::network_error`
+- Protocol parse errors → `Result<T>` with `ErrorCode::protocol_error`
+- File I/O → `Result<T>` with `ErrorCode::io_error`
+
+See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 
 ### `core` module
 

@@ -26,7 +26,7 @@ edge_tts_setup_static_analysis()
 
 edge_tts_add_module(
     NAME common
-    # header-only: no SOURCES
+    SOURCES src/common/Error.cpp
 )
 
 edge_tts_add_module(

@@ -21,6 +21,7 @@ build-sani-cfl/
 CLAUDE.md
 build-sani/
 cmake-build-*/
+tools/__pycache__/
 *.bin
 *.tmp
 compile_commands.json

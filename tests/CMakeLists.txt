@@ -3,7 +3,10 @@
 
 edge_tts_add_module_test(
     NAME common
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        common/ErrorTests.cpp
+        common/ResultTests.cpp
     LIBRARIES edge_tts::common
 )
 
