@@ -71,10 +71,35 @@ edge_tts::subtitles
 ## Build
 
 ```bash
-cmake -S . -B build -DEDGE_TTS_BUILD_TESTS=ON
+cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+### Build options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `EDGE_TTS_BUILD_APPS` | `ON` | Build the `edge-tts` and `edge-playback` CLI apps |
+| `EDGE_TTS_BUILD_TESTS` | `ON` | Build per-module test suites |
+| `EDGE_TTS_BUILD_EXAMPLES` | `OFF` | Build example programs |
+| `EDGE_TTS_WARNINGS_AS_ERRORS` | `OFF` | Promote compiler warnings to errors |
+| `EDGE_TTS_ENABLE_NETWORK_TESTS` | `OFF` | Enable tests that call the live Edge TTS service |
+| `EDGE_TTS_ENABLE_SANITIZERS` | `OFF` | Enable address and UB sanitizers |
+| `EDGE_TTS_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on compiled sources |
+
+Example — strict developer build:
+
+```bash
+cmake -S . -B build \
+    -DEDGE_TTS_BUILD_APPS=ON \
+    -DEDGE_TTS_BUILD_TESTS=ON \
+    -DEDGE_TTS_WARNINGS_AS_ERRORS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
 
 ## Applications
 
