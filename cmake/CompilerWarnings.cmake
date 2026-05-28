@@ -1,0 +1,16 @@
+function(edge_tts_setup_warnings target_name)
+    add_library(${target_name} INTERFACE)
+    if(MSVC)
+        target_compile_options(${target_name} INTERFACE /W4)
+        if(EDGE_TTS_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} INTERFACE /WX)
+        endif()
+    else()
+        target_compile_options(${target_name} INTERFACE
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
+        )
+        if(EDGE_TTS_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} INTERFACE -Werror)
+        endif()
+    endif()
+endfunction()

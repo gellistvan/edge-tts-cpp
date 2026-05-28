@@ -1,0 +1,5 @@
+function(edge_tts_setup_options)
+    option(EDGE_TTS_ENABLE_SANITIZERS "Enable sanitizers in supported compilers" OFF)
+    option(EDGE_TTS_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+    option(EDGE_TTS_ENABLE_NETWORK_TESTS "Enable tests that call the live Edge TTS service" OFF)
+endfunction()
