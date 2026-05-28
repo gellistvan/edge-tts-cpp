@@ -31,10 +31,20 @@ Three cmake helper files manage module and test registration:
 | `Errors.hpp` | Exception hierarchy rooted at `Exception : std::runtime_error`. Throw-based error types for API boundary violations: `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError`. |
 | `Error.hpp` | `ErrorCode` enum + value-type `Error` class. Used with `Result<T>` for recoverable runtime failures. `to_string(ErrorCode)` for logging. |
 | `Result.hpp` | `Result<T>` and `Result<void>` — lightweight result types built on `std::variant<T, Error>`. `BadResultAccess` thrown on misuse. |
+| `Clock.hpp` | `IClock` abstract interface (UTC `time_point`), `SystemClock` (wraps `system_clock::now()`), `FixedClock` (deterministic test double). No protocol-specific epoch conversions — those live in the communication/serialization layer. |
 | `Expected.hpp` | Generic `Expected<T,E>` / `Unexpected<E>` for cases that need a custom error type. |
 | `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `TextChunker` to avoid splitting mid-sequence. |
 
 **Allowed dependencies:** none (foundational, must stay zero-dep).
+
+### `IClock` contract
+
+`IClock::now()` returns a `std::chrono::system_clock::time_point` in UTC —
+the same epoch as Python's `datetime.now(timezone.utc).timestamp()`.
+
+**Do not** add Edge protocol constants (Windows epoch offset, 100 ns tick
+conversion, 5-minute round-down) to `Clock.hpp`.  Those belong in the token
+generation code.  See `docs/PROTOCOL_NOTES.md` for the full timing reference.
 
 ### Error strategy
 

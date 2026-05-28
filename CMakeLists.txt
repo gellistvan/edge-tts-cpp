@@ -26,7 +26,9 @@ edge_tts_setup_static_analysis()
 
 edge_tts_add_module(
     NAME common
-    SOURCES src/common/Error.cpp
+    SOURCES
+        src/common/Error.cpp
+        src/common/Clock.cpp
 )
 
 edge_tts_add_module(

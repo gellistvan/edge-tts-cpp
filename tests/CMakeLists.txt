@@ -7,6 +7,7 @@ edge_tts_add_module_test(
         common/test_main.cpp
         common/ErrorTests.cpp
         common/ResultTests.cpp
+        common/ClockTests.cpp
     LIBRARIES edge_tts::common
 )
 
