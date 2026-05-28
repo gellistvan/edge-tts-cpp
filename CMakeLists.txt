@@ -133,7 +133,12 @@ if(EDGE_TTS_BUILD_TESTS)
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${CMAKE_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
         )
+        add_test(
+            NAME edge_tts_cli_compat_docs_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
+        )
     else()
-        message(WARNING "python3 not found — edge_tts_docs_tests will be skipped")
+        message(WARNING "python3 not found — docs smoke tests will be skipped")
     endif()
 endif()

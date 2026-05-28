@@ -68,6 +68,14 @@ edge_tts::media
 edge_tts::subtitles
 ```
 
+## CLI compatibility
+
+The `edge-tts` and `edge-playback` commands are designed to match the Python
+`edge-tts` v7.2.8 CLI exactly, with intentional differences explicitly documented.
+
+See [`docs/CLI_COMPATIBILITY.md`](docs/CLI_COMPATIBILITY.md) for the full
+option-by-option compatibility matrix.
+
 ## Build
 
 ```bash
