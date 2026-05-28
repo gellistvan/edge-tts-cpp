@@ -1,31 +1,55 @@
 #include "edge_tts/core/TtsConfig.hpp"
+#include "edge_tts/common/Error.hpp"
 #include "edge_tts/common/Errors.hpp"
 
 #include <regex>
 
 namespace edge_tts::core {
 
+// ---------------------------------------------------------------------------
+// BoundaryType helpers
+// ---------------------------------------------------------------------------
+
+std::string_view to_string(BoundaryType type) noexcept {
+    switch (type) {
+        case BoundaryType::word:     return "WordBoundary";
+        case BoundaryType::sentence: return "SentenceBoundary";
+    }
+    return "SentenceBoundary";  // unreachable; keeps compiler happy
+}
+
+common::Result<BoundaryType> boundary_type_from_string(std::string_view value) {
+    if (value == "WordBoundary")     return common::Result<BoundaryType>::ok(BoundaryType::word);
+    if (value == "SentenceBoundary") return common::Result<BoundaryType>::ok(BoundaryType::sentence);
+    return common::Result<BoundaryType>::fail(
+        common::Error{common::ErrorCode::invalid_argument,
+                      "boundary_type_from_string: unknown value",
+                      std::string{value}});
+}
+
+// ---------------------------------------------------------------------------
+// TtsConfig
+// ---------------------------------------------------------------------------
+
+TtsConfig TtsConfig::defaults() {
+    return TtsConfig{};  // all default member initialisers are the reference defaults
+}
+
+// ---------------------------------------------------------------------------
+// Voice normalisation
+// ---------------------------------------------------------------------------
+
 namespace {
 
-// Matches the full "Microsoft Server Speech..." voice name expected on the wire.
 const std::regex& full_voice_re() {
     static const std::regex re{
         R"(^Microsoft Server Speech Text to Speech Voice \(.+, .+\)$)"};
     return re;
 }
 
-// Matches a short voice name like "en-US-EmmaMultilingualNeural".
-// Capture groups: (1) language, (2) region, (3) name-suffix ending in "Neural".
 const std::regex& short_voice_re() {
     static const std::regex re{R"(^([a-z]{2,})-([A-Z]{2,})-(.+Neural)$)"};
     return re;
-}
-
-void check_param(const std::string& name, const std::string& value,
-                 const std::regex& pattern) {
-    if (!std::regex_match(value, pattern)) {
-        throw common::ConfigurationError{"Invalid " + name + " '" + value + "'"};
-    }
 }
 
 } // namespace
@@ -33,10 +57,8 @@ void check_param(const std::string& name, const std::string& value,
 std::optional<std::string> normalize_voice_name(std::string_view voice_sv) {
     const std::string voice{voice_sv};
 
-    // Already in full form — accept as-is.
     if (std::regex_match(voice, full_voice_re())) return voice;
 
-    // Try the short "lang-REGION-NameNeural" form.
     std::smatch m;
     if (!std::regex_match(voice, m, short_voice_re())) return std::nullopt;
 
@@ -44,8 +66,6 @@ std::optional<std::string> normalize_voice_name(std::string_view voice_sv) {
     std::string region = m[2].str();
     std::string name   = m[3].str();
 
-    // A compound region like "AndrewMultilingual-CasualNeural":
-    //   region → "US-AndrewMultilingual", name → "CasualNeural"
     const auto dash = name.find('-');
     if (dash != std::string::npos) {
         region += '-' + name.substr(0, dash);
@@ -56,20 +76,66 @@ std::optional<std::string> normalize_voice_name(std::string_view voice_sv) {
            " (" + lang + '-' + region + ", " + name + ')';
 }
 
-void TtsConfig::validate() {
-    static const std::regex rate_re{R"(^[+-]\d+%$)"};
-    static const std::regex volume_re{R"(^[+-]\d+%$)"};
-    static const std::regex pitch_re{R"(^[+-]\d+Hz$)"};
+// ---------------------------------------------------------------------------
+// TtsConfig::validate() — legacy throw-based bridge
+// ---------------------------------------------------------------------------
 
+void TtsConfig::validate() {
     auto normalized = normalize_voice_name(voice);
     if (!normalized) {
         throw common::ConfigurationError{"Invalid voice '" + voice + "'"};
     }
     voice = std::move(*normalized);
 
-    check_param("rate",   rate,   rate_re);
-    check_param("volume", volume, volume_re);
-    check_param("pitch",  pitch,  pitch_re);
+    auto result = validate_tts_config(*this);
+    if (!result.has_value()) {
+        throw common::ConfigurationError{std::string{result.error().message()}
+                                         + ": " + std::string{result.error().context()}};
+    }
+}
+
+// ---------------------------------------------------------------------------
+// validate_tts_config
+// ---------------------------------------------------------------------------
+
+common::Result<void> validate_tts_config(const TtsConfig& config) {
+    static const std::regex rate_re  {R"(^[+-]\d+%$)"};
+    static const std::regex volume_re{R"(^[+-]\d+%$)"};
+    static const std::regex pitch_re {R"(^[+-]\d+Hz$)"};
+
+    // Voice — accept short or full form; nullopt means neither
+    if (!normalize_voice_name(config.voice)) {
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::invalid_argument,
+                          "voice: invalid value",
+                          config.voice});
+    }
+
+    // Rate
+    if (!std::regex_match(config.rate, rate_re)) {
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::invalid_argument,
+                          "rate: invalid value",
+                          config.rate});
+    }
+
+    // Volume
+    if (!std::regex_match(config.volume, volume_re)) {
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::invalid_argument,
+                          "volume: invalid value",
+                          config.volume});
+    }
+
+    // Pitch
+    if (!std::regex_match(config.pitch, pitch_re)) {
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::invalid_argument,
+                          "pitch: invalid value",
+                          config.pitch});
+    }
+
+    return common::Result<void>::ok();
 }
 
 } // namespace edge_tts::core

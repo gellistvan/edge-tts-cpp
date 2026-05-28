@@ -108,17 +108,34 @@ Enter before proceeding.
 
 **Sources:** `reference/edge-tts/src/edge_tts/constants.py`, `reference/edge-tts/src/edge_tts/communicate.py`
 
-| Parameter | Default |
-|-----------|---------|
-| `voice` | `en-US-EmmaMultilingualNeural` |
-| `rate` | `+0%` |
-| `volume` | `+0%` |
-| `pitch` | `+0Hz` |
-| `boundary` | `SentenceBoundary` |
-| `connect_timeout` | `10` seconds |
-| `receive_timeout` | `60` seconds |
+| Parameter | Default | Python source |
+|-----------|---------|---------------|
+| `voice` | `en-US-EmmaMultilingualNeural` | `constants.py: DEFAULT_VOICE` |
+| `rate` | `+0%` | `communicate.py` constructor |
+| `volume` | `+0%` | `communicate.py` constructor |
+| `pitch` | `+0Hz` | `communicate.py` constructor |
+| `boundary` | `SentenceBoundary` | `communicate.py` constructor |
+| `output_format` | `audio-24khz-48kbitrate-mono-mp3` | `communicate.py` speech.config |
+| `connect_timeout` | `10` seconds | `communicate.py` constructor |
+| `receive_timeout` | `60` seconds | `communicate.py` constructor |
 
-**Match exactly:** Yes — the C++ default values in `TtsConfig` must match these.
+**Match exactly:** Yes — `TtsConfig::defaults()` returns a struct with all of these values.
+
+### Validation patterns (from `data_classes.py`)
+
+| Field | Python regex | Accepted examples | Rejected examples |
+|-------|-------------|-------------------|-------------------|
+| `rate` | `^[+-]\d+%$` | `+0%`, `-50%`, `+100%` | `fast`, `++10%`, `10`, `+10`, `+10percent` |
+| `volume` | `^[+-]\d+%$` | `+0%`, `-50%`, `+100%` | `loud`, `10%`, `+10percent` |
+| `pitch` | `^[+-]\d+Hz$` | `+0Hz`, `-50Hz`, `+100Hz` | `high`, `+10%`, `10Hz`, `+10` |
+| `voice` | short or full form | `en-US-EmmaMultilingualNeural`, full "Microsoft Server Speech..." | empty, `not-a-voice` |
+
+### Boundary type wire strings
+
+| C++ enum | Python literal | Wire value |
+|----------|---------------|------------|
+| `BoundaryType::sentence` | `"SentenceBoundary"` | `sentenceBoundaryEnabled: "true"` |
+| `BoundaryType::word` | `"WordBoundary"` | `wordBoundaryEnabled: "true"` |
 
 ---
 

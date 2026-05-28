@@ -1,6 +1,7 @@
 #pragma once
 
-#include "edge_tts/core/Chunk.hpp"
+#include "edge_tts/common/Result.hpp"
+#include "edge_tts/core/OutputFormat.hpp"
 
 #include <optional>
 #include <string>
@@ -8,24 +9,45 @@
 
 namespace edge_tts::core {
 
-// Configuration for a single TTS synthesis request.
-//
-// Voice accepts either the short locale form ("en-US-EmmaMultilingualNeural")
-// or the full "Microsoft Server Speech Text to Speech Voice (locale, name)"
-// form.  Call validate() to normalize the voice field in-place and verify all
-// fields match the Edge TTS wire format constraints.
-struct TtsConfig {
-    std::string  voice{"en-US-EmmaMultilingualNeural"};
-    std::string  rate{"+0%"};
-    std::string  volume{"+0%"};
-    std::string  pitch{"+0Hz"};
-    BoundaryType boundary{BoundaryType::SentenceBoundary};
+// Controls which boundary metadata events are requested from the service.
+// Maps to the Python "WordBoundary" / "SentenceBoundary" literal strings.
+enum class BoundaryType {
+    word,      // "WordBoundary"   — metadata per spoken word
+    sentence,  // "SentenceBoundary" — metadata per sentence (default)
+};
 
-    // Normalizes voice to the full "Microsoft Server Speech..." form and
-    // validates rate/volume/pitch syntax.  Throws ConfigurationError if any
-    // field is invalid.  Safe to call multiple times (idempotent).
+// Wire-format string for BoundaryType (matches Python's literal strings).
+[[nodiscard]] std::string_view to_string(BoundaryType type) noexcept;
+
+// Parses "WordBoundary" or "SentenceBoundary"; rejects anything else.
+[[nodiscard]] common::Result<BoundaryType> boundary_type_from_string(
+        std::string_view value);
+
+// Full synthesis configuration.  All fields start at the Python reference
+// defaults.  Call validate_tts_config() to verify field constraints; voice
+// is accepted in either the short locale form or the full "Microsoft Server
+// Speech..." form (validation accepts both).
+struct TtsConfig {
+    std::string  voice        {"en-US-EmmaMultilingualNeural"};
+    std::string  rate         {"+0%"};
+    std::string  volume       {"+0%"};
+    std::string  pitch        {"+0Hz"};
+    OutputFormat output_format{OutputFormat::default_format()};
+    BoundaryType boundary_type{BoundaryType::sentence};
+
+    // Factory — returns a TtsConfig with all fields set to the Python defaults.
+    [[nodiscard]] static TtsConfig defaults();
+
+    // Legacy throw-based validation (normalises voice in-place).
+    // Throws common::ConfigurationError on the first invalid field.
+    // Prefer validate_tts_config() for new code.
     void validate();
 };
+
+// Validates all fields of config.  Accepts voice in short or full form.
+// Returns an error describing the first invalid field (includes the field name
+// and the bad value in the message/context).
+[[nodiscard]] common::Result<void> validate_tts_config(const TtsConfig& config);
 
 // Converts a short voice name ("en-US-EmmaMultilingualNeural") to the full
 // "Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)"

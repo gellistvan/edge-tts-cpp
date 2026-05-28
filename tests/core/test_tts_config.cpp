@@ -32,7 +32,7 @@ TEST(TtsConfig, DefaultPitch) {
 
 TEST(TtsConfig, DefaultBoundary) {
     TtsConfig cfg;
-    EXPECT_TRUE(cfg.boundary == BoundaryType::SentenceBoundary);
+    EXPECT_TRUE(cfg.boundary_type == BoundaryType::sentence);
 }
 
 // ---------------------------------------------------------------------------

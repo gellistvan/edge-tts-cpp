@@ -100,18 +100,23 @@ See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 
 | Header | Owns |
 |--------|------|
-| `Chunk.hpp` | `BoundaryType`, `AudioChunk`, `BoundaryChunk`, `TtsChunk` (variant) |
-| `TtsConfig.hpp` | `TtsConfig`, `normalize_voice_name()` |
+| `Chunk.hpp` | `BoundaryEventType` (wire event classifier), `AudioChunk`, `BoundaryChunk`, `TtsChunk` (variant) |
+| `TtsConfig.hpp` | `BoundaryType {word, sentence}` (request config), `TtsConfig` (with `defaults()`, `validate()`, and `OutputFormat`), `validate_tts_config()→Result<void>`, `boundary_type_from_string()`, `to_string(BoundaryType)`, `normalize_voice_name()` |
+| `OutputFormat.hpp` | `OutputFormat` — validated audio format string |
 | `Voice.hpp` | `VoiceGender`, `Voice` |
 | `TextChunker.hpp` | `TextChunker` |
 
 `TtsChunk.hpp` remains as a compatibility shim that re-exports `Chunk.hpp`.
 
+**Note:** `Chunk.hpp` uses `BoundaryEventType` (classifying received events) while
+`TtsConfig.hpp` uses `BoundaryType` (controlling which events are requested).  These are
+distinct concepts despite appearing similar.
+
 ### Validation contract
 
-`TtsConfig::validate()` normalizes the `voice` field from the short locale form
-(`en-US-EmmaMultilingualNeural`) to the full
-`"Microsoft Server Speech Text to Speech Voice (locale, name)"` form and validates
+`validate_tts_config(const TtsConfig&)` returns `Result<void>` and accepts voice in
+either the short locale form (`en-US-EmmaMultilingualNeural`) or the full
+`"Microsoft Server Speech Text to Speech Voice (locale, name)"` form, validating
 `rate`, `volume`, and `pitch` against the Edge TTS wire format:
 
 | Field | Pattern |
@@ -120,8 +125,12 @@ See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 | `volume` | `^[+-]\d+%$` |
 | `pitch` | `^[+-]\d+Hz$` |
 
-Throws `common::ConfigurationError` on any violation.  Safe to call multiple
-times (idempotent after the first call).
+Returns `Result<void>::fail(Error{invalid_argument, ...})` on the first invalid
+field, with the field name in the message and the bad value in the context.
+
+`TtsConfig::validate()` is a legacy throw-based bridge over `validate_tts_config()`;
+new code should use `validate_tts_config()` directly.  `defaults()` returns a
+`TtsConfig` with all fields matching the Python reference defaults.
 
 ## Test structure
 
