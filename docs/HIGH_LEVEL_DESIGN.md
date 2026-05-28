@@ -104,9 +104,17 @@ See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 | `TtsConfig.hpp` | `BoundaryType {word, sentence}` (request config), `TtsConfig` (with `defaults()`, `validate()`, and `OutputFormat`), `validate_tts_config()→Result<void>`, `boundary_type_from_string()`, `to_string(BoundaryType)`, `normalize_voice_name()` |
 | `OutputFormat.hpp` | `OutputFormat` — validated audio format string |
 | `Voice.hpp` | `VoiceGender`, `Voice` |
-| `TextChunker.hpp` | `TextChunker` |
+| `TextChunker.hpp` | `core::TextChunker` — UTF-8-safe byte splitter only; no normalization, escaping, or entity protection.  Use `serialization::TextChunker` for the full reference pipeline. |
 
 `TtsChunk.hpp` remains as a compatibility shim that re-exports `Chunk.hpp`.
+
+### `serialization` module (text preparation headers)
+
+| Header | Owns |
+|--------|------|
+| `XmlEscaper.hpp` | `xml_escape` (`&`/`<`/`>` only, matches `xml.sax.saxutils.escape`), `xml_unescape` (reverses `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&apos;`), not idempotent |
+| `TextNormalizer.hpp` | `TextNormalizer::normalize()→Result<string>` — UTF-8 validation + control-char replacement (U+0000–U+0008, U+000B–U+000C, U+000E–U+001F → space), CRLF preserved |
+| `TextChunker.hpp` | `TextChunkerOptions` (`max_chunk_size`, `size_after_xml_escape`, `prefer_sentence_boundary`, `prefer_word_boundary`) + `TextChunker::chunk()→Result<vector<string>>` — full reference pipeline: normalize → escape → split by escaped byte limit (newline &gt; space &gt; UTF-8 boundary &gt; entity protection), returned chunks are XML-escaped and stripped |
 
 **Note:** `Chunk.hpp` uses `BoundaryEventType` (classifying received events) while
 `TtsConfig.hpp` uses `BoundaryType` (controlling which events are requested).  These are
@@ -155,7 +163,7 @@ Each module test target should prefer behavior-level tests over implementation-d
 |--------|--------|
 | `common` | `Error.hpp`, `Result.hpp`, `Clock.hpp`, `Hex.hpp`, `IdGenerator.hpp`, `Utf8.hpp`, `Errors.hpp`, `Expected.hpp` implemented |
 | `core` | `Chunk.hpp` (`AudioChunk`, `BoundaryChunk`, `TtsChunk`, `is_audio`/`is_boundary`), `Voice.hpp` (all reference fields), `TtsConfig.hpp` (full validation + `validate_tts_config()`), `OutputFormat.hpp`, `TextChunker` (UTF-8 aware) implemented |
-| `serialization` | `XmlEscaper.hpp` (`xml_escape`, `xml_unescape`), `TextNormalizer.hpp` (`normalize()→Result<string>`, UTF-8 validation, control-char replacement) implemented |
+| `serialization` | `XmlEscaper.hpp` (`xml_escape`, `xml_unescape`), `TextNormalizer.hpp` (`normalize()→Result<string>`, UTF-8 validation, control-char replacement), `TextChunker.hpp` (full reference-compatible chunker: normalize → escape → split by byte limit with newline/space/UTF-8/entity logic) implemented |
 | `subtitles` | `SrtComposer` implemented |
 | `communication` | Skeleton only |
 | `media` | Skeleton only |

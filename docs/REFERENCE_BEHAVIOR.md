@@ -261,14 +261,28 @@ determined.
 **Important:** Chunking operates on the **XML-escaped** text, not the raw text.
 Characters like `<`, `>`, `&`, `"`, `'` are escaped before chunking.
 
-**C++ TextChunker divergence:** The current C++ `TextChunker` only provides
-UTF-8 byte-boundary safety.  It does not yet implement:
-- newline/space preferred split points
-- XML entity protection
+**Reference divergence note:** The Python `_find_safe_utf8_split_point` function
+receives the entire remaining byte string rather than just the first `byte_length`
+bytes, so for valid UTF-8 input it would return `len(remaining)` (splitting the
+entire remainder as one chunk instead of hard-splitting at the byte limit).  In
+practice this path is never reached for normal text since there are always spaces
+within any 4096-byte window.  The C++ `serialization::TextChunker` corrects this
+by walking back from the limit position.
 
-These must be added before the communication layer is implemented.
+**C++ implementation:** `serialization::TextChunker` (`TextChunker.hpp` /
+`TextChunker.cpp`) implements the complete reference algorithm:
+- `TextChunkerOptions::max_chunk_size = 4096` (reference default)
+- `TextChunkerOptions::size_after_xml_escape = true` (reference behavior)
+- `TextChunkerOptions::prefer_sentence_boundary = true` (newline preference)
+- `TextChunkerOptions::prefer_word_boundary = true` (space fallback)
+- Returns XML-escaped, stripped chunks ready for SSML `<prosody>` embedding.
+- Propagates UTF-8 validation errors from `TextNormalizer`.
 
-**Match exactly:** Yes (the full algorithm must be implemented).
+The older `core::TextChunker` performs UTF-8-safe byte splitting only and does
+**not** normalize, escape, or protect entities.  The communication layer must
+use `serialization::TextChunker`.
+
+**Match exactly:** Yes.
 
 ---
 
