@@ -125,4 +125,15 @@ endif()
 if(EDGE_TTS_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+
+    find_program(PYTHON3_EXECUTABLE NAMES python3 python)
+    if(PYTHON3_EXECUTABLE)
+        add_test(
+            NAME edge_tts_docs_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
+        )
+    else()
+        message(WARNING "python3 not found — edge_tts_docs_tests will be skipped")
+    endif()
 endif()

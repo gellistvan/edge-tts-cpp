@@ -1,0 +1,590 @@
+# Reference Behavior Inventory
+
+This document is the authoritative compatibility reference for `edge-tts-cpp`.
+Every future implementation task that touches networking, protocol handling,
+text processing, or audio timing **must start here** before making design
+decisions.  If a behavior described below is ambiguous or requires live service
+verification, that is noted explicitly.
+
+---
+
+# Reference Files Inspected
+
+| File | Purpose |
+|------|---------|
+| `reference/edge-tts/README.md` | End-user installation, CLI examples, voice listing output |
+| `reference/edge-tts/src/edge_tts/__init__.py` | Public API surface |
+| `reference/edge-tts/src/edge_tts/communicate.py` | Core TTS engine: text chunking, SSML, WebSocket protocol, chunk parsing |
+| `reference/edge-tts/src/edge_tts/constants.py` | All network endpoints, header values, DRM constants, timing constants |
+| `reference/edge-tts/src/edge_tts/data_classes.py` | `TTSConfig` dataclass and validation regexes |
+| `reference/edge-tts/src/edge_tts/drm.py` | `Sec-MS-GEC` token generation, MUID cookie, clock-skew correction |
+| `reference/edge-tts/src/edge_tts/exceptions.py` | Exception hierarchy |
+| `reference/edge-tts/src/edge_tts/submaker.py` | `SubMaker`: accumulates boundary events into SRT subtitle cues |
+| `reference/edge-tts/src/edge_tts/srt_composer.py` | `Subtitle` type, SRT timestamp formatting, `compose()` |
+| `reference/edge-tts/src/edge_tts/util.py` | CLI argument parsing, `_run_tts`, `_print_voices` |
+| `reference/edge-tts/src/edge_tts/typing.py` | `TTSChunk`, `Voice`, `CommunicateState` TypedDicts |
+| `reference/edge-tts/src/edge_tts/voices.py` | `list_voices()`, `VoicesManager` |
+| `reference/edge-tts/src/edge_playback/__main__.py` | `edge-playback` CLI, mpv / win32 playback, temp-file lifecycle |
+| `reference/edge-tts/src/edge_playback/util.py` | `pr_err` helper |
+| `reference/edge-tts/setup.cfg` | Entry points, Python `>=3.7` requirement, dependencies |
+| `reference/edge-tts/setup.py` | Runtime dependency versions |
+| `reference/edge-tts/tests/001-long-text.sh` | 26-parallel-process determinism test |
+| `reference/edge-tts/tests/001-long-text.txt` | 209,322-byte Wikipedia article as test input |
+
+---
+
+# Public Python API
+
+**Source:** `reference/edge-tts/src/edge_tts/__init__.py`
+
+The Python package exports exactly:
+
+```python
+Communicate, SubMaker, list_voices, VoicesManager, exceptions,
+__version__, __version_info__
+```
+
+**C++ equivalents to implement:**
+
+| Python symbol | C++ target |
+|---------------|-----------|
+| `Communicate` | `edge_tts::communication::Communicate` |
+| `SubMaker` | `edge_tts::subtitles::SubMaker` |
+| `list_voices()` | `edge_tts::communication::HttpVoiceService::list_voices()` |
+| `VoicesManager` | `edge_tts::communication::VoicesManager` |
+
+**Match exactly:** Yes.
+
+---
+
+# CLI Commands
+
+**Source:** `reference/edge-tts/setup.cfg` (entry points), `reference/edge-tts/src/edge_tts/util.py`, `reference/edge-tts/src/edge_playback/__main__.py`
+
+Two CLI commands are registered:
+
+| Command | Entry point |
+|---------|-------------|
+| `edge-tts` | `edge_tts.__main__:main` → `util.py:main()` |
+| `edge-playback` | `edge_playback.__main__:_main` |
+
+`edge-playback` delegates all TTS work to `edge-tts` via subprocess.  It accepts
+all `edge-tts` options except `--write-media`, `--write-subtitles`, and
+`--list-voices`.
+
+**Match exactly:** Yes for both commands.
+
+---
+
+# CLI Options
+
+**Source:** `reference/edge-tts/src/edge_tts/util.py` (`amain()`)
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--text` | `-t` | (required) | Text to synthesize |
+| `--file` | `-f` | — | Read text from file; `-` or `/dev/stdin` reads stdin |
+| `--list-voices` | `-l` | — | List voices and exit (mutually exclusive with `--text`/`--file`) |
+| `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | TTS voice |
+| `--rate` | — | `+0%` | Speech rate |
+| `--volume` | — | `+0%` | Speech volume |
+| `--pitch` | — | `+0Hz` | Speech pitch |
+| `--write-media` | — | stdout | Output file for MP3 audio; `-` → stdout |
+| `--write-subtitles` | — | stderr | Output file for SRT; `-` → stderr |
+| `--proxy` | — | none | HTTP proxy for TTS and voice list |
+| `--version` | — | — | Print version and exit |
+
+`--text` and `--file` and `--list-voices` form a mutually exclusive required group.
+
+**Interactive safety warning:** if both stdin and stdout are TTYs and no
+`--write-media` is given, the CLI prints a warning to stderr and waits for
+Enter before proceeding.
+
+**Match exactly:** Yes.
+
+---
+
+# Default Values
+
+**Sources:** `reference/edge-tts/src/edge_tts/constants.py`, `reference/edge-tts/src/edge_tts/communicate.py`
+
+| Parameter | Default |
+|-----------|---------|
+| `voice` | `en-US-EmmaMultilingualNeural` |
+| `rate` | `+0%` |
+| `volume` | `+0%` |
+| `pitch` | `+0Hz` |
+| `boundary` | `SentenceBoundary` |
+| `connect_timeout` | `10` seconds |
+| `receive_timeout` | `60` seconds |
+
+**Match exactly:** Yes — the C++ default values in `TtsConfig` must match these.
+
+---
+
+# Voice Listing
+
+**Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/constants.py`
+
+**Endpoint:**
+```
+GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list
+    ?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4
+    &Sec-MS-GEC=<token>
+    &Sec-MS-GEC-Version=1-143.0.3650.75
+```
+
+**Request headers** (`VOICE_HEADERS` merged with `BASE_HEADERS`):
+
+| Header | Value |
+|--------|-------|
+| `User-Agent` | Chrome/Edge 143 user-agent string (see constants.py) |
+| `Accept-Encoding` | `gzip, deflate, br, zstd` |
+| `Accept-Language` | `en-US,en;q=0.9` |
+| `Authority` | `speech.platform.bing.com` |
+| `Sec-CH-UA` | Chromium + Edge 143 brand string |
+| `Sec-CH-UA-Mobile` | `?0` |
+| `Accept` | `*/*` |
+| `Sec-Fetch-Site` | `none` |
+| `Sec-Fetch-Mode` | `cors` |
+| `Sec-Fetch-Dest` | `empty` |
+| `Cookie` | `muid=<16-byte uppercase hex random>;` |
+
+**Response:** JSON array of voice objects.  Each element is normalised to guarantee `VoiceTag.ContentCategories` and `VoiceTag.VoicePersonalities` are present (defaulting to `[]`).
+
+**`Voice` TypedDict fields** (`reference/edge-tts/src/edge_tts/typing.py`):
+
+| Field | Type |
+|-------|------|
+| `Name` | str (full "Microsoft Server Speech…" form) |
+| `ShortName` | str (e.g. `en-US-EmmaMultilingualNeural`) |
+| `Gender` | `"Female"` or `"Male"` |
+| `Locale` | str (e.g. `en-US`) |
+| `SuggestedCodec` | str |
+| `FriendlyName` | str |
+| `Status` | `"GA"`, `"Preview"`, or `"Deprecated"` |
+| `VoiceTag.ContentCategories` | `List[str]` |
+| `VoiceTag.VoicePersonalities` | `List[str]` |
+
+`VoicesManager.create()` adds a synthetic `Language` field derived as
+`Locale.split("-")[0]`.
+
+**Retry on 403:** uses the same clock-skew correction as WebSocket (see DRM section).
+
+**Match exactly:** Yes — same endpoint, same headers including MUID cookie.
+
+---
+
+# Text Validation
+
+**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`remove_incompatible_characters`)
+
+Control characters in Unicode ranges `U+0000–U+0008`, `U+000B–U+000C`, and
+`U+000E–U+001F` are replaced with ASCII space `U+0020` before processing.
+Notably, `U+0009` (tab), `U+000A` (newline), and `U+000D` (carriage return)
+are **preserved**.
+
+The replacement is performed **before** XML escaping with
+`xml.sax.saxutils.escape()` and before chunking.
+
+The `text` argument to `Communicate` must be `str`; passing anything else raises
+`TypeError`.
+
+**Match exactly:** Yes — same replacement ranges.
+
+---
+
+# Text Chunking
+
+**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`split_text_by_byte_length`, helpers)
+
+**Limit:** 4096 bytes per chunk (after UTF-8 encoding + XML escaping).
+
+**Algorithm (in priority order):**
+
+1. Text is encoded to UTF-8 bytes.
+2. While remaining bytes > 4096:
+   a. Search backward from byte 4096 for the rightmost `\n` (newline preferred
+      over space).
+   b. If no newline, search backward for the rightmost ` ` (space).
+   c. If neither found, find the rightmost safe UTF-8 boundary by decoding
+      progressively shorter prefixes.
+   d. Adjust backward to avoid splitting inside an XML entity (`&…;`): if there
+      is an unterminated `&` before the split point, move split point to the `&`.
+3. Yield the stripped chunk (leading/trailing whitespace removed from each
+   yielded chunk).
+
+`ValueError` is raised if `byte_length ≤ 0` or if a valid split cannot be
+determined.
+
+**Important:** Chunking operates on the **XML-escaped** text, not the raw text.
+Characters like `<`, `>`, `&`, `"`, `'` are escaped before chunking.
+
+**C++ TextChunker divergence:** The current C++ `TextChunker` only provides
+UTF-8 byte-boundary safety.  It does not yet implement:
+- newline/space preferred split points
+- XML entity protection
+
+These must be added before the communication layer is implemented.
+
+**Match exactly:** Yes (the full algorithm must be implemented).
+
+---
+
+# SSML Generation
+
+**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`mkssml`, `ssml_headers_plus_data`)
+
+**SSML body template:**
+```xml
+<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+  <voice name='{voice_full_name}'>
+    <prosody pitch='{pitch}' rate='{rate}' volume='{volume}'>
+      {xml_escaped_text_chunk}
+    </prosody>
+  </voice>
+</speak>
+```
+
+All on one line (no formatting whitespace in the actual output).
+
+**Message envelope** sent over WebSocket as a text frame:
+```
+X-RequestId:{request_id}\r\n
+Content-Type:application/ssml+xml\r\n
+X-Timestamp:{timestamp}Z\r\n
+Path:ssml\r\n
+\r\n
+{ssml_body}
+```
+
+Note the literal `Z` suffix appended to the timestamp regardless of timezone
+(documented in the source as a known Microsoft Edge bug).
+
+**Timestamp format:** JavaScript-style date string, always in UTC:
+`Mon Jan 01 2024 00:00:00 GMT+0000 (Coordinated Universal Time)` — generated
+via `time.strftime("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)", time.gmtime())`.
+
+**Request ID:** UUID v4 without dashes (`uuid.uuid4().hex`).
+
+**Match exactly:** Yes.
+
+---
+
+# WebSocket Protocol
+
+**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`__stream`), `reference/edge-tts/src/edge_tts/constants.py`
+
+**WebSocket URL:**
+```
+wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
+  ?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4
+  &ConnectionId=<uuid_no_dashes>
+  &Sec-MS-GEC=<sha256_token>
+  &Sec-MS-GEC-Version=1-143.0.3650.75
+```
+
+**WebSocket request headers** (`WSS_HEADERS` merged with `BASE_HEADERS`):
+
+| Header | Value |
+|--------|-------|
+| `Pragma` | `no-cache` |
+| `Cache-Control` | `no-cache` |
+| `Origin` | `chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold` |
+| `Sec-WebSocket-Version` | `13` |
+| `User-Agent` | Chrome/Edge 143 user-agent |
+| `Accept-Encoding` | `gzip, deflate, br, zstd` |
+| `Accept-Language` | `en-US,en;q=0.9` |
+| `Cookie` | `muid=<16-byte uppercase hex random>;` |
+
+WebSocket compression is enabled (`compress=15`).
+
+**Per-text-chunk connection lifecycle:**
+1. Open a new WebSocket connection per text chunk.
+2. Send `speech.config` text frame (see below).
+3. Send `ssml` text frame.
+4. Receive frames until `turn.end` is received.
+5. Connection is closed (or can be reused — the Python code reopens per chunk).
+
+**`speech.config` message** (text frame):
+```
+X-Timestamp:{timestamp}\r\n
+Content-Type:application/json; charset=utf-8\r\n
+Path:speech.config\r\n
+\r\n
+{"context":{"synthesis":{"audio":{"metadataoptions":{
+  "sentenceBoundaryEnabled":"{sq}","wordBoundaryEnabled":"{wd}"},
+  "outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}
+```
+
+Where `wd = "true"` and `sq = "false"` when `boundary == "WordBoundary"`, and
+vice versa for `SentenceBoundary`.
+
+**Incoming text frames:**
+
+| `Path` header | Action |
+|---------------|--------|
+| `audio.metadata` | Parse JSON body; yield `WordBoundary` or `SentenceBoundary` chunk |
+| `turn.end` | Compute offset compensation from audio bytes; break loop |
+| `response` | Silently ignored |
+| `turn.start` | Silently ignored |
+| anything else | Raise `UnknownResponse` |
+
+**Text frame parsing:** `encoded_data.find(b"\r\n\r\n")` locates the header/body
+boundary; headers are split on `\r\n` then on the first `:`.
+
+**Incoming binary frames:**
+
+- First 2 bytes: header length (big-endian unsigned 16-bit integer).
+- Bytes `[2 .. 2+header_length]`: headers (same `\r\n`/`:` format).
+- Bytes `[2+header_length+2 ..]`: audio payload.
+- `Path: audio` is the only expected binary path.
+- `Content-Type: audio/mpeg` is the expected content type; `None` content type
+  with empty data is silently skipped (stream termination signal).
+- Any other content type raises `UnexpectedResponse`.
+
+**Match exactly:** Yes — same URL, same headers, same frame parsing logic.
+
+---
+
+# DRM / Sec-MS-GEC
+
+**Source:** `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/constants.py`
+
+**Trusted client token:** `6A5AA1D4EAFF4E9FB37E23D68491D6F4`
+
+**`Sec-MS-GEC` token generation algorithm:**
+
+1. Get current UTC Unix timestamp (float), add accumulated `clock_skew_seconds`.
+2. Add Windows file time epoch offset: `11644473600` seconds (to convert Unix →
+   Windows file time seconds since 1601-01-01).
+3. Round down to nearest 300-second (5-minute) boundary: `ticks -= ticks % 300`.
+4. Convert to 100-nanosecond intervals: multiply by `1e9 / 100`.
+5. Concatenate as integer string with the trusted client token:
+   `f"{ticks:.0f}6A5AA1D4EAFF4E9FB37E23D68491D6F4"`.
+6. SHA-256 hash the ASCII-encoded string; return uppercase hex digest.
+
+**`Sec-MS-GEC-Version`:** `1-143.0.3650.75` (constant).
+
+**MUID cookie:** `muid=<secrets.token_hex(16).upper()>;` — a new random 16-byte
+hex token is generated per request.  Added to all voice-list and WebSocket
+requests via `DRM.headers_with_muid()`.
+
+**Clock skew correction:** The `DRM.clock_skew_seconds` class variable
+accumulates offset corrections.  It starts at `0.0`.  When a `403` response is
+received, `handle_client_response_error()` parses the RFC 2616 `Date` response
+header and adjusts skew as `server_date - client_date`.
+
+**Ambiguity:** The `ticks` multiplication uses Python float arithmetic
+(`ticks *= S_TO_NS / 100` where `S_TO_NS = 1e9`).  The C++ implementation must
+produce bit-identical token strings.  Use 64-bit double arithmetic and format
+with `%.0f` equivalent to match Python's `f"{ticks:.0f}"`.
+
+**Match exactly:** Yes — token must match the Python output exactly.
+
+---
+
+# Stream Chunk Types
+
+**Source:** `reference/edge-tts/src/edge_tts/typing.py`, `reference/edge-tts/src/edge_tts/communicate.py`
+
+Three chunk types flow from `Communicate.stream()`:
+
+| `type` field | Additional fields | Source |
+|--------------|-------------------|--------|
+| `"audio"` | `data: bytes` (raw MP3 frames) | Binary WebSocket frame |
+| `"WordBoundary"` | `offset: float`, `duration: float`, `text: str` | `audio.metadata` JSON |
+| `"SentenceBoundary"` | `offset: float`, `duration: float`, `text: str` | `audio.metadata` JSON |
+
+**Offset and duration units:** 100-nanosecond ticks.
+`1 second = 10,000,000 ticks` (constant `TICKS_PER_SECOND = 10_000_000`).
+
+**Offset compensation:** Between text chunks, the cumulative audio byte count
+is used to compute an offset correction:
+```
+offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
+```
+This uses **integer floor division** and is computed from the `audio-24khz-48kbitrate-mono-mp3`
+CBR stream (48 kbps = 48,000 bps).  Each reported boundary offset is summed
+with `offset_compensation` before yielding.
+
+**`text` field:** XML-unescaped (`xml.sax.saxutils.unescape`) from the JSON
+`Data.text.Text` field.
+
+**`stream()` is single-use:** calling it twice raises `RuntimeError`.
+
+**Match exactly:** Yes.
+
+---
+
+# Subtitles
+
+**Sources:** `reference/edge-tts/src/edge_tts/submaker.py`, `reference/edge-tts/src/edge_tts/srt_composer.py`
+
+**`SubMaker.feed(msg)`:**
+- Accepts only `WordBoundary` or `SentenceBoundary` chunks; others raise `ValueError`.
+- All chunks in one session must share the same type; mixing types raises `ValueError`.
+- Converts ticks to `timedelta` via `timedelta(microseconds=offset / 10)`.
+  Division by 10 converts 100 ns ticks → microseconds.
+- End time = `timedelta(microseconds=(offset + duration) / 10)`.
+- Appends a `Subtitle(index, start, end, content)` to the internal list.
+
+**SRT format produced by `srt_composer.compose()`:**
+```
+{index}
+{HH:MM:SS,mmm} --> {HH:MM:SS,mmm}
+{content}
+
+```
+
+- Index is 1-based and recomputed by `sort_and_reindex()` (sorted by start time).
+- Subtitles with empty content, negative start, or start ≥ end are **skipped**.
+- Timestamp: `HH:MM:SS,mmm` (comma separator between seconds and milliseconds).
+- Each block ends with two newlines.
+
+**Match exactly:** Yes — same skipping rules, same timestamp format.
+
+---
+
+# Playback
+
+**Source:** `reference/edge-tts/src/edge_playback/__main__.py`
+
+`edge-playback` orchestrates:
+1. Parse args (strips `--mpv` flag from the arg list before forwarding).
+2. Check that `edge-tts` (and `mpv` on non-Windows) are on `$PATH`.
+3. Create temp `.mp3` and (when using mpv) `.srt` files.
+4. Call `edge-tts --write-media=<tmp.mp3> [--write-subtitles=<tmp.srt>] <remaining args>` as subprocess.
+5. Play with `mpv` (`--sub-file=<tmp.srt>`) or on Windows via the
+   `win32_playback.play_mp3_win32` function.
+6. Clean up temp files unless `EDGE_PLAYBACK_KEEP_TEMP` env var is set.
+
+**Environment variables:**
+
+| Variable | Effect |
+|----------|--------|
+| `EDGE_PLAYBACK_DEBUG` | Print temp file paths to stdout |
+| `EDGE_PLAYBACK_KEEP_TEMP` | Keep temp files after playback |
+| `EDGE_PLAYBACK_MP3_FILE` | Override MP3 temp file path |
+| `EDGE_PLAYBACK_SRT_FILE` | Override SRT temp file path |
+
+**mpv command:** `mpv --msg-level=all=error,statusline=status [--sub-file=<srt>] <mp3>`
+
+**Windows:** Uses `win32_playback.play_mp3_win32` (no mpv required by default on Windows).
+
+**Match exactly:** Yes for Linux/macOS (mpv + temp files).  Windows playback is
+a best-effort port; the `--mpv` flag must be supported.
+
+---
+
+# Proxy Behavior
+
+**Source:** `reference/edge-tts/src/edge_tts/communicate.py`, `reference/edge-tts/src/edge_tts/voices.py`
+
+A proxy URL string is accepted by both `Communicate` (for WebSocket) and
+`list_voices()` (for HTTPS).  The value is passed directly to `aiohttp`.
+
+Proxy support is not validated or parsed by the Python library; any string
+(or `None`) is accepted.
+
+**Match exactly:** Yes — proxy must be forwarded to the HTTP/WebSocket client
+without modification.
+
+---
+
+# Retry / Clock Skew Behavior
+
+**Sources:** `reference/edge-tts/src/edge_tts/communicate.py` (`stream()`), `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/voices.py`
+
+**Trigger condition:** HTTP 403 response from the service.
+
+**Retry flow (both WebSocket and voice list):**
+
+1. On `403`, call `DRM.handle_client_response_error(e)`.
+2. That function reads the `Date` response header (RFC 2616 format), parses it,
+   computes `server_date - client_date`, and adds the difference to
+   `DRM.clock_skew_seconds`.
+3. If the `Date` header is absent or unparseable, raise `SkewAdjustmentError`.
+4. Immediately retry the **same request** once with a freshly generated
+   `Sec-MS-GEC` token (incorporating the updated clock skew).
+
+**No exponential backoff:** exactly one retry per 403.  Any subsequent failure
+is propagated.
+
+**Clock skew is global state:** `DRM.clock_skew_seconds` is a class variable
+shared across all `Communicate` and `list_voices` calls in the same process.
+
+**Match exactly:** Yes — single retry on 403, accumulate skew, no further
+retries.  In C++ the clock-skew state should be application-global (or
+injectable for testability).
+
+---
+
+# Error Behavior
+
+**Source:** `reference/edge-tts/src/edge_tts/exceptions.py`
+
+```
+EdgeTTSException (base)
+├── UnknownResponse    — unknown metadata type or unknown WebSocket path
+├── UnexpectedResponse — unexpected but known-format response (protocol violation)
+├── NoAudioReceived    — stream completed without yielding any audio chunks
+├── WebSocketError     — WebSocket-level error (aiohttp WSMsgType.ERROR)
+└── SkewAdjustmentError — 403 handling failed (no/unparseable Date header)
+```
+
+**C++ mapping:**
+
+| Python exception | C++ equivalent |
+|------------------|---------------|
+| `UnknownResponse` | `common::ProtocolError` subtype or new `UnknownResponseError` |
+| `UnexpectedResponse` | `common::ProtocolError` subtype or new `UnexpectedResponseError` |
+| `NoAudioReceived` | New `NoAudioReceivedError` in `common::` |
+| `WebSocketError` | `common::NetworkError` subtype |
+| `SkewAdjustmentError` | New `SkewAdjustmentError` in `common::` |
+
+**Match exactly:** Yes — same triggering conditions, C++ error types may differ
+in name but must carry the same semantics.
+
+---
+
+# Compatibility Targets
+
+**Source:** `reference/edge-tts/src/edge_tts/version.py`, `reference/edge-tts/setup.cfg`
+
+| Property | Value |
+|----------|-------|
+| Reference version | `7.2.8` |
+| Python requirement | `>=3.7` |
+| Chromium version string | `143.0.3650.75` |
+| `SEC_MS_GEC_VERSION` header | `1-143.0.3650.75` |
+| `TRUSTED_CLIENT_TOKEN` | `6A5AA1D4EAFF4E9FB37E23D68491D6F4` |
+| Audio output format | `audio-24khz-48kbitrate-mono-mp3` |
+| Audio bitrate (for timing) | 48,000 bps |
+| Tick resolution | 100 nanoseconds (10,000,000 ticks/second) |
+
+The Chromium version and trusted token are likely to change when Microsoft
+updates the Edge TTS service.  The C++ implementation should keep these as
+named constants, not hard-coded literals scattered through the code.
+
+**Match exactly:** Yes for all constants.
+
+---
+
+# Ambiguities / Requires Live Verification
+
+The following behaviors are inferred from the code but have not been verified
+against the live service:
+
+| # | Topic | Observation | Open Question |
+|---|-------|-------------|---------------|
+| 1 | Voice name regex | Python validates with `\(.+,.+\)` (no space required after comma) but always generates a space: `(en-US, Emma…)`. | Does the service accept the no-space form? |
+| 2 | `speech.config` per chunk | A new WebSocket connection is opened per text chunk; `speech.config` is re-sent each time. | Can connections be reused across chunks? |
+| 3 | Offset compensation integer overflow | Python comment says Microsoft's metadata offsets overflow on long texts. The CBR-byte approach is the fix. | Is 64-bit integer arithmetic sufficient for arbitrarily long audio in C++? |
+| 4 | `turn.end` binary | The code expects `turn.end` as a text frame and processes offset compensation there. | Does the service ever send `turn.end` as binary? |
+| 5 | Empty binary with no Content-Type | The code silently skips zero-length binary frames with no Content-Type. | Is this a documented termination signal or just observed empirically? |
+| 6 | `SessionEnd` metadata | `SessionEnd` metadata type is silently skipped in `__parse_metadata`. | Are there other metadata types not yet observed? |
+| 7 | Retry count | Only one retry per 403 is implemented. | Does the service ever require more than one clock-skew correction per session? |
+| 8 | `--write-media -` | Writing MP3 to stdout is supported (the `-` flag). | How is this tested without a live service? |
+| 9 | Determinism | The 26-parallel-process test (`001-long-text.sh`) compares SRT outputs for equality. | Are SRT outputs truly deterministic across connections, or is there sentence-boundary jitter? |
+| 10 | DRM float precision | Token generation multiplies by `1e9 / 100` using Python float. | Does IEEE 754 double produce the same `.0f`-formatted integer as the service expects on all platforms? |
