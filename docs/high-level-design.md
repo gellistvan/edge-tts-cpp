@@ -66,7 +66,21 @@ Avoid adding new public headers at `include/edge_tts/` root unless they are deli
 | `Error.hpp` | `ErrorCode` enum, value-type `Error` (code + message + context), `to_string(ErrorCode)` |
 | `Result.hpp` | `Result<T>`, `Result<void>`, `BadResultAccess` — return-value error propagation |
 | `Expected.hpp` | `Expected<T,E>`, `Unexpected<E>` — generic result type for custom error types |
-| `Utf8.hpp` | `utf8::is_continuation`, `utf8::safe_boundary`, `utf8::is_valid` |
+| `Utf8.hpp` | `utf8::is_continuation` (constexpr), `utf8::safe_boundary` (constexpr, used by TextChunker), `utf8::is_valid_utf8` (full validator), `utf8::previous_code_point_boundary`, `utf8::next_code_point_boundary`, `utf8::split_utf8_by_byte_limit` |
+
+### UTF-8 strategy
+
+`Utf8.hpp` is the single source of truth for UTF-8 boundary and validation logic:
+
+- `split_utf8_by_byte_limit(text, max_bytes)` — use this in `TextChunker` and any future
+  byte-limit splitting.  It guarantees that no chunk ends inside a multi-byte sequence.
+- `is_valid_utf8(text)` — rejects overlong encodings, UTF-16 surrogates (U+D800–U+DFFF),
+  truncated sequences, and code points above U+10FFFF.
+- `previous_code_point_boundary` / `next_code_point_boundary` — boundary navigation used by
+  the splitter and any protocol code that steps through text.
+
+All protocol-level text handling (XML escaping, SSML generation) must ensure that any
+byte-level slice of a string passes `is_valid_utf8` before transmission.
 
 ### Error strategy
 

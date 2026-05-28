@@ -10,6 +10,7 @@ edge_tts_add_module_test(
         common/ClockTests.cpp
         common/HexTests.cpp
         common/IdGeneratorTests.cpp
+        common/Utf8Tests.cpp
     LIBRARIES edge_tts::common
 )
 

@@ -31,6 +31,7 @@ edge_tts_add_module(
         src/common/Clock.cpp
         src/common/Hex.cpp
         src/common/IdGenerator.cpp
+        src/common/Utf8.cpp
 )
 
 edge_tts_add_module(
