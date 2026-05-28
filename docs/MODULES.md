@@ -92,6 +92,7 @@ Two error propagation styles are used:
 | `TextChunker.hpp` | `TextChunker(max_bytes)` — splits text into byte-capped chunks at UTF-8 code-point boundaries. |
 
 | `OutputFormat.hpp` | `OutputFormat` — validated audio format type. `default_format()` returns `"audio-24khz-48kbitrate-mono-mp3"` (the only format used by the Python reference). `from_string()` rejects empty strings and unknown formats. No arbitrary format strings permitted. |
+| `Voice.hpp` | `VoiceGender {unknown, female, male}`, `Voice` struct (all fields from Python `Voice` TypedDict: `name`, `short_name`, `gender`, `locale`, `friendly_name`, `status`, `suggested_codec`, `content_categories`, `voice_personalities`, `language`). `voice_gender_from_string()` parses `"Female"`/`"Male"` (case-sensitive). `to_string(VoiceGender)` returns exact Python wire strings. |
 
 **Allowed dependencies:** `edge_tts::common`.
 

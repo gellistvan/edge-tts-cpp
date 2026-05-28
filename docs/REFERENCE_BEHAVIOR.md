@@ -169,19 +169,28 @@ GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices
 
 **Response:** JSON array of voice objects.  Each element is normalised to guarantee `VoiceTag.ContentCategories` and `VoiceTag.VoicePersonalities` are present (defaulting to `[]`).
 
-**`Voice` TypedDict fields** (`reference/edge-tts/src/edge_tts/typing.py`):
+**`Voice` TypedDict fields** (`reference/edge-tts/src/edge_tts/typing.py`) and C++ mapping:
 
-| Field | Type |
-|-------|------|
-| `Name` | str (full "Microsoft Server Speech…" form) |
-| `ShortName` | str (e.g. `en-US-EmmaMultilingualNeural`) |
-| `Gender` | `"Female"` or `"Male"` |
-| `Locale` | str (e.g. `en-US`) |
-| `SuggestedCodec` | str |
-| `FriendlyName` | str |
-| `Status` | `"GA"`, `"Preview"`, or `"Deprecated"` |
-| `VoiceTag.ContentCategories` | `List[str]` |
-| `VoiceTag.VoicePersonalities` | `List[str]` |
+| Python field | Python type | C++ field | Notes |
+|---|---|---|---|
+| `Name` | `str` | `voice.name` | Full "Microsoft Server Speech…" form |
+| `ShortName` | `str` | `voice.short_name` | e.g. `en-US-EmmaMultilingualNeural` |
+| `Gender` | `"Female"` \| `"Male"` | `voice.gender` (`VoiceGender` enum) | `unknown` when absent/unrecognised |
+| `Locale` | `str` | `voice.locale` | e.g. `en-US` |
+| `SuggestedCodec` | `str` | `voice.suggested_codec` | e.g. `audio-24khz-48kbitrate-mono-mp3` |
+| `FriendlyName` | `str` | `voice.friendly_name` | Human-readable name |
+| `Status` | `"GA"` \| `"Preview"` \| `"Deprecated"` | `voice.status` | |
+| `VoiceTag.ContentCategories` | `List[str]` | `voice.content_categories` | Defaulted to `[]` by voices.py |
+| `VoiceTag.VoicePersonalities` | `List[str]` | `voice.voice_personalities` | Defaulted to `[]` by voices.py |
+| `Language` (VoicesManagerVoice) | `str` | `voice.language` | Derived: `Locale.split('-')[0]` |
+
+**`VoiceGender` wire values** (case-sensitive, matching Python's `Literal["Female", "Male"]`):
+
+| C++ enum | Wire string |
+|----------|-------------|
+| `VoiceGender::female` | `"Female"` |
+| `VoiceGender::male` | `"Male"` |
+| `VoiceGender::unknown` | `"Unknown"` (not a wire value; used for absent/unrecognised) |
 
 `VoicesManager.create()` adds a synthetic `Language` field derived as
 `Locale.split("-")[0]`.
