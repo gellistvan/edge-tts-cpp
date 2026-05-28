@@ -91,6 +91,8 @@ Two error propagation styles are used:
 | `Voice.hpp` | `VoiceGender` enum (`Female`, `Male`, `Unknown`). `Voice` struct (name, short_name, gender, locale, styles) with `operator==`/`operator!=`. |
 | `TextChunker.hpp` | `TextChunker(max_bytes)` — splits text into byte-capped chunks at UTF-8 code-point boundaries. |
 
+| `OutputFormat.hpp` | `OutputFormat` — validated audio format type. `default_format()` returns `"audio-24khz-48kbitrate-mono-mp3"` (the only format used by the Python reference). `from_string()` rejects empty strings and unknown formats. No arbitrary format strings permitted. |
+
 **Allowed dependencies:** `edge_tts::common`.
 
 **Forbidden:** networking, JSON parsing, serialization, filesystem, process execution.

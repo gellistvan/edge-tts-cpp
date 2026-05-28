@@ -39,6 +39,7 @@ edge_tts_add_module(
     SOURCES
         src/core/TextChunker.cpp
         src/core/TtsConfig.cpp
+        src/core/OutputFormat.cpp
     PUBLIC_DEPS edge_tts::common
 )
 

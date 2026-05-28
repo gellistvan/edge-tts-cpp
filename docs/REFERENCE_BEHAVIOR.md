@@ -317,6 +317,13 @@ Path:speech.config\r\n
   "outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}
 ```
 
+**Output format:** `"audio-24khz-48kbitrate-mono-mp3"` is **hardcoded** — there
+is no `--format` CLI flag and no `outputFormat` constructor parameter in the
+Python reference.  The C++ `OutputFormat` type enforces the same restriction:
+`OutputFormat::from_string()` rejects any value not in the known supported set,
+and `OutputFormat::default_format()` returns the one format the Python reference
+uses.  See `core::OutputFormat` in `docs/MODULES.md`.
+
 Where `wd = "true"` and `sq = "false"` when `boundary == "WordBoundary"`, and
 vice versa for `SentenceBoundary`.
 
