@@ -88,6 +88,34 @@ exact `time_point` the token generator will observe.
 
 ---
 
+## SSML document format
+
+**Source:** `communicate.py mkssml()`
+
+The SSML document sent inside the WebSocket `ssml` path frame is a single
+UTF-8 line with no inter-element whitespace:
+
+```
+<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{full_voice}'><prosody pitch='{pitch}' rate='{rate}' volume='{volume}'>{escaped_text}</prosody></voice></speak>
+```
+
+Key invariants:
+- All attribute values use **single quotes** (Python f-string literals).
+- `xml:lang` is **hardcoded `en-US`** regardless of voice locale.
+- `<voice name>` always uses the **full form**: `Microsoft Server Speech Text to Speech Voice (locale, name)`.  Short-form voice names (`en-US-EmmaMultilingualNeural`) are normalized before embedding.
+- Prosody attribute order: **pitch, rate, volume** (matches Python).
+- Text content is **XML-escaped** (`&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`).
+- The SSML body does **not** include WebSocket framing or `X-RequestId` / `X-Timestamp` headers — those are added by `ssml_headers_plus_data()` in the communication layer.
+
+**C++ implementation:** `serialization::SsmlBuilder::build(config, raw_text)`:
+1. Validates `TtsConfig` via `validate_tts_config()`.
+2. Normalizes the voice name to the full form via `normalize_voice_name()`.
+3. Normalizes `raw_text` via `TextNormalizer` (UTF-8 validation + control-char replacement).
+4. XML-escapes the normalized text via `xml_escape()` exactly once.
+5. Assembles the SSML string.
+
+---
+
 ## Timing constants (belong in serialization/communication layer)
 
 | Constant | Value | Source |

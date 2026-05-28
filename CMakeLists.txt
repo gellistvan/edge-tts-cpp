@@ -53,6 +53,7 @@ edge_tts_add_module(
         src/serialization/XmlEscaper.cpp
         src/serialization/TextNormalizer.cpp
         src/serialization/TextChunker.cpp
+        src/serialization/SsmlBuilder.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::common

@@ -290,6 +290,8 @@ use `serialization::TextChunker`.
 
 **Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`mkssml`, `ssml_headers_plus_data`)
 
+**C++ implementation:** `serialization::SsmlBuilder` (`SsmlBuilder.hpp` / `SsmlBuilder.cpp`).
+
 **SSML body template:**
 ```xml
 <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
