@@ -54,7 +54,30 @@ target_link_libraries(edge_tts_subtitle PUBLIC edge_tts::communication)
 target_link_libraries(edge_tts_media PUBLIC edge_tts::core)
 ```
 
-## How to verify
+## Automated boundary check
+
+`tools/check_module_boundaries.py` scans all `#include` directives in
+`include/`, `src/`, and `apps/` and reports any that violate the matrix above.
+It also catches apps that include headers via relative paths into `src/`
+(private headers).
+
+Run manually:
+```bash
+python3 tools/check_module_boundaries.py
+```
+
+Run via CTest (requires `EDGE_TTS_BUILD_TESTS=ON`):
+```bash
+ctest --test-dir build -R edge_tts_module_boundary_tests
+```
+
+The test suite in `tests/tools/test_module_boundaries.py` verifies:
+- Every allowed include pattern passes
+- Every forbidden include pattern is detected
+- The private-header-from-app rule fires correctly
+- The actual project tree is clean
+
+## How to verify CMake links
 
 ```bash
 # Configure with apps enabled to inspect the link graph

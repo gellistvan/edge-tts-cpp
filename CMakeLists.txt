@@ -154,7 +154,12 @@ if(EDGE_TTS_BUILD_TESTS)
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${CMAKE_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
         )
+        add_test(
+            NAME edge_tts_module_boundary_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
+        )
     else()
-        message(WARNING "python3 not found — docs smoke tests will be skipped")
+        message(WARNING "python3 not found — Python-based tests will be skipped")
     endif()
 endif()
