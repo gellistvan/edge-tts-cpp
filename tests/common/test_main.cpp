@@ -1,9 +1,5 @@
-#ifdef EDGE_TTS_NO_GTEST
-int main() { return 0; }
-#else
-#include <gtest/gtest.h>
+#include "vendor/minigtest/minigtest.hpp"
+
 int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    return minigtest::run_all_tests(argc, argv);
 }
-#endif

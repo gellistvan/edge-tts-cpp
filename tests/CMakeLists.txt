@@ -1,40 +1,68 @@
-function(edge_tts_add_module_test target module_target)
-    add_executable(${target} ${ARGN})
-    target_link_libraries(${target} PRIVATE ${module_target} edge_tts_warnings)
-    target_compile_features(${target} PRIVATE cxx_std_20)
+# EdgeTtsAddTest is included from the parent CMakeLists.txt before this
+# subdirectory is processed, so edge_tts_add_module_test() is available here.
 
-    if(TARGET GTest::gtest_main)
-        target_link_libraries(${target} PRIVATE GTest::gtest_main)
-    else()
-        target_compile_definitions(${target} PRIVATE EDGE_TTS_NO_GTEST=1)
-    endif()
-
-    add_test(NAME ${target} COMMAND ${target})
-endfunction()
-
-edge_tts_add_module_test(edge_tts_common_tests edge_tts::common
-    common/test_main.cpp
+edge_tts_add_module_test(
+    NAME common
+    SOURCES
+        common/test_main.cpp
+        common/ErrorTests.cpp
+        common/ResultTests.cpp
+        common/ClockTests.cpp
+        common/HexTests.cpp
+        common/IdGeneratorTests.cpp
+        common/Utf8Tests.cpp
+    LIBRARIES edge_tts::common
 )
 
-edge_tts_add_module_test(edge_tts_core_tests edge_tts::core
-    common/test_main.cpp
-    core/test_text_chunker.cpp
-    core/test_tts_config.cpp
+edge_tts_add_module_test(
+    NAME core
+    SOURCES
+        common/test_main.cpp
+        core/test_tts_config.cpp
+        core/test_voice.cpp
+        core/test_text_chunker.cpp
+        core/OutputFormatTests.cpp
+        core/TtsConfigTests.cpp
+        core/VoiceTests.cpp
+        core/ChunkTests.cpp
+    LIBRARIES edge_tts::core
 )
 
-edge_tts_add_module_test(edge_tts_subtitles_tests edge_tts::subtitles
-    common/test_main.cpp
-    subtitles/test_srt_composer.cpp
+edge_tts_add_module_test(
+    NAME subtitle
+    SOURCES
+        common/test_main.cpp
+        subtitles/test_srt_composer.cpp
+    LIBRARIES edge_tts::subtitle
 )
 
-edge_tts_add_module_test(edge_tts_serialization_tests edge_tts::serialization
-    common/test_main.cpp
+edge_tts_add_module_test(
+    NAME serialization
+    SOURCES
+        common/test_main.cpp
+        serialization/XmlEscaperTests.cpp
+        serialization/TextNormalizerTests.cpp
+        serialization/TextChunkerTests.cpp
+        serialization/SsmlBuilderTests.cpp
+    LIBRARIES edge_tts::serialization
 )
 
-edge_tts_add_module_test(edge_tts_communication_tests edge_tts::communication
-    common/test_main.cpp
+edge_tts_add_module_test(
+    NAME communication
+    SOURCES common/test_main.cpp
+    LIBRARIES edge_tts::communication
 )
 
-edge_tts_add_module_test(edge_tts_media_tests edge_tts::media
-    common/test_main.cpp
+edge_tts_add_module_test(
+    NAME media
+    SOURCES common/test_main.cpp
+    LIBRARIES edge_tts::media
+)
+
+edge_tts_add_module_test(
+    NAME cli
+    SOURCES
+        common/test_main.cpp
+        cli/test_cli.cpp
+    LIBRARIES edge_tts::cli
 )
