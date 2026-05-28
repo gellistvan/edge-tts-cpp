@@ -3,10 +3,26 @@
 This document describes what each module owns, what it may depend on, and what
 it must never import.
 
+For the enforced CMake dependency matrix see `docs/DEPENDENCY_RULES.md`.
+
+---
+
+## CMake helpers
+
+Three cmake helper files manage module and test registration:
+
+| File | Purpose |
+|------|---------|
+| `cmake/EdgeTtsAddModule.cmake` | `edge_tts_add_module()` — registers a library module with correct include paths, C++20 requirement, and PRIVATE compile options |
+| `cmake/EdgeTtsAddTest.cmake` | `edge_tts_add_module_test()` — registers a test executable with minigtest include path and `add_test` registration |
+| `cmake/EdgeTtsCompilerOptions.cmake` | Creates the `edge_tts_compile_options` INTERFACE target carrying all project warning flags |
+
 ---
 
 ## `edge_tts::common`
 
+**CMake target:** `edge_tts_common` / `edge_tts::common`
+**Test target:** `edge_tts_common_tests`
 **Headers:** `include/edge_tts/common/`
 
 | File | Description |
@@ -21,6 +37,8 @@ it must never import.
 
 ## `edge_tts::core`
 
+**CMake target:** `edge_tts_core` / `edge_tts::core`
+**Test target:** `edge_tts_core_tests`
 **Headers:** `include/edge_tts/core/`
 
 | File | Description |
@@ -54,6 +72,8 @@ are idempotent.
 
 ## `edge_tts::serialization`
 
+**CMake target:** `edge_tts_serialization` / `edge_tts::serialization`
+**Test target:** `edge_tts_serialization_tests`
 **Headers:** `include/edge_tts/serialization/`
 
 Owns the Edge TTS WebSocket protocol format: SSML message construction,
@@ -65,19 +85,24 @@ speech-config payloads, and protocol/connection token metadata.
 
 ---
 
-## `edge_tts::subtitles`
+## `edge_tts::subtitle`
 
+**CMake target:** `edge_tts_subtitle` / `edge_tts::subtitle`
+**Test target:** `edge_tts_subtitle_tests`
 **Headers:** `include/edge_tts/subtitles/`
+**Sources:** `src/subtitles/`
 
 Owns `SubtitleEntry` (start/end/text), `SubMaker` (accumulates boundary events
 into subtitle cues), and `SrtComposer` (renders cues to SRT text).
 
-**Allowed dependencies:** `edge_tts::core`, `edge_tts::common`.
+**Allowed dependencies:** `edge_tts::core`, `edge_tts::common` (transitively via core).
 
 ---
 
 ## `edge_tts::media`
 
+**CMake target:** `edge_tts_media` / `edge_tts::media`
+**Test target:** `edge_tts_media_tests`
 **Headers:** `include/edge_tts/media/`
 
 Owns the `ffmpeg`/`ffplay` process boundary.  Converts or plays audio by
@@ -91,16 +116,44 @@ spawning system executables — no direct linking to FFmpeg libraries.
 
 ## `edge_tts::communication`
 
+**CMake target:** `edge_tts_communication` / `edge_tts::communication`
+**Test target:** `edge_tts_communication_tests`
 **Headers:** `include/edge_tts/communication/`
 
 Public facade (`Communicate`), voice-list service (`HttpVoiceService`,
 `VoicesManager`), and WebSocket transport abstraction
 (`Transport`, `WebSocketTransport`).
 
-**Allowed dependencies:** all other modules.
+**Allowed dependencies:** all modules below it in the dependency graph.
 
 **Convention:** keep business rules delegated to `core`/`serialization`; this
 module should remain a thin orchestration layer.
+
+---
+
+## `edge_tts::cli`
+
+**CMake target:** `edge_tts_cli` / `edge_tts::cli`
+**Test target:** `edge_tts_cli_tests`
+**Headers:** `include/edge_tts/cli/`
+**Sources:** `src/cli/`
+
+CLI argument parsing and application-level plumbing shared between the
+`edge-tts` and `edge-playback` executables.  Will use CLI11 for argument
+parsing once the dependency is wired.
+
+**Allowed dependencies:** `edge_tts::communication` only.
+
+**Forbidden:** direct access to `core`, `serialization`, or `media` internals —
+route through `communication`.
+
+---
+
+## Aggregate target
+
+`edge_tts` / `edge_tts::edge_tts` — INTERFACE target linking all modules.
+Used only by example programs.  Applications and tests must link specific
+module targets.
 
 ---
 

@@ -9,83 +9,97 @@ project(edge_tts_cpp
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(ProjectOptions)
-include(CompilerWarnings)
+include(EdgeTtsCompilerOptions)
+include(EdgeTtsAddModule)
 include(Dependencies)
 include(StaticAnalysis)
 
 edge_tts_setup_options()
-edge_tts_setup_warnings(edge_tts_warnings)
+edge_tts_configure_compile_options()   # creates edge_tts_compile_options
 edge_tts_setup_dependencies()
 edge_tts_setup_static_analysis()
 
-function(edge_tts_configure_module target)
-    target_include_directories(${target}
-        PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<INSTALL_INTERFACE:include>
-    )
-    target_compile_features(${target} PUBLIC cxx_std_20)
-    target_link_libraries(${target} PRIVATE edge_tts_warnings)
-endfunction()
+# ---------------------------------------------------------------------------
+# Library modules — explicit dependency graph; no module may depend upward.
+# See docs/DEPENDENCY_RULES.md for the allowed dependency matrix.
+# ---------------------------------------------------------------------------
 
-add_library(edge_tts_common INTERFACE)
-add_library(edge_tts::common ALIAS edge_tts_common)
-target_include_directories(edge_tts_common
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
+edge_tts_add_module(
+    NAME common
+    # header-only: no SOURCES
 )
-target_compile_features(edge_tts_common INTERFACE cxx_std_20)
 
-add_library(edge_tts_core
-    src/core/TextChunker.cpp
-    src/core/TtsConfig.cpp
+edge_tts_add_module(
+    NAME core
+    SOURCES
+        src/core/TextChunker.cpp
+        src/core/TtsConfig.cpp
+    PUBLIC_DEPS edge_tts::common
 )
-add_library(edge_tts::core ALIAS edge_tts_core)
-edge_tts_configure_module(edge_tts_core)
-target_link_libraries(edge_tts_core PUBLIC edge_tts::common)
 
-add_library(edge_tts_subtitles
-    src/subtitles/SrtComposer.cpp
-    src/subtitles/SubMaker.cpp
+edge_tts_add_module(
+    NAME serialization
+    SOURCES
+        src/serialization/EdgeProtocol.cpp
+        src/serialization/EdgeToken.cpp
+    PUBLIC_DEPS
+        edge_tts::core
+        edge_tts::common
 )
-add_library(edge_tts::subtitles ALIAS edge_tts_subtitles)
-edge_tts_configure_module(edge_tts_subtitles)
-target_link_libraries(edge_tts_subtitles PUBLIC edge_tts::core)
 
-add_library(edge_tts_serialization
-    src/serialization/EdgeProtocol.cpp
-    src/serialization/EdgeToken.cpp
+edge_tts_add_module(
+    NAME subtitle
+    SOURCES
+        src/subtitles/SrtComposer.cpp
+        src/subtitles/SubMaker.cpp
+    PUBLIC_DEPS edge_tts::core
 )
-add_library(edge_tts::serialization ALIAS edge_tts_serialization)
-edge_tts_configure_module(edge_tts_serialization)
-target_link_libraries(edge_tts_serialization PUBLIC edge_tts::core edge_tts::common)
 
-add_library(edge_tts_media
-    src/media/AudioConverter.cpp
+edge_tts_add_module(
+    NAME media
+    SOURCES
+        src/media/AudioConverter.cpp
+    PUBLIC_DEPS edge_tts::common
 )
-add_library(edge_tts::media ALIAS edge_tts_media)
-edge_tts_configure_module(edge_tts_media)
-target_link_libraries(edge_tts_media PUBLIC edge_tts::common)
 
-add_library(edge_tts_communication
-    src/communication/Communicate.cpp
-    src/communication/HttpVoiceService.cpp
-    src/communication/VoicesManager.cpp
-    src/communication/WebSocketTransport.cpp
-)
-add_library(edge_tts::communication ALIAS edge_tts_communication)
-edge_tts_configure_module(edge_tts_communication)
-target_link_libraries(edge_tts_communication
-    PUBLIC
+edge_tts_add_module(
+    NAME communication
+    SOURCES
+        src/communication/Communicate.cpp
+        src/communication/HttpVoiceService.cpp
+        src/communication/VoicesManager.cpp
+        src/communication/WebSocketTransport.cpp
+    PUBLIC_DEPS
         edge_tts::core
         edge_tts::serialization
-        edge_tts::subtitles
+        edge_tts::subtitle
         edge_tts::media
         edge_tts::common
 )
 
-# Aggregate target for consumers that want the whole library surface.
+edge_tts_add_module(
+    NAME cli
+    SOURCES
+        src/cli/CliPlaceholder.cpp
+    PUBLIC_DEPS
+        edge_tts::communication
+)
+
+# ---------------------------------------------------------------------------
+# Optional third-party dependencies (wired when submodules are present).
+# ---------------------------------------------------------------------------
+if(TARGET nlohmann_json::nlohmann_json)
+    target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
+    target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
+endif()
+if(TARGET ixwebsocket)
+    target_link_libraries(edge_tts_communication PRIVATE ixwebsocket)
+endif()
+
+# ---------------------------------------------------------------------------
+# Aggregate convenience target — for examples and external consumers only.
+# Apps and tests should link specific module targets, not this.
+# ---------------------------------------------------------------------------
 add_library(edge_tts INTERFACE)
 add_library(edge_tts::edge_tts ALIAS edge_tts)
 target_link_libraries(edge_tts
@@ -95,34 +109,36 @@ target_link_libraries(edge_tts
         edge_tts::serialization
         edge_tts::communication
         edge_tts::media
-        edge_tts::subtitles
+        edge_tts::subtitle
+        edge_tts::cli
 )
 
-# Dependency targets are created in cmake/Dependencies.cmake when submodules exist.
-# Keep these optional while the skeleton is dependency-free/buildable.
-if(TARGET nlohmann_json::nlohmann_json)
-    target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
-    target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
-endif()
-if(TARGET ixwebsocket)
-    target_link_libraries(edge_tts_communication PRIVATE ixwebsocket)
-endif()
-
+# ---------------------------------------------------------------------------
+# CLI applications
+# ---------------------------------------------------------------------------
 if(EDGE_TTS_BUILD_APPS)
     add_executable(edge-tts apps/edge-tts/main.cpp)
-    target_link_libraries(edge-tts PRIVATE edge_tts::edge_tts edge_tts_warnings)
+    target_link_libraries(edge-tts PRIVATE edge_tts::cli edge_tts_compile_options)
 
     add_executable(edge-playback apps/edge-playback/main.cpp)
-    target_link_libraries(edge-playback PRIVATE edge_tts::edge_tts edge_tts_warnings)
+    target_link_libraries(edge-playback PRIVATE edge_tts::cli edge_tts_compile_options)
 endif()
 
-option(EDGE_TTS_BUILD_EXAMPLES "Build examples" OFF)
+# ---------------------------------------------------------------------------
+# Examples
+# ---------------------------------------------------------------------------
+option(EDGE_TTS_BUILD_EXAMPLES "Build example programs" OFF)
 if(EDGE_TTS_BUILD_EXAMPLES)
     add_executable(edge_tts_save_file_example examples/save_file.cpp)
-    target_link_libraries(edge_tts_save_file_example PRIVATE edge_tts::edge_tts edge_tts_warnings)
+    target_link_libraries(edge_tts_save_file_example
+        PRIVATE edge_tts::edge_tts edge_tts_compile_options)
 endif()
 
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 if(EDGE_TTS_BUILD_TESTS)
+    include(EdgeTtsAddTest)
     enable_testing()
     add_subdirectory(tests)
 
