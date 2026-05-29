@@ -13,6 +13,158 @@ reference:
 
 ---
 
+## Connection and Request IDs
+
+**Source:** `communicate.py connect_id()`, `__stream()`, `ssml_headers_plus_data()`
+
+**C++ implementation:** `communication::ConnectionMetadata` struct +
+`ConnectionMetadataFactory` class.
+
+### Reference
+
+```python
+def connect_id() -> str:
+    return uuid.uuid4().hex  # UUID v4 without hyphens, 32 lowercase hex chars
+```
+
+Usage in `__stream()`:
+```python
+async with session.ws_connect(
+    f"{WSS_URL}&ConnectionId={connect_id()}"  # ← URL query param
+    ...
+) as websocket:
+    # speech.config frame has NO request ID header
+    await send_ssml_request()  # calls connect_id() again for X-RequestId
+```
+
+Usage in `ssml_headers_plus_data()`:
+```python
+f"X-RequestId:{request_id}\r\n"  # ← protocol frame header
+```
+
+### Format
+
+| ID | Location | Format |
+|----|----------|--------|
+| `connection_id` | `&ConnectionId=` URL query param | UUID v4 without hyphens, 32 lowercase hex chars |
+| `request_id` | `X-RequestId:` SSML frame header | UUID v4 without hyphens, 32 lowercase hex chars |
+
+Both use `uuid.uuid4().hex` (Python), equivalent to C++ `IdGenerator::uuid_v4_without_hyphens()`.
+Two separate calls → always distinct values.
+
+The speech.config frame does NOT carry X-RequestId (only X-Timestamp and Path).
+
+### Lifecycle
+
+One `ConnectionMetadata` is produced per text chunk processed:
+- `connection_id` is appended to the WebSocket URL when opening the connection.
+- `request_id` is placed in the `X-RequestId` header of the SSML frame sent on that connection.
+
+---
+
+## Service Constants
+
+All Edge TTS service constants live in `communication::EdgeServiceConfig` and
+are populated by `default_edge_service_config()` in
+`src/communication/EdgeServiceConfig.cpp`.
+
+**Reference files inspected:**
+- `constants.py` — BASE_URL, TRUSTED_CLIENT_TOKEN, WSS_URL, VOICE_LIST,
+  CHROMIUM_FULL_VERSION, SEC_MS_GEC_VERSION, BASE_HEADERS, WSS_HEADERS
+- `communicate.py` — protocol frame Path values, content types
+- `drm.py` — trusted client token usage in SHA-256 token generation
+- `voices.py` — voice list endpoint usage
+
+| Field | Value | Reference |
+|-------|-------|-----------|
+| `websocket_endpoint` | `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py WSS_URL` |
+| `voices_endpoint` | `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py VOICE_LIST` |
+| `trusted_client_token` | `6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py TRUSTED_CLIENT_TOKEN` |
+| `sec_ms_gec_version` | `1-143.0.3650.75` | `constants.py SEC_MS_GEC_VERSION` |
+| `origin` | `chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold` | `constants.py WSS_HEADERS["Origin"]` |
+| `user_agent` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/143.0.0.0 ... Edg/143.0.0.0` | `constants.py BASE_HEADERS["User-Agent"]` |
+| `speech_config_path` | `speech.config` | `communicate.py send_command_request()` |
+| `ssml_path` | `ssml` | `communicate.py ssml_headers_plus_data()` |
+| `audio_metadata_path` | `audio.metadata` | `communicate.py __stream()` |
+| `turn_end_path` | `turn.end` | `communicate.py __stream()` |
+
+**Case difference:** `WSS_URL` uses `TrustedClientToken` (mixed case) while
+`VOICE_LIST` uses `trustedclienttoken` (lower case) — this matches the
+reference exactly and must not be normalized.
+
+**Dynamic params appended by callers** (not in config):
+- WebSocket: `&ConnectionId=<uuid>&Sec-MS-GEC=<sha256>&Sec-MS-GEC-Version=<ver>`
+- Voice list: `&Sec-MS-GEC=<sha256>&Sec-MS-GEC-Version=<ver>`
+
+---
+
+## Sec-MS-GEC Token Generation
+
+**Source:** `drm.py DRM.generate_sec_ms_gec()`
+
+**C++ implementation:** `communication::EdgeTokenProvider` (`EdgeTokenProvider.hpp` /
+`EdgeTokenProvider.cpp`). SHA-256 helper: `common::sha256_hex_upper` (`Sha256.hpp` /
+`Sha256.cpp`).
+
+### Algorithm (exact Python reference)
+
+```python
+# drm.py
+WIN_EPOCH = 11644473600  # seconds from 1601-01-01 to 1970-01-01 UTC
+S_TO_NS = 1e9
+
+ticks  = dt.now(tz.utc).timestamp() + DRM.clock_skew_seconds   # (1)
+ticks += WIN_EPOCH                                               # (2)
+ticks -= ticks % 300                                            # (3)
+ticks *= S_TO_NS / 100                                          # (4) = 1e7
+str_to_hash = f"{ticks:.0f}{TRUSTED_CLIENT_TOKEN}"              # (5)
+return hashlib.sha256(str_to_hash.encode("ascii")).hexdigest().upper()  # (6)
+```
+
+C++ steps:
+
+1. Get `double unix_seconds` from `IClock::now().time_since_epoch()`.
+2. `double ticks = unix_seconds + 11644473600.0`
+3. `ticks -= std::fmod(ticks, 300.0)` — rounds down to nearest 5-minute boundary.
+4. `ticks *= 1e9 / 100.0` — same IEEE 754 double arithmetic as Python.
+5. `snprintf(buf, "%.0f", ticks)` — same formatting as Python's `f"{ticks:.0f}"`.
+6. Concatenate with `trusted_client_token` from `EdgeServiceConfig`.
+7. `common::sha256_hex_upper(str_to_hash)` — SHA-256 (FIPS 180-4), uppercase hex.
+
+### Float arithmetic compatibility
+
+The `%.0f` format of both Python and C uses IEEE 754 round-to-nearest-even.
+After step 3, `ticks` is an exact multiple of 300 (representable exactly in
+double). After step 4, `ticks` may not be exactly representable, but both
+runtimes round identically, producing the same string in step 5.
+
+**Deterministic test proof:** three Python-generated fixed-clock vectors are
+tested in `EdgeTokenProviderTests.cpp`:
+
+| Unix timestamp | Expected token (uppercase hex SHA-256) |
+|---|---|
+| 0 | `7ECB79D14E3AA576D2D79E6D487A1388156D91E614B1BE11C64226A29BC8DD8C` |
+| 1000000000 | `6594DCF2D741A251B0EDFB71C0034EBFEBF6D413CC1EA5D1B23E60B118A2F0E1` |
+| 1700000000 | `42301B335578FEFDAE2637DED1ABD614505D432559EC08032B82048483726AFF` |
+
+### Bucket boundary
+
+Two timestamps in the same 300-second window produce the same token. The first
+unix timestamp that starts a new window is the one where `(unix + WIN_EPOCH) % 300 == 0`.
+
+### Clock skew
+
+The Python reference accumulates `DRM.clock_skew_seconds` on 403 responses.
+In C++, the `IClock` abstraction allows the communication layer to inject a
+corrected clock without modifying `EdgeTokenProvider`.
+
+### sec_ms_gec_version
+
+`EdgeTokenProvider::sec_ms_gec_version()` returns
+`config.sec_ms_gec_version` verbatim (= `"1-143.0.3650.75"`). No computation.
+
+---
+
 ## UTC usage
 
 Both modules use UTC exclusively:

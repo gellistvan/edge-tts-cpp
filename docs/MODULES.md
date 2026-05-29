@@ -221,8 +221,17 @@ spawning system executables — no direct linking to FFmpeg libraries.
 **Headers:** `include/edge_tts/communication/`
 
 Public facade (`Communicate`), voice-list service (`HttpVoiceService`,
-`VoicesManager`), and WebSocket transport abstraction
-(`Transport`, `WebSocketTransport`).
+`VoicesManager`), and WebSocket transport abstraction.  Also owns all
+service infrastructure and transport boundary types.
+
+| File | Description |
+|------|-------------|
+| `EdgeServiceConfig.hpp` | All hard-coded Edge TTS constants (endpoints, token, version, headers, paths). `default_edge_service_config()` is the single source of truth. |
+| `EdgeTokenProvider.hpp` | Generates `Sec-MS-GEC` tokens from injectable `IClock` + `EdgeServiceConfig`. Uses `common::sha256_hex_upper`. |
+| `ConnectionMetadata.hpp` | `ConnectionMetadata` struct (connection_id + request_id, both 32-char lowercase hex UUID v4 without hyphens). `ConnectionMetadataFactory` wraps `IdGenerator`. |
+| `HttpTypes.hpp` | `HttpRequest` and `HttpResponse` plain data types. |
+| `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
+| `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
 
 **Allowed dependencies:** all modules below it in the dependency graph.
 

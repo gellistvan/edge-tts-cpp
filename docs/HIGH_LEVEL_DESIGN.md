@@ -166,5 +166,5 @@ Each module test target should prefer behavior-level tests over implementation-d
 | `core` | `Chunk.hpp` (`AudioChunk`, `BoundaryChunk`, `TtsChunk`, `is_audio`/`is_boundary`), `Voice.hpp` (all reference fields), `TtsConfig.hpp` (full validation + `validate_tts_config()`), `OutputFormat.hpp`, `TextChunker` (UTF-8 aware) implemented |
 | `serialization` | `XmlEscaper.hpp`, `TextNormalizer.hpp`, `TextChunker.hpp`, `SsmlBuilder.hpp` implemented |
 | `subtitles` | `SubtitleTime`, `SubtitleCue`, `SrtComposer`, `SubMaker` implemented |
-| `communication` | Skeleton only |
+| `communication` | `EdgeServiceConfig`, `EdgeTokenProvider`, `ConnectionMetadataFactory`, `IHttpClient`/`FakeHttpClient`, `VoiceService` implemented; WebSocket and real networking stubs remain |
 | `media` | Skeleton only |

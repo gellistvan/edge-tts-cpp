@@ -11,6 +11,7 @@ edge_tts_add_module_test(
         common/HexTests.cpp
         common/IdGeneratorTests.cpp
         common/Utf8Tests.cpp
+        common/Sha256Tests.cpp
     LIBRARIES edge_tts::common
 )
 
@@ -55,7 +56,13 @@ edge_tts_add_module_test(
 
 edge_tts_add_module_test(
     NAME communication
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        communication/EdgeServiceConfigTests.cpp
+        communication/EdgeTokenProviderTests.cpp
+        communication/ConnectionMetadataTests.cpp
+        communication/HttpClientInterfaceTests.cpp
+        communication/VoiceServiceTests.cpp
     LIBRARIES edge_tts::communication
 )
 

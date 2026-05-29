@@ -139,6 +139,25 @@ Enter before proceeding.
 
 ---
 
+# Edge Service Constants
+
+**Sources:** `reference/edge-tts/src/edge_tts/constants.py`,
+`communicate.py`, `drm.py`, `voices.py`
+
+**C++ implementation:** `communication::EdgeServiceConfig` struct +
+`default_edge_service_config()` factory in
+`src/communication/EdgeServiceConfig.cpp`.
+
+All Edge TTS hard-coded constants are centralized here. Networking and
+serialization code must receive them via `EdgeServiceConfig`, not inline them.
+
+See `docs/PROTOCOL_NOTES.md` — Service Constants section — for the full value
+table.
+
+**Match exactly:** Yes — all values derived verbatim from the reference.
+
+---
+
 # Protocol Text Frame Parsing and Serialization
 
 **Sources:** `reference/edge-tts/src/edge_tts/communicate.py`
@@ -226,6 +245,50 @@ first hyphen.
 **Unknown fields:** silently ignored (reference accesses only known keys).
 
 **Match exactly:** Yes.
+
+---
+
+# VoiceService — HTTP Voice List
+
+**Sources:** `voices.py`, `util.py`, `constants.py`
+
+**C++ implementation:** `communication::VoiceService` (`VoiceService.hpp` /
+`VoiceService.cpp`).
+
+## HTTP request
+
+| Property | Reference | C++ |
+|----------|-----------|-----|
+| Method | `session.get(...)` | `"GET"` |
+| URL | `VOICE_LIST + &Sec-MS-GEC=... + &Sec-MS-GEC-Version=...` | `config.voices_endpoint` (Sec-MS-GEC added in future) |
+| User-Agent | `BASE_HEADERS["User-Agent"]` | `config.user_agent` |
+| Accept | `VOICE_HEADERS["Accept"] = "*/*"` | `"*/*"` |
+| Accept-Language | `BASE_HEADERS["Accept-Language"] = "en-US,en;q=0.9"` | `"en-US,en;q=0.9"` |
+| Accept-Encoding | `BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"` | `"gzip, deflate, br, zstd"` |
+
+## Response handling
+
+- 200 → parse body via `VoiceJsonParser` (no JSON code in communication layer)
+- Non-200 → `ErrorCode::service_error` with status code in context
+- Transport failure → propagated as-is from `IHttpClient`
+
+## Ordering
+
+`list_voices()` returns voices in **wire order** (no sorting). The reference's
+`_print_voices()` sorts by `ShortName` for CLI display only — that is the
+caller's responsibility.
+
+## Filtering
+
+The reference `list_voices()` returns all voices; filtering is done by
+`VoicesManager.find()` separately. `VoiceService::list_voices(VoiceFilter)`
+applies client-side filtering as a C++ convenience:
+- `locale` → exact `Locale` match
+- `gender` → exact `Gender` match
+- `short_name` → exact `ShortName` match
+- All set fields are ANDed
+
+**Match exactly:** Yes for fetch/parse/ordering. `VoiceFilter` is a C++ extension.
 
 ---
 
@@ -498,6 +561,22 @@ boundary; headers are split on `\r\n` then on the first `:`.
 - Any other content type raises `UnexpectedResponse`.
 
 **Match exactly:** Yes — same URL, same headers, same frame parsing logic.
+
+---
+
+# EdgeTokenProvider — Sec-MS-GEC Generation
+
+**Source:** `reference/edge-tts/src/edge_tts/drm.py` (`DRM.generate_sec_ms_gec()`)
+
+**C++ implementation:** `communication::EdgeTokenProvider`. SHA-256 helper:
+`common::sha256_hex_upper`.
+
+**No wall-clock dependency in tests:** `EdgeTokenProvider` accepts `const IClock&`,
+allowing `common::FixedClock` for deterministic tests.
+
+**Match exactly:** Yes — algorithm step-by-step identical to Python reference.
+Deterministic test vectors prove compatibility (see `PROTOCOL_NOTES.md` —
+Sec-MS-GEC Token Generation).
 
 ---
 
