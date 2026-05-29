@@ -588,6 +588,63 @@ are valid (some sentence boundaries have `duration = 0`).
 
 ---
 
+# SubMaker — Boundary Event Accumulation
+
+**Source:** `reference/edge-tts/src/edge_tts/submaker.py`
+
+**C++ implementation:** `subtitles::SubMaker` (`SubMaker.hpp` / `SubMaker.cpp`).
+
+## Public methods
+
+| Python | C++ | Notes |
+|--------|-----|-------|
+| `feed(msg)` | `feed(BoundaryChunk&)→Result<void>` | Appends a cue; enforces type consistency |
+| `get_srt()` | `to_srt()→Result<string>` | Delegates to `SrtComposer`; does not reset state |
+| `cues` (attribute) | `cues()→vector<SubtitleCue>` | Returns copy |
+| — | `clear()` | Resets cues and type lock (no Python equivalent) |
+
+## Type enforcement
+
+Python stores `self.type` (first boundary type seen) and raises `ValueError` on
+mismatch. C++ returns `ErrorCode::invalid_argument` on mismatch. Both accept
+`WordBoundary` and `SentenceBoundary`, but all feeds to one `SubMaker` instance
+must use the same type.
+
+## Cue time calculation
+
+```python
+start = timedelta(microseconds=msg["offset"] / 10)
+end   = timedelta(microseconds=(msg["offset"] + msg["duration"]) / 10)
+```
+
+C++ equivalent:
+```cpp
+start = SubtitleTime::from_edge_ticks(boundary.offset_ticks)
+end   = SubtitleTime::from_edge_ticks(boundary.offset_ticks + boundary.duration_ticks)
+```
+
+## Text storage
+
+`boundary.text` is stored verbatim. `MetadataJsonParser` has already applied
+`xml_unescape()` (reference: `unescape()` in `communicate.py`). No text
+transformation happens in `SubMaker`.
+
+## State after `to_srt()`
+
+`get_srt()` does not modify state in Python — calling it multiple times returns
+the same output, and `feed()` can continue adding cues afterward. C++ `to_srt()`
+and `feed()` match this behavior.
+
+## Zero-duration cues
+
+A cue with `duration_ticks == 0` has `start == end`. `SubMaker::feed()` accepts
+it (creating the cue), but `SrtComposer` skips it in SRT output because
+`start >= end`.
+
+**Match exactly:** Yes for all documented behaviors.
+
+---
+
 # SubtitleTime — Edge Tick Conversion
 
 **Sources:** `reference/edge-tts/src/edge_tts/submaker.py`,

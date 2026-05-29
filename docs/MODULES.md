@@ -181,7 +181,7 @@ Owns timing conversion, subtitle cue modeling, and SRT composition.
 | `SubtitleTime.hpp` | `SubtitleTime` — wraps millisecond count. `from_edge_ticks(int64_t)` converts 100 ns ticks (`ticks / 10'000`) with integer truncation. `to_srt_timestamp()` formats `HH:MM:SS,mmm`. Rejects negative ticks. |
 | `SubtitleCue.hpp` | `SubtitleCue` — plain struct: `SubtitleTime start`, `SubtitleTime end`, `std::string text`. |
 | `SrtComposer.hpp` | `SrtComposer::compose(span<const SubtitleCue>)` — sorts by `(start, end)`, skips empty/whitespace text and `start >= end`, applies `make_legal_content` text cleanup, emits `{idx}\n{start} --> {end}\n{content}\n\n` blocks. |
-| `SubMaker.hpp` | `SubMaker` — accumulates boundary events into subtitle entries (legacy stub; will be updated to emit `SubtitleCue`). |
+| `SubMaker.hpp` | `SubMaker` — accumulates `BoundaryChunk` events into `SubtitleCue` values. `feed()` enforces type consistency; `to_srt()` composes via `SrtComposer`; `clear()` resets state. |
 
 ### SrtComposer reference contract
 
