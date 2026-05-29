@@ -13,6 +13,55 @@ reference:
 
 ---
 
+## Connection and Request IDs
+
+**Source:** `communicate.py connect_id()`, `__stream()`, `ssml_headers_plus_data()`
+
+**C++ implementation:** `communication::ConnectionMetadata` struct +
+`ConnectionMetadataFactory` class.
+
+### Reference
+
+```python
+def connect_id() -> str:
+    return uuid.uuid4().hex  # UUID v4 without hyphens, 32 lowercase hex chars
+```
+
+Usage in `__stream()`:
+```python
+async with session.ws_connect(
+    f"{WSS_URL}&ConnectionId={connect_id()}"  # ← URL query param
+    ...
+) as websocket:
+    # speech.config frame has NO request ID header
+    await send_ssml_request()  # calls connect_id() again for X-RequestId
+```
+
+Usage in `ssml_headers_plus_data()`:
+```python
+f"X-RequestId:{request_id}\r\n"  # ← protocol frame header
+```
+
+### Format
+
+| ID | Location | Format |
+|----|----------|--------|
+| `connection_id` | `&ConnectionId=` URL query param | UUID v4 without hyphens, 32 lowercase hex chars |
+| `request_id` | `X-RequestId:` SSML frame header | UUID v4 without hyphens, 32 lowercase hex chars |
+
+Both use `uuid.uuid4().hex` (Python), equivalent to C++ `IdGenerator::uuid_v4_without_hyphens()`.
+Two separate calls → always distinct values.
+
+The speech.config frame does NOT carry X-RequestId (only X-Timestamp and Path).
+
+### Lifecycle
+
+One `ConnectionMetadata` is produced per text chunk processed:
+- `connection_id` is appended to the WebSocket URL when opening the connection.
+- `request_id` is placed in the `X-RequestId` header of the SSML frame sent on that connection.
+
+---
+
 ## Service Constants
 
 All Edge TTS service constants live in `communication::EdgeServiceConfig` and
