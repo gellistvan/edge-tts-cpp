@@ -33,6 +33,7 @@ edge_tts_add_module_test(
     SOURCES
         common/test_main.cpp
         subtitles/test_srt_composer.cpp
+        subtitles/SubtitleTimeTests.cpp
     LIBRARIES edge_tts::subtitle
 )
 

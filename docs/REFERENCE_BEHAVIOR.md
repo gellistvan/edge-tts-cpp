@@ -588,6 +588,64 @@ are valid (some sentence boundaries have `duration = 0`).
 
 ---
 
+# SubtitleTime — Edge Tick Conversion
+
+**Sources:** `reference/edge-tts/src/edge_tts/submaker.py`,
+`reference/edge-tts/src/edge_tts/srt_composer.py`
+
+**C++ implementation:** `subtitles::SubtitleTime` (`SubtitleTime.hpp` / `SubtitleTime.cpp`).
+
+## Tick-to-millisecond conversion
+
+Python (`submaker.py`):
+```python
+start = timedelta(microseconds=msg["offset"] / 10)
+```
+- `msg["offset"] / 10` — Python 3 **float** division gives microseconds.
+- `timedelta(microseconds=float_val)` stores the nearest integer microsecond
+  using **banker's rounding** (round-half-to-even) for the fractional part.
+- The SRT composer then applies `timedelta.microseconds // 1000` (floor division)
+  to get milliseconds.
+
+C++ (`SubtitleTime::from_edge_ticks(ticks)`):
+```cpp
+milliseconds = ticks / 10'000  // integer truncation
+```
+This is equivalent to `ticks // 10 // 1000` and matches Python for all values
+where the sub-microsecond fractional part does not round the microsecond count
+across a millisecond boundary.  A ±1 ms difference can occur only when
+`ticks % 10'000 ≥ 9'995` — extremely rare in practice.  The C++ integer
+truncation is documented behavior; callers should not rely on sub-millisecond
+precision.
+
+**Negative ticks:** `from_edge_ticks` returns `ErrorCode::invalid_argument`.
+The Python reference allows negative `timedelta` values but the SRT composer
+always skips subtitles whose start time is negative.
+
+## SRT timestamp format
+
+Source: `srt_composer.timedelta_to_srt_timestamp()`
+
+```
+HH:MM:SS,mmm
+```
+
+- **Comma** separator between seconds and milliseconds (not a dot).
+- Each component is zero-padded: HH minimum 2 digits, MM exactly 2, SS exactly 2,
+  mmm exactly 3.
+- Hours are **not** capped at 99 — values ≥ 100 hours expand the hours field.
+
+Doctest from reference:
+```python
+>>> timedelta_to_srt_timestamp(timedelta(hours=1, minutes=23, seconds=4))
+'01:23:04,000'
+```
+
+**Match exactly:** Yes for all tick values where integer truncation equals Python's
+float-division + banker's-rounding chain (i.e. all practical values).
+
+---
+
 # Subtitles
 
 **Sources:** `reference/edge-tts/src/edge_tts/submaker.py`, `reference/edge-tts/src/edge_tts/srt_composer.py`
