@@ -122,11 +122,48 @@ are idempotent.
 **Headers:** `include/edge_tts/serialization/`
 
 Owns the Edge TTS WebSocket protocol format: SSML message construction,
-speech-config payloads, and protocol/connection token metadata.
+speech-config payloads, protocol/connection token metadata, and JSON parsing
+of the voice-list response.
 
-**Allowed dependencies:** `edge_tts::core`, `edge_tts::common`.
+| File | Description |
+|------|-------------|
+| `SsmlBuilder.hpp` | Builds SSML `<speak>` documents from `TtsConfig` + raw text. |
+| `EdgeProtocol.hpp` | Builds WebSocket text frames (speech.config, ssml path). |
+| `EdgeToken.hpp` | Generates `Sec-MS-GEC` DRM tokens. |
+| `XmlEscaper.hpp` | `xml_escape` / `xml_unescape` matching `xml.sax.saxutils`. |
+| `TextNormalizer.hpp` | UTF-8 validation + control-character replacement. |
+| `TextChunker.hpp` | Splits text into 4096-byte XML-escaped chunks. |
+| `VoiceJsonParser.hpp` | Parses the voice-list JSON array into `std::vector<core::Voice>`. No HTTP dependency. |
+| `ProtocolMessage.hpp` | `ProtocolMessage` struct: `vector<pair<string,string>>` headers + string body. Header lookup via `header(name)`. |
+| `ProtocolParser.hpp` | Parses an Edge TTS WebSocket text frame (`\r\n\r\n`-delimited) into a `ProtocolMessage`. |
+| `ProtocolSerializer.hpp` | Serializes a `ProtocolMessage` into an Edge TTS WebSocket text frame string. |
+| `MetadataJsonParser.hpp` | Parses `audio.metadata` JSON payloads into `vector<core::BoundaryChunk>`. Handles SessionEnd skip, unknown type errors, and XML-unescapes `Text`. |
+
+**Third-party dependency:** `nlohmann/json` (header-only, submodule at
+`submodules/json`).  Linked to `edge_tts_serialization` and
+`edge_tts_communication` via the optional block in the top-level
+`CMakeLists.txt`.
+
+**Allowed dependencies:** `edge_tts::core`, `edge_tts::common`, `nlohmann_json::nlohmann_json`.
 
 **Forbidden:** networking (HTTP/WebSocket I/O).
+
+### `VoiceJsonParser` — voice list JSON contract
+
+`VoiceJsonParser::parse(string_view json)` returns
+`Result<vector<core::Voice>>`.
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Malformed JSON | `Result::fail` with `ErrorCode::parse_error` |
+| Root is not an array | `Result::fail` with `ErrorCode::parse_error` |
+| Array element is not an object | `Result::fail` with `ErrorCode::parse_error` |
+| Missing required field | `Result::fail` with `ErrorCode::parse_error` |
+| Unrecognised `Gender` value | `Result::fail` with `ErrorCode::parse_error` |
+| Missing `VoiceTag` | Defaults `content_categories` and `voice_personalities` to `[]` |
+| Missing `VoiceTag` sub-lists | Each defaults to `[]` independently |
+| Unknown fields | Silently ignored |
+| Ordering | Wire order preserved; CLI layer is responsible for sorting by `ShortName` |
 
 ---
 
@@ -137,8 +174,26 @@ speech-config payloads, and protocol/connection token metadata.
 **Headers:** `include/edge_tts/subtitles/`
 **Sources:** `src/subtitles/`
 
-Owns `SubtitleEntry` (start/end/text), `SubMaker` (accumulates boundary events
-into subtitle cues), and `SrtComposer` (renders cues to SRT text).
+Owns timing conversion, subtitle cue modeling, and SRT composition.
+
+| File | Description |
+|------|-------------|
+| `SubtitleTime.hpp` | `SubtitleTime` — wraps millisecond count. `from_edge_ticks(int64_t)` converts 100 ns ticks (`ticks / 10'000`) with integer truncation. `to_srt_timestamp()` formats `HH:MM:SS,mmm`. Rejects negative ticks. |
+| `SubtitleCue.hpp` | `SubtitleCue` — plain struct: `SubtitleTime start`, `SubtitleTime end`, `std::string text`. |
+| `SrtComposer.hpp` | `SrtComposer::compose(span<const SubtitleCue>)` — sorts by `(start, end)`, skips empty/whitespace text and `start >= end`, applies `make_legal_content` text cleanup, emits `{idx}\n{start} --> {end}\n{content}\n\n` blocks. |
+| `SubMaker.hpp` | `SubMaker` — accumulates `BoundaryChunk` events into `SubtitleCue` values. `feed()` enforces type consistency; `to_srt()` composes via `SrtComposer`; `clear()` resets state. |
+
+### SrtComposer reference contract
+
+| Behaviour | Reference source |
+|-----------|-----------------|
+| Sort order | `(start, end)` ascending — `Subtitle.__lt__` in srt_composer.py |
+| Skip: `start >= end` | `SUBTITLE_SKIP_CONDITIONS[2]` |
+| Skip: empty/whitespace content | `SUBTITLE_SKIP_CONDITIONS[0]`: `not sub.content.strip()` |
+| Text cleanup | `make_legal_content`: strip leading/trailing `\n`; collapse `\n\n+` → `\n` |
+| Block format | `"{idx}\n{start} --> {end}\n{content}\n\n"` (LF only) |
+| Index after skip | Skipped cues do not consume an index — contiguous from 1 |
+| Fixture | `tests/subtitles/fixtures/basic.srt` |
 
 **Allowed dependencies:** `edge_tts::core`, `edge_tts::common` (transitively via core).
 
@@ -166,8 +221,17 @@ spawning system executables — no direct linking to FFmpeg libraries.
 **Headers:** `include/edge_tts/communication/`
 
 Public facade (`Communicate`), voice-list service (`HttpVoiceService`,
-`VoicesManager`), and WebSocket transport abstraction
-(`Transport`, `WebSocketTransport`).
+`VoicesManager`), and WebSocket transport abstraction.  Also owns all
+service infrastructure and transport boundary types.
+
+| File | Description |
+|------|-------------|
+| `EdgeServiceConfig.hpp` | All hard-coded Edge TTS constants (endpoints, token, version, headers, paths). `default_edge_service_config()` is the single source of truth. |
+| `EdgeTokenProvider.hpp` | Generates `Sec-MS-GEC` tokens from injectable `IClock` + `EdgeServiceConfig`. Uses `common::sha256_hex_upper`. |
+| `ConnectionMetadata.hpp` | `ConnectionMetadata` struct (connection_id + request_id, both 32-char lowercase hex UUID v4 without hyphens). `ConnectionMetadataFactory` wraps `IdGenerator`. |
+| `HttpTypes.hpp` | `HttpRequest` and `HttpResponse` plain data types. |
+| `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
+| `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
 
 **Allowed dependencies:** all modules below it in the dependency graph.
 

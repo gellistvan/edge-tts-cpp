@@ -11,6 +11,7 @@ edge_tts_add_module_test(
         common/HexTests.cpp
         common/IdGeneratorTests.cpp
         common/Utf8Tests.cpp
+        common/Sha256Tests.cpp
     LIBRARIES edge_tts::common
 )
 
@@ -33,6 +34,9 @@ edge_tts_add_module_test(
     SOURCES
         common/test_main.cpp
         subtitles/test_srt_composer.cpp
+        subtitles/SubtitleTimeTests.cpp
+        subtitles/SrtComposerTests.cpp
+        subtitles/SubMakerTests.cpp
     LIBRARIES edge_tts::subtitle
 )
 
@@ -44,12 +48,21 @@ edge_tts_add_module_test(
         serialization/TextNormalizerTests.cpp
         serialization/TextChunkerTests.cpp
         serialization/SsmlBuilderTests.cpp
+        serialization/VoiceJsonParserTests.cpp
+        serialization/ProtocolFrameTests.cpp
+        serialization/MetadataJsonParserTests.cpp
     LIBRARIES edge_tts::serialization
 )
 
 edge_tts_add_module_test(
     NAME communication
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        communication/EdgeServiceConfigTests.cpp
+        communication/EdgeTokenProviderTests.cpp
+        communication/ConnectionMetadataTests.cpp
+        communication/HttpClientInterfaceTests.cpp
+        communication/VoiceServiceTests.cpp
     LIBRARIES edge_tts::communication
 )
 

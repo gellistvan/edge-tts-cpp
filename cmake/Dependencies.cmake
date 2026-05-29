@@ -11,9 +11,10 @@ function(edge_tts_setup_dependencies)
     #   submodules/googletest
     #
     # Example:
-    # if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/json/CMakeLists.txt")
-    #     add_subdirectory("${CMAKE_SOURCE_DIR}/submodules/json" EXCLUDE_FROM_ALL)
-    # endif()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/json/CMakeLists.txt")
+        set(JSON_BuildTests OFF CACHE INTERNAL "")
+        add_subdirectory("${CMAKE_SOURCE_DIR}/submodules/json" EXCLUDE_FROM_ALL)
+    endif()
 
     if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/googletest/CMakeLists.txt")
         add_subdirectory("${CMAKE_SOURCE_DIR}/submodules/googletest" EXCLUDE_FROM_ALL)

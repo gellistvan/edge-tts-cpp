@@ -139,6 +139,159 @@ Enter before proceeding.
 
 ---
 
+# Edge Service Constants
+
+**Sources:** `reference/edge-tts/src/edge_tts/constants.py`,
+`communicate.py`, `drm.py`, `voices.py`
+
+**C++ implementation:** `communication::EdgeServiceConfig` struct +
+`default_edge_service_config()` factory in
+`src/communication/EdgeServiceConfig.cpp`.
+
+All Edge TTS hard-coded constants are centralized here. Networking and
+serialization code must receive them via `EdgeServiceConfig`, not inline them.
+
+See `docs/PROTOCOL_NOTES.md` — Service Constants section — for the full value
+table.
+
+**Match exactly:** Yes — all values derived verbatim from the reference.
+
+---
+
+# Protocol Text Frame Parsing and Serialization
+
+**Sources:** `reference/edge-tts/src/edge_tts/communicate.py`
+(`ssml_headers_plus_data`, `send_command_request`, `get_headers_and_data`)
+
+**C++ implementation:** `serialization::ProtocolMessage`, `serialization::ProtocolParser`,
+`serialization::ProtocolSerializer`.
+
+**Wire format:** `Name:Value\r\n` per header, `\r\n\r\n` separator, body verbatim.
+No space between header name and colon; no space between colon and value.
+
+**Parsing divergence from reference:** The reference uses `data.find(b"\r\n\r\n") + 2`
+for the body offset, leaving a leading `\r\n` that Python's `json.loads` ignores.
+The C++ parser uses `+ 4` to cleanly skip the full separator.
+
+**Header ordering:** Preserved in wire order. Duplicate header names are kept as
+separate entries (unlike the Python dict which overwrites earlier values).
+
+**LF-only frames:** Rejected — reference splits exclusively on `\r\n`.
+
+**Match exactly (serializer):** Yes — format matches Python output character-for-character.
+**Match exactly (parser):** Functionally equivalent — same result, cleaner body offset.
+
+---
+
+# Metadata JSON Parsing
+
+**Sources:** `reference/edge-tts/src/edge_tts/communicate.py` (`__parse_metadata`)
+
+**C++ implementation:** `serialization::MetadataJsonParser`
+
+**JSON root:** Object with `"Metadata"` array.
+
+**Handled types:** `"WordBoundary"` → `BoundaryEventType::WordBoundary`;
+`"SentenceBoundary"` → `BoundaryEventType::SentenceBoundary`.
+
+**Skipped types:** `"SessionEnd"` (reference: `continue`).
+
+**Unknown types:** `parse_error` (reference: `UnknownResponse`).
+
+**XML unescape:** Applied to `Data.text.Text` field before storing in `BoundaryChunk::text`.
+
+**Offset compensation:** NOT applied in the parser. The communication layer adds
+`offset_compensation` before yielding to callers (reference adds it inside
+`__parse_metadata` using `self.state["offset_compensation"]`).
+
+**C++ vs Python difference:** The Python `__parse_metadata` returns on the FIRST
+handled item. The C++ `MetadataJsonParser::parse()` collects ALL boundary chunks
+from the array into a vector — more correct for frames that could contain
+multiple items.
+
+**Match exactly:** Functionally equivalent. Same event handling, same XML unescape,
+same error conditions.
+
+---
+
+# Voice JSON Parsing
+
+**Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/typing.py`
+
+**C++ implementation:** `serialization::VoiceJsonParser` (`VoiceJsonParser.hpp` /
+`VoiceJsonParser.cpp`).  No HTTP dependency — only operates on a raw JSON string.
+
+**Root type:** JSON array (reference `list_voices()` calls `json.loads()` on the
+response body and treats the result as a list).
+
+**Normalisation applied by `voices.py`** (replicated in `VoiceJsonParser`):
+- If `VoiceTag` key is absent, default it to `{}`.
+- If `VoiceTag.ContentCategories` is absent, default it to `[]`.
+- If `VoiceTag.VoicePersonalities` is absent, default it to `[]`.
+
+**Ordering:** `list_voices()` returns the array in the order the service sends
+it.  Sorting by `ShortName` is performed only in `_print_voices()` for CLI
+display.  `VoiceJsonParser::parse()` therefore preserves wire order.
+
+**Required fields** (missing any → `parse_error`):
+`Name`, `ShortName`, `Gender`, `Locale`, `SuggestedCodec`, `FriendlyName`, `Status`.
+
+**`Gender` values** (case-sensitive): `"Female"`, `"Male"`.  Any other value is
+a `parse_error`.
+
+**`Language` derivation:** `Locale.split('-')[0]` — first segment before the
+first hyphen.
+
+**Unknown fields:** silently ignored (reference accesses only known keys).
+
+**Match exactly:** Yes.
+
+---
+
+# VoiceService — HTTP Voice List
+
+**Sources:** `voices.py`, `util.py`, `constants.py`
+
+**C++ implementation:** `communication::VoiceService` (`VoiceService.hpp` /
+`VoiceService.cpp`).
+
+## HTTP request
+
+| Property | Reference | C++ |
+|----------|-----------|-----|
+| Method | `session.get(...)` | `"GET"` |
+| URL | `VOICE_LIST + &Sec-MS-GEC=... + &Sec-MS-GEC-Version=...` | `config.voices_endpoint` (Sec-MS-GEC added in future) |
+| User-Agent | `BASE_HEADERS["User-Agent"]` | `config.user_agent` |
+| Accept | `VOICE_HEADERS["Accept"] = "*/*"` | `"*/*"` |
+| Accept-Language | `BASE_HEADERS["Accept-Language"] = "en-US,en;q=0.9"` | `"en-US,en;q=0.9"` |
+| Accept-Encoding | `BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"` | `"gzip, deflate, br, zstd"` |
+
+## Response handling
+
+- 200 → parse body via `VoiceJsonParser` (no JSON code in communication layer)
+- Non-200 → `ErrorCode::service_error` with status code in context
+- Transport failure → propagated as-is from `IHttpClient`
+
+## Ordering
+
+`list_voices()` returns voices in **wire order** (no sorting). The reference's
+`_print_voices()` sorts by `ShortName` for CLI display only — that is the
+caller's responsibility.
+
+## Filtering
+
+The reference `list_voices()` returns all voices; filtering is done by
+`VoicesManager.find()` separately. `VoiceService::list_voices(VoiceFilter)`
+applies client-side filtering as a C++ convenience:
+- `locale` → exact `Locale` match
+- `gender` → exact `Gender` match
+- `short_name` → exact `ShortName` match
+- All set fields are ANDed
+
+**Match exactly:** Yes for fetch/parse/ordering. `VoiceFilter` is a C++ extension.
+
+---
+
 # Voice Listing
 
 **Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/constants.py`
@@ -411,6 +564,22 @@ boundary; headers are split on `\r\n` then on the first `:`.
 
 ---
 
+# EdgeTokenProvider — Sec-MS-GEC Generation
+
+**Source:** `reference/edge-tts/src/edge_tts/drm.py` (`DRM.generate_sec_ms_gec()`)
+
+**C++ implementation:** `communication::EdgeTokenProvider`. SHA-256 helper:
+`common::sha256_hex_upper`.
+
+**No wall-clock dependency in tests:** `EdgeTokenProvider` accepts `const IClock&`,
+allowing `common::FixedClock` for deterministic tests.
+
+**Match exactly:** Yes — algorithm step-by-step identical to Python reference.
+Deterministic test vectors prove compatibility (see `PROTOCOL_NOTES.md` —
+Sec-MS-GEC Token Generation).
+
+---
+
 # DRM / Sec-MS-GEC
 
 **Source:** `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/constants.py`
@@ -495,6 +664,121 @@ with `offset_compensation` before yielding.
 are valid (some sentence boundaries have `duration = 0`).
 
 **Match exactly:** Yes.
+
+---
+
+# SubMaker — Boundary Event Accumulation
+
+**Source:** `reference/edge-tts/src/edge_tts/submaker.py`
+
+**C++ implementation:** `subtitles::SubMaker` (`SubMaker.hpp` / `SubMaker.cpp`).
+
+## Public methods
+
+| Python | C++ | Notes |
+|--------|-----|-------|
+| `feed(msg)` | `feed(BoundaryChunk&)→Result<void>` | Appends a cue; enforces type consistency |
+| `get_srt()` | `to_srt()→Result<string>` | Delegates to `SrtComposer`; does not reset state |
+| `cues` (attribute) | `cues()→vector<SubtitleCue>` | Returns copy |
+| — | `clear()` | Resets cues and type lock (no Python equivalent) |
+
+## Type enforcement
+
+Python stores `self.type` (first boundary type seen) and raises `ValueError` on
+mismatch. C++ returns `ErrorCode::invalid_argument` on mismatch. Both accept
+`WordBoundary` and `SentenceBoundary`, but all feeds to one `SubMaker` instance
+must use the same type.
+
+## Cue time calculation
+
+```python
+start = timedelta(microseconds=msg["offset"] / 10)
+end   = timedelta(microseconds=(msg["offset"] + msg["duration"]) / 10)
+```
+
+C++ equivalent:
+```cpp
+start = SubtitleTime::from_edge_ticks(boundary.offset_ticks)
+end   = SubtitleTime::from_edge_ticks(boundary.offset_ticks + boundary.duration_ticks)
+```
+
+## Text storage
+
+`boundary.text` is stored verbatim. `MetadataJsonParser` has already applied
+`xml_unescape()` (reference: `unescape()` in `communicate.py`). No text
+transformation happens in `SubMaker`.
+
+## State after `to_srt()`
+
+`get_srt()` does not modify state in Python — calling it multiple times returns
+the same output, and `feed()` can continue adding cues afterward. C++ `to_srt()`
+and `feed()` match this behavior.
+
+## Zero-duration cues
+
+A cue with `duration_ticks == 0` has `start == end`. `SubMaker::feed()` accepts
+it (creating the cue), but `SrtComposer` skips it in SRT output because
+`start >= end`.
+
+**Match exactly:** Yes for all documented behaviors.
+
+---
+
+# SubtitleTime — Edge Tick Conversion
+
+**Sources:** `reference/edge-tts/src/edge_tts/submaker.py`,
+`reference/edge-tts/src/edge_tts/srt_composer.py`
+
+**C++ implementation:** `subtitles::SubtitleTime` (`SubtitleTime.hpp` / `SubtitleTime.cpp`).
+
+## Tick-to-millisecond conversion
+
+Python (`submaker.py`):
+```python
+start = timedelta(microseconds=msg["offset"] / 10)
+```
+- `msg["offset"] / 10` — Python 3 **float** division gives microseconds.
+- `timedelta(microseconds=float_val)` stores the nearest integer microsecond
+  using **banker's rounding** (round-half-to-even) for the fractional part.
+- The SRT composer then applies `timedelta.microseconds // 1000` (floor division)
+  to get milliseconds.
+
+C++ (`SubtitleTime::from_edge_ticks(ticks)`):
+```cpp
+milliseconds = ticks / 10'000  // integer truncation
+```
+This is equivalent to `ticks // 10 // 1000` and matches Python for all values
+where the sub-microsecond fractional part does not round the microsecond count
+across a millisecond boundary.  A ±1 ms difference can occur only when
+`ticks % 10'000 ≥ 9'995` — extremely rare in practice.  The C++ integer
+truncation is documented behavior; callers should not rely on sub-millisecond
+precision.
+
+**Negative ticks:** `from_edge_ticks` returns `ErrorCode::invalid_argument`.
+The Python reference allows negative `timedelta` values but the SRT composer
+always skips subtitles whose start time is negative.
+
+## SRT timestamp format
+
+Source: `srt_composer.timedelta_to_srt_timestamp()`
+
+```
+HH:MM:SS,mmm
+```
+
+- **Comma** separator between seconds and milliseconds (not a dot).
+- Each component is zero-padded: HH minimum 2 digits, MM exactly 2, SS exactly 2,
+  mmm exactly 3.
+- Hours are **not** capped at 99 — values ≥ 100 hours expand the hours field.
+
+Doctest from reference:
+```python
+>>> timedelta_to_srt_timestamp(timedelta(hours=1, minutes=23, seconds=4))
+'01:23:04,000'
+```
+
+**Match exactly:** Yes for all tick values where integer truncation equals Python's
+float-division + banker's-rounding chain (i.e. all practical values).
 
 ---
 

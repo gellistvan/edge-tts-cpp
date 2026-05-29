@@ -32,6 +32,7 @@ edge_tts_add_module(
         src/common/Hex.cpp
         src/common/IdGenerator.cpp
         src/common/Utf8.cpp
+        src/common/Sha256.cpp
 )
 
 edge_tts_add_module(
@@ -54,6 +55,11 @@ edge_tts_add_module(
         src/serialization/TextNormalizer.cpp
         src/serialization/TextChunker.cpp
         src/serialization/SsmlBuilder.cpp
+        src/serialization/VoiceJsonParser.cpp
+        src/serialization/ProtocolMessage.cpp
+        src/serialization/ProtocolParser.cpp
+        src/serialization/ProtocolSerializer.cpp
+        src/serialization/MetadataJsonParser.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::common
@@ -64,6 +70,7 @@ edge_tts_add_module(
     SOURCES
         src/subtitles/SrtComposer.cpp
         src/subtitles/SubMaker.cpp
+        src/subtitles/SubtitleTime.cpp
     PUBLIC_DEPS edge_tts::core
 )
 
@@ -78,6 +85,11 @@ edge_tts_add_module(
     NAME communication
     SOURCES
         src/communication/Communicate.cpp
+        src/communication/ConnectionMetadata.cpp
+        src/communication/FakeHttpClient.cpp
+        src/communication/VoiceService.cpp
+        src/communication/EdgeServiceConfig.cpp
+        src/communication/EdgeTokenProvider.cpp
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
         src/communication/WebSocketTransport.cpp
