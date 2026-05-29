@@ -13,6 +13,42 @@ reference:
 
 ---
 
+## Service Constants
+
+All Edge TTS service constants live in `communication::EdgeServiceConfig` and
+are populated by `default_edge_service_config()` in
+`src/communication/EdgeServiceConfig.cpp`.
+
+**Reference files inspected:**
+- `constants.py` — BASE_URL, TRUSTED_CLIENT_TOKEN, WSS_URL, VOICE_LIST,
+  CHROMIUM_FULL_VERSION, SEC_MS_GEC_VERSION, BASE_HEADERS, WSS_HEADERS
+- `communicate.py` — protocol frame Path values, content types
+- `drm.py` — trusted client token usage in SHA-256 token generation
+- `voices.py` — voice list endpoint usage
+
+| Field | Value | Reference |
+|-------|-------|-----------|
+| `websocket_endpoint` | `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py WSS_URL` |
+| `voices_endpoint` | `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py VOICE_LIST` |
+| `trusted_client_token` | `6A5AA1D4EAFF4E9FB37E23D68491D6F4` | `constants.py TRUSTED_CLIENT_TOKEN` |
+| `sec_ms_gec_version` | `1-143.0.3650.75` | `constants.py SEC_MS_GEC_VERSION` |
+| `origin` | `chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold` | `constants.py WSS_HEADERS["Origin"]` |
+| `user_agent` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/143.0.0.0 ... Edg/143.0.0.0` | `constants.py BASE_HEADERS["User-Agent"]` |
+| `speech_config_path` | `speech.config` | `communicate.py send_command_request()` |
+| `ssml_path` | `ssml` | `communicate.py ssml_headers_plus_data()` |
+| `audio_metadata_path` | `audio.metadata` | `communicate.py __stream()` |
+| `turn_end_path` | `turn.end` | `communicate.py __stream()` |
+
+**Case difference:** `WSS_URL` uses `TrustedClientToken` (mixed case) while
+`VOICE_LIST` uses `trustedclienttoken` (lower case) — this matches the
+reference exactly and must not be normalized.
+
+**Dynamic params appended by callers** (not in config):
+- WebSocket: `&ConnectionId=<uuid>&Sec-MS-GEC=<sha256>&Sec-MS-GEC-Version=<ver>`
+- Voice list: `&Sec-MS-GEC=<sha256>&Sec-MS-GEC-Version=<ver>`
+
+---
+
 ## UTC usage
 
 Both modules use UTC exclusively:

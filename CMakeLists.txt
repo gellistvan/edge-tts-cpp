@@ -84,6 +84,7 @@ edge_tts_add_module(
     NAME communication
     SOURCES
         src/communication/Communicate.cpp
+        src/communication/EdgeServiceConfig.cpp
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
         src/communication/WebSocketTransport.cpp

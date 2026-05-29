@@ -55,7 +55,9 @@ edge_tts_add_module_test(
 
 edge_tts_add_module_test(
     NAME communication
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        communication/EdgeServiceConfigTests.cpp
     LIBRARIES edge_tts::communication
 )
 

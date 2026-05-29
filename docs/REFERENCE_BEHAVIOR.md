@@ -139,6 +139,25 @@ Enter before proceeding.
 
 ---
 
+# Edge Service Constants
+
+**Sources:** `reference/edge-tts/src/edge_tts/constants.py`,
+`communicate.py`, `drm.py`, `voices.py`
+
+**C++ implementation:** `communication::EdgeServiceConfig` struct +
+`default_edge_service_config()` factory in
+`src/communication/EdgeServiceConfig.cpp`.
+
+All Edge TTS hard-coded constants are centralized here. Networking and
+serialization code must receive them via `EdgeServiceConfig`, not inline them.
+
+See `docs/PROTOCOL_NOTES.md` — Service Constants section — for the full value
+table.
+
+**Match exactly:** Yes — all values derived verbatim from the reference.
+
+---
+
 # Protocol Text Frame Parsing and Serialization
 
 **Sources:** `reference/edge-tts/src/edge_tts/communicate.py`
