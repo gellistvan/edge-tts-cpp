@@ -26,6 +26,9 @@ class SubtitleTime {
     explicit constexpr SubtitleTime(std::int64_t ms) noexcept : millis_(ms) {}
 
 public:
+    // Default-constructs to time zero (0 ms), allowing SubtitleCue to be
+    // aggregate-initialized and stored in containers without a factory call.
+    constexpr SubtitleTime() noexcept : millis_(0) {}
     // Constructs from Edge TTS 100 ns ticks.
     // Returns ErrorCode::invalid_argument for negative ticks.
     [[nodiscard]] static common::Result<SubtitleTime>
