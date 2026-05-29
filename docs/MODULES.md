@@ -174,8 +174,26 @@ of the voice-list response.
 **Headers:** `include/edge_tts/subtitles/`
 **Sources:** `src/subtitles/`
 
-Owns `SubtitleEntry` (start/end/text), `SubMaker` (accumulates boundary events
-into subtitle cues), and `SrtComposer` (renders cues to SRT text).
+Owns timing conversion, subtitle cue modeling, and SRT composition.
+
+| File | Description |
+|------|-------------|
+| `SubtitleTime.hpp` | `SubtitleTime` — wraps millisecond count. `from_edge_ticks(int64_t)` converts 100 ns ticks (`ticks / 10'000`) with integer truncation. `to_srt_timestamp()` formats `HH:MM:SS,mmm`. Rejects negative ticks. |
+| `SubtitleCue.hpp` | `SubtitleCue` — plain struct: `SubtitleTime start`, `SubtitleTime end`, `std::string text`. |
+| `SrtComposer.hpp` | `SrtComposer::compose(span<const SubtitleCue>)` — sorts by `(start, end)`, skips empty/whitespace text and `start >= end`, applies `make_legal_content` text cleanup, emits `{idx}\n{start} --> {end}\n{content}\n\n` blocks. |
+| `SubMaker.hpp` | `SubMaker` — accumulates `BoundaryChunk` events into `SubtitleCue` values. `feed()` enforces type consistency; `to_srt()` composes via `SrtComposer`; `clear()` resets state. |
+
+### SrtComposer reference contract
+
+| Behaviour | Reference source |
+|-----------|-----------------|
+| Sort order | `(start, end)` ascending — `Subtitle.__lt__` in srt_composer.py |
+| Skip: `start >= end` | `SUBTITLE_SKIP_CONDITIONS[2]` |
+| Skip: empty/whitespace content | `SUBTITLE_SKIP_CONDITIONS[0]`: `not sub.content.strip()` |
+| Text cleanup | `make_legal_content`: strip leading/trailing `\n`; collapse `\n\n+` → `\n` |
+| Block format | `"{idx}\n{start} --> {end}\n{content}\n\n"` (LF only) |
+| Index after skip | Skipped cues do not consume an index — contiguous from 1 |
+| Fixture | `tests/subtitles/fixtures/basic.srt` |
 
 **Allowed dependencies:** `edge_tts::core`, `edge_tts::common` (transitively via core).
 
