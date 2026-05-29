@@ -32,6 +32,7 @@ edge_tts_add_module(
         src/common/Hex.cpp
         src/common/IdGenerator.cpp
         src/common/Utf8.cpp
+        src/common/Sha256.cpp
 )
 
 edge_tts_add_module(
@@ -85,6 +86,7 @@ edge_tts_add_module(
     SOURCES
         src/communication/Communicate.cpp
         src/communication/EdgeServiceConfig.cpp
+        src/communication/EdgeTokenProvider.cpp
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
         src/communication/WebSocketTransport.cpp

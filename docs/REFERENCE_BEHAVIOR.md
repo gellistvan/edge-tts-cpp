@@ -520,6 +520,22 @@ boundary; headers are split on `\r\n` then on the first `:`.
 
 ---
 
+# EdgeTokenProvider — Sec-MS-GEC Generation
+
+**Source:** `reference/edge-tts/src/edge_tts/drm.py` (`DRM.generate_sec_ms_gec()`)
+
+**C++ implementation:** `communication::EdgeTokenProvider`. SHA-256 helper:
+`common::sha256_hex_upper`.
+
+**No wall-clock dependency in tests:** `EdgeTokenProvider` accepts `const IClock&`,
+allowing `common::FixedClock` for deterministic tests.
+
+**Match exactly:** Yes — algorithm step-by-step identical to Python reference.
+Deterministic test vectors prove compatibility (see `PROTOCOL_NOTES.md` —
+Sec-MS-GEC Token Generation).
+
+---
+
 # DRM / Sec-MS-GEC
 
 **Source:** `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/constants.py`

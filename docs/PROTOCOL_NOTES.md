@@ -49,6 +49,73 @@ reference exactly and must not be normalized.
 
 ---
 
+## Sec-MS-GEC Token Generation
+
+**Source:** `drm.py DRM.generate_sec_ms_gec()`
+
+**C++ implementation:** `communication::EdgeTokenProvider` (`EdgeTokenProvider.hpp` /
+`EdgeTokenProvider.cpp`). SHA-256 helper: `common::sha256_hex_upper` (`Sha256.hpp` /
+`Sha256.cpp`).
+
+### Algorithm (exact Python reference)
+
+```python
+# drm.py
+WIN_EPOCH = 11644473600  # seconds from 1601-01-01 to 1970-01-01 UTC
+S_TO_NS = 1e9
+
+ticks  = dt.now(tz.utc).timestamp() + DRM.clock_skew_seconds   # (1)
+ticks += WIN_EPOCH                                               # (2)
+ticks -= ticks % 300                                            # (3)
+ticks *= S_TO_NS / 100                                          # (4) = 1e7
+str_to_hash = f"{ticks:.0f}{TRUSTED_CLIENT_TOKEN}"              # (5)
+return hashlib.sha256(str_to_hash.encode("ascii")).hexdigest().upper()  # (6)
+```
+
+C++ steps:
+
+1. Get `double unix_seconds` from `IClock::now().time_since_epoch()`.
+2. `double ticks = unix_seconds + 11644473600.0`
+3. `ticks -= std::fmod(ticks, 300.0)` — rounds down to nearest 5-minute boundary.
+4. `ticks *= 1e9 / 100.0` — same IEEE 754 double arithmetic as Python.
+5. `snprintf(buf, "%.0f", ticks)` — same formatting as Python's `f"{ticks:.0f}"`.
+6. Concatenate with `trusted_client_token` from `EdgeServiceConfig`.
+7. `common::sha256_hex_upper(str_to_hash)` — SHA-256 (FIPS 180-4), uppercase hex.
+
+### Float arithmetic compatibility
+
+The `%.0f` format of both Python and C uses IEEE 754 round-to-nearest-even.
+After step 3, `ticks` is an exact multiple of 300 (representable exactly in
+double). After step 4, `ticks` may not be exactly representable, but both
+runtimes round identically, producing the same string in step 5.
+
+**Deterministic test proof:** three Python-generated fixed-clock vectors are
+tested in `EdgeTokenProviderTests.cpp`:
+
+| Unix timestamp | Expected token (uppercase hex SHA-256) |
+|---|---|
+| 0 | `7ECB79D14E3AA576D2D79E6D487A1388156D91E614B1BE11C64226A29BC8DD8C` |
+| 1000000000 | `6594DCF2D741A251B0EDFB71C0034EBFEBF6D413CC1EA5D1B23E60B118A2F0E1` |
+| 1700000000 | `42301B335578FEFDAE2637DED1ABD614505D432559EC08032B82048483726AFF` |
+
+### Bucket boundary
+
+Two timestamps in the same 300-second window produce the same token. The first
+unix timestamp that starts a new window is the one where `(unix + WIN_EPOCH) % 300 == 0`.
+
+### Clock skew
+
+The Python reference accumulates `DRM.clock_skew_seconds` on 403 responses.
+In C++, the `IClock` abstraction allows the communication layer to inject a
+corrected clock without modifying `EdgeTokenProvider`.
+
+### sec_ms_gec_version
+
+`EdgeTokenProvider::sec_ms_gec_version()` returns
+`config.sec_ms_gec_version` verbatim (= `"1-143.0.3650.75"`). No computation.
+
+---
+
 ## UTC usage
 
 Both modules use UTC exclusively:
