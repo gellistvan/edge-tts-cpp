@@ -122,11 +122,44 @@ are idempotent.
 **Headers:** `include/edge_tts/serialization/`
 
 Owns the Edge TTS WebSocket protocol format: SSML message construction,
-speech-config payloads, and protocol/connection token metadata.
+speech-config payloads, protocol/connection token metadata, and JSON parsing
+of the voice-list response.
 
-**Allowed dependencies:** `edge_tts::core`, `edge_tts::common`.
+| File | Description |
+|------|-------------|
+| `SsmlBuilder.hpp` | Builds SSML `<speak>` documents from `TtsConfig` + raw text. |
+| `EdgeProtocol.hpp` | Builds WebSocket text frames (speech.config, ssml path). |
+| `EdgeToken.hpp` | Generates `Sec-MS-GEC` DRM tokens. |
+| `XmlEscaper.hpp` | `xml_escape` / `xml_unescape` matching `xml.sax.saxutils`. |
+| `TextNormalizer.hpp` | UTF-8 validation + control-character replacement. |
+| `TextChunker.hpp` | Splits text into 4096-byte XML-escaped chunks. |
+| `VoiceJsonParser.hpp` | Parses the voice-list JSON array into `std::vector<core::Voice>`. No HTTP dependency. |
+
+**Third-party dependency:** `nlohmann/json` (header-only, submodule at
+`submodules/json`).  Linked to `edge_tts_serialization` and
+`edge_tts_communication` via the optional block in the top-level
+`CMakeLists.txt`.
+
+**Allowed dependencies:** `edge_tts::core`, `edge_tts::common`, `nlohmann_json::nlohmann_json`.
 
 **Forbidden:** networking (HTTP/WebSocket I/O).
+
+### `VoiceJsonParser` — voice list JSON contract
+
+`VoiceJsonParser::parse(string_view json)` returns
+`Result<vector<core::Voice>>`.
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Malformed JSON | `Result::fail` with `ErrorCode::parse_error` |
+| Root is not an array | `Result::fail` with `ErrorCode::parse_error` |
+| Array element is not an object | `Result::fail` with `ErrorCode::parse_error` |
+| Missing required field | `Result::fail` with `ErrorCode::parse_error` |
+| Unrecognised `Gender` value | `Result::fail` with `ErrorCode::parse_error` |
+| Missing `VoiceTag` | Defaults `content_categories` and `voice_personalities` to `[]` |
+| Missing `VoiceTag` sub-lists | Each defaults to `[]` independently |
+| Unknown fields | Silently ignored |
+| Ordering | Wire order preserved; CLI layer is responsible for sorting by `ShortName` |
 
 ---
 

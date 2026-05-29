@@ -1,0 +1,11 @@
+[
+  {
+    "Name": "Microsoft Server Speech Text to Speech Voice (en-GB, RyanNeural)",
+    "ShortName": "en-GB-RyanNeural",
+    "Gender": "Male",
+    "Locale": "en-GB",
+    "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+    "FriendlyName": "Microsoft Ryan Online (Natural) - English (United Kingdom)",
+    "Status": "GA"
+  }
+]

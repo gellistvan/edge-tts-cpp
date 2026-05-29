@@ -139,6 +139,40 @@ Enter before proceeding.
 
 ---
 
+# Voice JSON Parsing
+
+**Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/typing.py`
+
+**C++ implementation:** `serialization::VoiceJsonParser` (`VoiceJsonParser.hpp` /
+`VoiceJsonParser.cpp`).  No HTTP dependency — only operates on a raw JSON string.
+
+**Root type:** JSON array (reference `list_voices()` calls `json.loads()` on the
+response body and treats the result as a list).
+
+**Normalisation applied by `voices.py`** (replicated in `VoiceJsonParser`):
+- If `VoiceTag` key is absent, default it to `{}`.
+- If `VoiceTag.ContentCategories` is absent, default it to `[]`.
+- If `VoiceTag.VoicePersonalities` is absent, default it to `[]`.
+
+**Ordering:** `list_voices()` returns the array in the order the service sends
+it.  Sorting by `ShortName` is performed only in `_print_voices()` for CLI
+display.  `VoiceJsonParser::parse()` therefore preserves wire order.
+
+**Required fields** (missing any → `parse_error`):
+`Name`, `ShortName`, `Gender`, `Locale`, `SuggestedCodec`, `FriendlyName`, `Status`.
+
+**`Gender` values** (case-sensitive): `"Female"`, `"Male"`.  Any other value is
+a `parse_error`.
+
+**`Language` derivation:** `Locale.split('-')[0]` — first segment before the
+first hyphen.
+
+**Unknown fields:** silently ignored (reference accesses only known keys).
+
+**Match exactly:** Yes.
+
+---
+
 # Voice Listing
 
 **Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/constants.py`
