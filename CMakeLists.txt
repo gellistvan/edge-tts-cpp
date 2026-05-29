@@ -87,6 +87,7 @@ edge_tts_add_module(
         src/communication/Communicate.cpp
         src/communication/ConnectionMetadata.cpp
         src/communication/FakeHttpClient.cpp
+        src/communication/VoiceService.cpp
         src/communication/EdgeServiceConfig.cpp
         src/communication/EdgeTokenProvider.cpp
         src/communication/HttpVoiceService.cpp
