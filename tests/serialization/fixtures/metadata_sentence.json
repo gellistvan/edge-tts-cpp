@@ -1,0 +1,16 @@
+{
+  "Metadata": [
+    {
+      "Type": "SentenceBoundary",
+      "Data": {
+        "Offset": 0,
+        "Duration": 35000000,
+        "text": {
+          "Text": "Hello, world.",
+          "Length": 13,
+          "BoundaryType": "SentenceBoundary"
+        }
+      }
+    }
+  ]
+}

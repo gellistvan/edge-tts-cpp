@@ -134,6 +134,10 @@ of the voice-list response.
 | `TextNormalizer.hpp` | UTF-8 validation + control-character replacement. |
 | `TextChunker.hpp` | Splits text into 4096-byte XML-escaped chunks. |
 | `VoiceJsonParser.hpp` | Parses the voice-list JSON array into `std::vector<core::Voice>`. No HTTP dependency. |
+| `ProtocolMessage.hpp` | `ProtocolMessage` struct: `vector<pair<string,string>>` headers + string body. Header lookup via `header(name)`. |
+| `ProtocolParser.hpp` | Parses an Edge TTS WebSocket text frame (`\r\n\r\n`-delimited) into a `ProtocolMessage`. |
+| `ProtocolSerializer.hpp` | Serializes a `ProtocolMessage` into an Edge TTS WebSocket text frame string. |
+| `MetadataJsonParser.hpp` | Parses `audio.metadata` JSON payloads into `vector<core::BoundaryChunk>`. Handles SessionEnd skip, unknown type errors, and XML-unescapes `Text`. |
 
 **Third-party dependency:** `nlohmann/json` (header-only, submodule at
 `submodules/json`).  Linked to `edge_tts_serialization` and

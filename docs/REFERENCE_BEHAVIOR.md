@@ -139,6 +139,62 @@ Enter before proceeding.
 
 ---
 
+# Protocol Text Frame Parsing and Serialization
+
+**Sources:** `reference/edge-tts/src/edge_tts/communicate.py`
+(`ssml_headers_plus_data`, `send_command_request`, `get_headers_and_data`)
+
+**C++ implementation:** `serialization::ProtocolMessage`, `serialization::ProtocolParser`,
+`serialization::ProtocolSerializer`.
+
+**Wire format:** `Name:Value\r\n` per header, `\r\n\r\n` separator, body verbatim.
+No space between header name and colon; no space between colon and value.
+
+**Parsing divergence from reference:** The reference uses `data.find(b"\r\n\r\n") + 2`
+for the body offset, leaving a leading `\r\n` that Python's `json.loads` ignores.
+The C++ parser uses `+ 4` to cleanly skip the full separator.
+
+**Header ordering:** Preserved in wire order. Duplicate header names are kept as
+separate entries (unlike the Python dict which overwrites earlier values).
+
+**LF-only frames:** Rejected — reference splits exclusively on `\r\n`.
+
+**Match exactly (serializer):** Yes — format matches Python output character-for-character.
+**Match exactly (parser):** Functionally equivalent — same result, cleaner body offset.
+
+---
+
+# Metadata JSON Parsing
+
+**Sources:** `reference/edge-tts/src/edge_tts/communicate.py` (`__parse_metadata`)
+
+**C++ implementation:** `serialization::MetadataJsonParser`
+
+**JSON root:** Object with `"Metadata"` array.
+
+**Handled types:** `"WordBoundary"` → `BoundaryEventType::WordBoundary`;
+`"SentenceBoundary"` → `BoundaryEventType::SentenceBoundary`.
+
+**Skipped types:** `"SessionEnd"` (reference: `continue`).
+
+**Unknown types:** `parse_error` (reference: `UnknownResponse`).
+
+**XML unescape:** Applied to `Data.text.Text` field before storing in `BoundaryChunk::text`.
+
+**Offset compensation:** NOT applied in the parser. The communication layer adds
+`offset_compensation` before yielding to callers (reference adds it inside
+`__parse_metadata` using `self.state["offset_compensation"]`).
+
+**C++ vs Python difference:** The Python `__parse_metadata` returns on the FIRST
+handled item. The C++ `MetadataJsonParser::parse()` collects ALL boundary chunks
+from the array into a vector — more correct for frames that could contain
+multiple items.
+
+**Match exactly:** Functionally equivalent. Same event handling, same XML unescape,
+same error conditions.
+
+---
+
 # Voice JSON Parsing
 
 **Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/typing.py`

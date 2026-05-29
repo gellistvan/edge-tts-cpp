@@ -116,6 +116,144 @@ Key invariants:
 
 ---
 
+## Protocol Text Frame Format
+
+**Source:** `communicate.py ssml_headers_plus_data()`, `send_command_request()`,
+`get_headers_and_data()`
+
+**C++ implementation:** `serialization::ProtocolMessage`, `serialization::ProtocolParser`,
+`serialization::ProtocolSerializer`.
+
+### Wire format
+
+```
+Name:Value\r\n
+Name:Value\r\n
+\r\n
+{body}
+```
+
+- Headers are separated by `\r\n` (CRLF).
+- The header/body boundary is `\r\n\r\n` (blank CRLF line).
+- Header name and value are separated by the first `:` — no space between name
+  and the colon, no space between colon and value.  Values may contain colons
+  (e.g. `Content-Type:application/json; charset=utf-8`).
+- Body follows immediately after `\r\n\r\n` with no additional prefix.
+- LF-only frames (`\n` instead of `\r\n`) are NOT valid — the reference splits
+  exclusively on `\r\n`.
+
+### Outgoing frame header sets
+
+**SSML frame** (`ssml_headers_plus_data(request_id, timestamp, ssml)` in communicate.py):
+```
+X-RequestId:{uuid_without_dashes}\r\n
+Content-Type:application/ssml+xml\r\n
+X-Timestamp:{js_date_string}Z\r\n
+Path:ssml\r\n
+\r\n
+{ssml_body}
+```
+Note: `Z` is appended to the timestamp — documented as a Microsoft Edge bug.
+
+**Speech config frame** (`send_command_request()` in communicate.py):
+```
+X-Timestamp:{js_date_string}\r\n
+Content-Type:application/json; charset=utf-8\r\n
+Path:speech.config\r\n
+\r\n
+{"context":{"synthesis":{"audio":{"metadataoptions":{...},"outputFormat":"..."}}}}
+```
+Note: NO `Z` suffix on the timestamp in `speech.config` — only SSML has it.
+
+### Incoming frame paths
+
+| `Path` header | Type | Handling |
+|---------------|------|----------|
+| `audio.metadata` | text | Parse JSON body as boundary metadata |
+| `turn.end` | text | Compute offset compensation; break loop |
+| `response` | text | Silently ignored |
+| `turn.start` | text | Silently ignored |
+| `audio` | binary | Parse audio payload |
+| anything else | — | `UnknownResponse` (protocol error) |
+
+### Parsing note
+
+The Python reference parses via `get_headers_and_data(data, data.find(b"\r\n\r\n"))`:
+- `data[:pos]` is the header section (split on `\r\n`, then each line on first `:`).
+- The reference uses `data[pos + 2:]` for the body — this is a known off-by-two:
+  it leaves a leading `\r\n` prefix that Python's `json.loads` silently discards.
+- The C++ `ProtocolParser` correctly uses `pos + 4` (full `\r\n\r\n` skip) to
+  produce a clean body with no prefix.
+- Headers are returned as `vector<pair<string,string>>` (preserves duplicates and
+  ordering), unlike the Python dict (which overwrites earlier duplicate values).
+
+---
+
+## Metadata Frame JSON Format
+
+**Source:** `communicate.py Communicate.__parse_metadata()`, submaker.py
+
+**C++ implementation:** `serialization::MetadataJsonParser`
+
+### JSON shape
+
+```json
+{
+  "Metadata": [
+    {
+      "Type": "WordBoundary" | "SentenceBoundary" | "SessionEnd",
+      "Data": {
+        "Offset":   <integer, 100 ns ticks>,
+        "Duration": <integer, 100 ns ticks>,
+        "text": {
+          "Text": "<xml-escaped string>",
+          ...
+        }
+      }
+    }
+  ]
+}
+```
+
+### Field access path
+
+| C++ field | JSON path |
+|-----------|-----------|
+| `BoundaryChunk::type` | `Metadata[i].Type` → enum |
+| `BoundaryChunk::offset_ticks` | `Metadata[i].Data.Offset` |
+| `BoundaryChunk::duration_ticks` | `Metadata[i].Data.Duration` |
+| `BoundaryChunk::text` | `xml_unescape(Metadata[i].Data.text.Text)` |
+
+Note: `text` (lowercase) contains `Text` (uppercase) — both keys are case-sensitive.
+
+### Event type handling
+
+| Type | Handling |
+|------|----------|
+| `"WordBoundary"` | Parsed → `BoundaryEventType::WordBoundary` |
+| `"SentenceBoundary"` | Parsed → `BoundaryEventType::SentenceBoundary` |
+| `"SessionEnd"` | Silently skipped (`continue` in reference) |
+| anything else | `parse_error` (reference: `UnknownResponse`) |
+
+### Offset compensation
+
+The Python reference adds `self.state["offset_compensation"]` to each offset
+before yielding. The C++ `MetadataJsonParser` does NOT apply offset compensation
+— it returns raw ticks from the JSON. The communication layer applies
+compensation before yielding `BoundaryChunk` to callers.
+
+### XML unescape
+
+The `"Text"` field value is XML-unescaped using `xml.sax.saxutils.unescape()`
+in Python. The C++ implementation uses `serialization::xml_unescape()`:
+- `&amp;` → `&`
+- `&lt;` → `<`
+- `&gt;` → `>`
+- `&quot;` → `"`
+- `&apos;` → `'`
+
+---
+
 ## Timing constants (belong in serialization/communication layer)
 
 | Constant | Value | Source |

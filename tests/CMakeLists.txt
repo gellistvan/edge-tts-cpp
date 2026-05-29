@@ -45,6 +45,8 @@ edge_tts_add_module_test(
         serialization/TextChunkerTests.cpp
         serialization/SsmlBuilderTests.cpp
         serialization/VoiceJsonParserTests.cpp
+        serialization/ProtocolFrameTests.cpp
+        serialization/MetadataJsonParserTests.cpp
     LIBRARIES edge_tts::serialization
 )
 

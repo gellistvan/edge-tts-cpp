@@ -55,6 +55,10 @@ edge_tts_add_module(
         src/serialization/TextChunker.cpp
         src/serialization/SsmlBuilder.cpp
         src/serialization/VoiceJsonParser.cpp
+        src/serialization/ProtocolMessage.cpp
+        src/serialization/ProtocolParser.cpp
+        src/serialization/ProtocolSerializer.cpp
+        src/serialization/MetadataJsonParser.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::common
