@@ -50,4 +50,38 @@ common::Result<std::string> InputLoader::load(
                       "No input: provide --text, --file, or --list-voices"});
 }
 
+common::Result<std::string> InputLoader::load_playback(
+    const PlaybackArguments& args,
+    std::istream&            stdin_stream) const
+{
+    if (args.text.has_value())
+        return common::Result<std::string>::ok(*args.text);
+
+    if (args.file.has_value()) {
+        const std::string& path = *args.file;
+
+        if (path == "-" || path == "/dev/stdin") {
+            return common::Result<std::string>::ok(
+                std::string{std::istreambuf_iterator<char>(stdin_stream),
+                            std::istreambuf_iterator<char>{}});
+        }
+
+        std::ifstream file(path);
+        if (!file) {
+            return common::Result<std::string>::fail(
+                common::Error{common::ErrorCode::io_error,
+                              "Cannot open input file",
+                              path});
+        }
+
+        return common::Result<std::string>::ok(
+            std::string{std::istreambuf_iterator<char>(file),
+                        std::istreambuf_iterator<char>{}});
+    }
+
+    return common::Result<std::string>::fail(
+        common::Error{common::ErrorCode::invalid_argument,
+                      "No input: provide --text or --file"});
+}
+
 } // namespace edge_tts::cli

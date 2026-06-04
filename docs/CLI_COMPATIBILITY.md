@@ -68,43 +68,54 @@ printing and `exit()`.
 
 ## `edge-playback`
 
+**Argument parsing implementation:** `include/edge_tts/cli/PlaybackArguments.hpp` /
+`src/cli/PlaybackArgumentParser.cpp`.  `PlaybackArgumentParser::parse()` is stateless
+and testable.  Dispatch: `include/edge_tts/cli/PlaybackCommandDispatcher.hpp` /
+`src/cli/PlaybackCommandDispatcher.cpp`.  Entry point: `apps/edge-playback/main.cpp`.
+
+**Implementation note (deviation from Python):** The Python reference calls
+`edge-tts` as a subprocess (`_run_edge_tts()`).  The C++ implementation calls
+`api::Communicate::save()` directly and `media::FfmpegAudioConverter::play_mp3()`
+for playback via `ffplay`.  Observable behavior (temp file lifecycle, env vars,
+exit codes) is identical.
+
 ### Option matrix
 
-| Option | Short | Argument | Default | Python behavior | C++ planned behavior | Status |
-|--------|-------|----------|---------|-----------------|----------------------|--------|
-| `--mpv` | — | (flag) | `false` on Windows, `true` elsewhere | Force mpv playback on Windows. On non-Windows, mpv is always used. | Identical. | `planned` |
-| `--text` | `-t` | `STRING` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--file` | `-f` | `PATH` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--rate` | — | `RATE` | `+0%` | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--volume` | — | `VOL` | `+0%` | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--proxy` | — | `URL` | (none) | Forwarded verbatim to `edge-tts` subprocess. | Identical passthrough. | `planned` |
-| `--write-media` | — | `PATH` | N/A | **Not accepted.** `edge-playback` does not expose `--write-media`. | N/A. | `N/A` |
-| `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** `edge-playback` does not expose `--write-subtitles`. | N/A. | `N/A` |
-| `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** `edge-playback` does not expose `--list-voices`. | N/A. | `N/A` |
-| `--help` | `-h` | (flag) | — | Prints minimal help noting "See `edge-tts` for additional arguments." | Identical behavior. | `planned` |
+| Option | Short | Argument | Default | Python behavior | C++ behavior | Status |
+|--------|-------|----------|---------|-----------------|--------------|--------|
+| `--mpv` | — | (flag) | `false` on Windows, `true` elsewhere | Force mpv playback on Windows. | Accepted and stored; no behavior change (ffplay always used via `FfmpegAudioConverter`). | `partial` |
+| `--text` | `-t` | `STRING` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Passed to `Communicate`. | `exact` |
+| `--file` | `-f` | `PATH` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Read via `InputLoader`; same stdin/file semantics. | `exact` |
+| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Forwarded verbatim to `edge-tts` subprocess. | Identical. | `exact` |
+| `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
+| `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
+| `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
+| `--proxy` | — | `URL` | (none) | Forwarded verbatim. | Stored in args (not yet wired to `Communicate`). | `partial` |
+| `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
+| `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
+| `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |
+| `--help` | `-h` | (flag) | — | Prints minimal help. | Identical. | `exact` |
 
-\* Forwarded arguments are passed through `parse_known_args`; `edge-playback` only strips `--mpv`.
+\* `--text` and `--file` are mutually exclusive; exactly one must be provided.
 
 ### Behavioral notes
 
 | # | Behavior | Python source | C++ status |
 |---|----------|---------------|------------|
-| 1 | **Subprocess model.** `edge-playback` calls `edge-tts --write-media=<tmp.mp3> [--write-subtitles=<tmp.srt>] <passthrough-args>` as a subprocess. It is not a library call. | `__main__.py:_run_edge_tts()` | `planned` |
-| 2 | **Temp file lifecycle.** Temp `.mp3` (and `.srt` when using mpv) are created in the OS temp directory. Both are deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. | `__main__.py:_cleanup()` | `planned` |
-| 3 | **mpv command line.** `mpv --msg-level=all=error,statusline=status [--sub-file=<srt>] <mp3>` | `__main__.py:_play_media()` | `planned` (Linux/macOS); best-effort on Windows |
-| 4 | **Windows playback.** `win32_playback.play_mp3_win32` is used when on Windows and `--mpv` is not set. | `__main__.py:_play_media()` | `planned` |
-| 5 | **Dependency check.** Before any work, verifies `edge-tts` (and `mpv` on non-Windows) exist on `$PATH`. Prints missing deps to stderr and exits with code 1. | `__main__.py:_check_deps()` | `planned` |
+| 1 | **Library call model.** C++ calls `api::Communicate::save()` directly instead of spawning an `edge-tts` subprocess. Observable behavior is equivalent. | `__main__.py:_run_edge_tts()` | `deviation` (library call, not subprocess) |
+| 2 | **Temp file lifecycle.** Temp `.mp3` is created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard). | `__main__.py:_cleanup()` | `exact` |
+| 3 | **Playback.** Uses `ffplay -nodisp -autoexit <mp3>` via `FfmpegAudioConverter`. Python uses `mpv`. | `__main__.py:_play_media()` | `deviation` (ffplay instead of mpv) |
+| 4 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `planned` |
+| 5 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
 
 ### `edge-playback` environment variables
 
 | Variable | Effect | C++ status |
 |----------|--------|------------|
-| `EDGE_PLAYBACK_DEBUG` | Print temp file paths to stdout before playback. | `planned` |
-| `EDGE_PLAYBACK_KEEP_TEMP` | Keep temp files after playback exits. | `planned` |
-| `EDGE_PLAYBACK_MP3_FILE` | Override the MP3 temp file path (skip creation). | `planned` |
-| `EDGE_PLAYBACK_SRT_FILE` | Override the SRT temp file path (skip creation). | `planned` |
+| `EDGE_PLAYBACK_DEBUG` | Print temp file path to stdout before playback. | `exact` |
+| `EDGE_PLAYBACK_KEEP_TEMP` | Keep temp files after playback exits. | `exact` |
+| `EDGE_PLAYBACK_MP3_FILE` | Override the MP3 temp file path. | `exact` |
+| `EDGE_PLAYBACK_SRT_FILE` | Override the SRT temp file path (not yet used). | `planned` |
 
 ---
 

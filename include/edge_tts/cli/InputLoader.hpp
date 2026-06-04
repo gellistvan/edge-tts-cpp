@@ -1,6 +1,7 @@
 #pragma once
 
 #include "edge_tts/cli/EdgeTtsArguments.hpp"
+#include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/common/Result.hpp"
 
 #include <istream>
@@ -22,11 +23,18 @@ namespace edge_tts::cli {
 // without touching the real process stdin.
 class InputLoader {
 public:
-    // Load input text.
+    // Load input text from edge-tts arguments.
     // stdin_stream is read only when args.file is "-" or "/dev/stdin".
     [[nodiscard]] common::Result<std::string> load(
         const EdgeTtsArguments& args,
         std::istream&           stdin_stream) const;
+
+    // Load input text from edge-playback arguments.
+    // Same resolution order; stdin_stream is read only when args.file is "-"
+    // or "/dev/stdin".
+    [[nodiscard]] common::Result<std::string> load_playback(
+        const PlaybackArguments& args,
+        std::istream&            stdin_stream) const;
 };
 
 } // namespace edge_tts::cli

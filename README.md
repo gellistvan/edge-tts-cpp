@@ -24,6 +24,7 @@ include/edge_tts/
   media/           external process integration: IAudioConverter, FfmpegAudioConverter (ffmpeg/ffplay via IProcessRunner, no library linking), ExecutableDiscovery, ProcessRunner
   subtitles/       subtitle cues and SRT composition
   cli/             CLI argument parsing and dispatch (EdgeTtsArgumentParser, EdgeTtsArguments,
+                   PlaybackArgumentParser, PlaybackArguments, PlaybackCommandDispatcher,
                    InputLoader, VoiceFormatter, EdgeTtsCommandDispatcher)
 
 src/

@@ -123,11 +123,14 @@ edge_tts_add_module(
     SOURCES
         src/cli/CliPlaceholder.cpp
         src/cli/EdgeTtsArgumentParser.cpp
-        src/cli/InputLoader.cpp
-        src/cli/VoiceFormatter.cpp
         src/cli/EdgeTtsCommandDispatcher.cpp
+        src/cli/InputLoader.cpp
+        src/cli/PlaybackArgumentParser.cpp
+        src/cli/PlaybackCommandDispatcher.cpp
+        src/cli/VoiceFormatter.cpp
     PUBLIC_DEPS
         edge_tts::api
+        edge_tts::media
 )
 
 # ---------------------------------------------------------------------------
