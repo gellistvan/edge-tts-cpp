@@ -23,7 +23,8 @@ include/edge_tts/
   communication/   Communicate facade, HTTP/WebSocket transport boundary
   media/           ffmpeg/ffplay process integration boundary
   subtitles/       subtitle cues and SRT composition
-  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments, InputLoader, VoiceFormatter)
+  cli/             CLI argument parsing and dispatch (EdgeTtsArgumentParser, EdgeTtsArguments,
+                   InputLoader, VoiceFormatter, EdgeTtsCommandDispatcher)
 
 src/
   core/
@@ -157,6 +158,17 @@ calls fail with `ErrorCode::network_error`. Inject a `SynthesizerFn` for
 testing without a live service connection.
 
 ## Applications
+
+The CLI is wired end-to-end via `EdgeTtsCommandDispatcher`, which routes parsed arguments to the right handler with injectable dependencies (voice service, Communicate factory, streams):
+
+```
+edge-tts --text "Hello" --write-media hello.mp3 --write-subtitles hello.srt
+edge-tts --list-voices
+edge-tts --help
+edge-tts --version
+```
+
+The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — matching Python `argparse` and `sys.exit()` behavior.
 
 The skeleton builds two placeholder apps:
 

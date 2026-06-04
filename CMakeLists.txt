@@ -122,6 +122,7 @@ edge_tts_add_module(
         src/cli/EdgeTtsArgumentParser.cpp
         src/cli/InputLoader.cpp
         src/cli/VoiceFormatter.cpp
+        src/cli/EdgeTtsCommandDispatcher.cpp
     PUBLIC_DEPS
         edge_tts::api
 )
