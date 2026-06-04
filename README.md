@@ -56,6 +56,7 @@ the aggregate unless writing examples.
 | subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` | `edge_tts_subtitle_tests` |
 | media | `edge_tts_media` | `edge_tts::media` | `edge_tts_media_tests` |
 | communication | `edge_tts_communication` | `edge_tts::communication` | `edge_tts_communication_tests` |
+| api | `edge_tts_api` | `edge_tts::api` | `edge_tts_api_tests` |
 | cli | `edge_tts_cli` | `edge_tts::cli` | `edge_tts_cli_tests` |
 
 The aggregate convenience target:
@@ -142,6 +143,7 @@ edge_tts_common_tests
 edge_tts_core_tests
 edge_tts_serialization_tests
 edge_tts_communication_tests
+edge_tts_api_tests
 edge_tts_media_tests
 edge_tts_subtitles_tests
 ```
