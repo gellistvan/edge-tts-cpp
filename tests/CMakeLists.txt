@@ -92,5 +92,6 @@ edge_tts_add_module_test(
         common/test_main.cpp
         cli/test_cli.cpp
         cli/EdgeTtsArgumentParserTests.cpp
+        cli/InputLoaderTests.cpp
     LIBRARIES edge_tts::cli
 )

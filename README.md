@@ -23,7 +23,7 @@ include/edge_tts/
   communication/   Communicate facade, HTTP/WebSocket transport boundary
   media/           ffmpeg/ffplay process integration boundary
   subtitles/       subtitle cues and SRT composition
-  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments)
+  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments, InputLoader)
 
 src/
   core/
@@ -183,6 +183,11 @@ edge-playback
 | `--help` | `-h` | — | Print help and exit |
 
 \* `--text`, `--file`, and `--list-voices` are mutually exclusive; exactly one must be given.
+
+**Input loading** (`cli::InputLoader`) resolves text in the order the reference dictates:
+1. `--text TEXT` → used verbatim
+2. `--file -` or `--file /dev/stdin` → read from stdin
+3. `--file PATH` → open UTF-8 file and read entirely (CRLF preserved on Linux)
 
 ## Tests
 
