@@ -128,20 +128,46 @@ git add submodules/ixwebsocket
 git commit -m "chore: bump ixwebsocket to <version>"
 ```
 
-### Building without TLS
+### HttpClient integration
 
-By default `EdgeTtsDependencies.cmake` sets `IXWEBSOCKET_USE_TLS=OFF` so the
-library builds without an OpenSSL or mbedTLS dependency.  To enable TLS (required
-for production HTTPS/WSS connections to the Edge TTS service):
+`communication::HttpClient` (in `include/edge_tts/communication/HttpClient.hpp` /
+`src/communication/HttpClient.cpp`) implements `IHttpClient` using
+`ix::HttpClient` from ixwebsocket.  The ixwebsocket types are confined to
+`HttpClient.cpp` and never appear in the public header.
+
+Error mapping from `ix::HttpErrorCode`:
+
+| ixwebsocket error | `ErrorCode` | Notes |
+|-------------------|-------------|-------|
+| `UrlMalformed`, `Invalid` | `invalid_argument` | Detected without touching the network |
+| `Timeout` | `timeout` | connect or transfer deadline exceeded |
+| all other non-OK codes | `network_error` | TCP/TLS transport failure |
+| `Ok` | (success) | HTTP status code in `HttpResponse.status_code` |
+
+Non-2xx HTTP status codes are returned as successful `Result<HttpResponse>` values
+so that callers (e.g. `VoiceService`) can inspect and act on them.
+
+`HttpClientOptions.proxy` is stored but currently not forwarded to
+`ix::HttpClient` because ixwebsocket's synchronous HTTP client does not expose
+per-request proxy configuration.  This will be addressed when WebSocket transport
+is wired in (ixwebsocket WebSocket supports `CONNECT`-tunnel proxy).
+
+### TLS
+
+`EdgeTtsDependencies.cmake` sets `USE_TLS=ON` by default so the library builds
+with TLS support (required for HTTPS/WSS connections to the Edge TTS service).
+On Linux and macOS it picks up the system OpenSSL via `find_package(OpenSSL)`.
+
+To disable TLS (e.g. for isolated LAN testing):
 
 ```sh
-cmake -S . -B build -DIXWEBSOCKET_USE_TLS=ON -DUSE_OPEN_SSL=ON
+cmake -S . -B build -DUSE_TLS=OFF
 ```
 
-or, for mbedTLS:
+To select mbedTLS instead of OpenSSL:
 
 ```sh
-cmake -S . -B build -DIXWEBSOCKET_USE_TLS=ON -DUSE_MBEDTLS=ON
+cmake -S . -B build -DUSE_TLS=ON -DUSE_MBED_TLS=ON
 ```
 
 ---

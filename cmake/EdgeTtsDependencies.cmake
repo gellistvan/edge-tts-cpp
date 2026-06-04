@@ -38,12 +38,24 @@
 if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
 
     # --- Disable everything except the library itself -----------------------
-    set(IXWEBSOCKET_INSTALL       OFF CACHE INTERNAL "Disable ixwebsocket install")
-    set(IXWEBSOCKET_USE_TLS       OFF CACHE INTERNAL "TLS controlled separately")
-    # Do not override USE_TLS/USE_OPEN_SSL/USE_MBEDTLS here; let the user set
-    # them before including this file if TLS support is needed.
+    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "Disable ixwebsocket install")
     # Disable googletest inside ixwebsocket so it does not conflict with ours.
     set(BUILD_TESTING OFF CACHE BOOL "Disable ixwebsocket test targets" FORCE)
+
+    # --- TLS: enable by default on non-Windows ------------------------------
+    # The Edge TTS voices endpoint (https://) and WebSocket endpoint (wss://)
+    # both require TLS.  ixwebsocket uses the variable name USE_TLS (not
+    # IXWEBSOCKET_USE_TLS).  Default ON so production builds have HTTPS;
+    # the caller can set USE_TLS=OFF before including this file to opt out.
+    if(NOT DEFINED USE_TLS)
+        if(WIN32)
+            # On Windows, ixwebsocket defaults to mbedTLS; let its own CMake
+            # handle the default rather than forcing a value.
+            set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
+        else()
+            set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
+        endif()
+    endif()
 
     add_subdirectory(
         "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket"

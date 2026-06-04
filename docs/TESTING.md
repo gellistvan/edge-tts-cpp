@@ -85,9 +85,27 @@ Tests that call the live Microsoft Edge TTS service are gated by:
 
 ```bash
 cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
+cmake --build build
+ctest --test-dir build -R network
 ```
 
-Do not enable in CI unless the environment has reliable outbound internet access.
+Network test targets:
+
+| CTest target | Source file | What it verifies |
+|---|---|---|
+| `edge_tts_communication_network_tests` | `tests/communication/HttpClientNetworkTests.cpp` | `HttpClient` GET voices endpoint returns HTTP 200 with non-empty JSON; `VoiceService` parses non-empty voice list including `en-US-EmmaMultilingualNeural` |
+
+Do not enable in CI unless the environment has reliable outbound TLS access to
+`speech.platform.bing.com`.
+
+**TLS requirement:** Network tests require ixwebsocket to be built with TLS support.
+`EdgeTtsDependencies.cmake` enables `USE_TLS=ON` by default, which uses the system
+OpenSSL found by `find_package(OpenSSL)`.  If OpenSSL is absent, configure will fail
+with a descriptive error.  To disable TLS (for LAN testing only):
+
+```bash
+cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON -DUSE_TLS=OFF
+```
 
 ## Compatibility testing
 

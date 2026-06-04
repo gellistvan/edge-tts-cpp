@@ -93,6 +93,7 @@ edge_tts_add_module(
         src/communication/FakeWebSocketClient.cpp
         src/communication/SynthesisSession.cpp
         src/communication/FakeHttpClient.cpp
+        src/communication/HttpClient.cpp
         src/communication/VoiceService.cpp
         src/communication/EdgeServiceConfig.cpp
         src/communication/EdgeTokenProvider.cpp
@@ -142,6 +143,9 @@ if(TARGET nlohmann_json::nlohmann_json)
 endif()
 if(TARGET ixwebsocket)
     target_link_libraries(edge_tts_communication PRIVATE ixwebsocket)
+    # Signal to HttpClient.cpp that ixwebsocket is available.
+    # PRIVATE so the definition does not leak into downstream consumers.
+    target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
 endif()
 
 # ---------------------------------------------------------------------------
