@@ -1,6 +1,7 @@
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/serialization/ProtocolMessage.hpp"
 #include "edge_tts/serialization/ProtocolSerializer.hpp"
+#include "edge_tts/serialization/SsmlBuilder.hpp"
 
 #include <array>
 #include <chrono>
@@ -87,6 +88,39 @@ common::Result<std::string> EdgeProtocol::build_speech_config_frame(
     msg.headers.emplace_back("Content-Type",  "application/json; charset=utf-8");
     msg.headers.emplace_back("Path",          "speech.config");
     msg.body = body_buf;
+
+    serialization::ProtocolSerializer serializer;
+    return common::Result<std::string>::ok(serializer.serialize(msg));
+}
+
+common::Result<std::string> EdgeProtocol::build_ssml_frame(
+    const core::TtsConfig&    config,
+    std::string_view          text_chunk,
+    const ConnectionMetadata& metadata) const
+{
+    // Reference: communicate.py ssml_headers_plus_data() + send_ssml_request()
+    //   ssml_headers_plus_data(connect_id(), date_to_string(), mkssml(...))
+    //
+    // SsmlBuilder validates config, normalizes text, and XML-escapes exactly once.
+    serialization::SsmlBuilder builder;
+    auto ssml_result = builder.build(config, text_chunk);
+    if (!ssml_result)
+        return common::Result<std::string>::fail(std::move(ssml_result.error()));
+
+    // Reference ssml_headers_plus_data():
+    //   f"X-RequestId:{request_id}\r\n"
+    //   "Content-Type:application/ssml+xml\r\n"
+    //   f"X-Timestamp:{timestamp}Z\r\n"   ← trailing Z (documented Edge bug)
+    //   "Path:ssml\r\n\r\n"
+    //   f"{ssml}"
+    const std::string timestamp = format_js_timestamp(clock_.now()) + "Z";
+
+    serialization::ProtocolMessage msg;
+    msg.headers.emplace_back("X-RequestId",  metadata.request_id);
+    msg.headers.emplace_back("Content-Type", "application/ssml+xml");
+    msg.headers.emplace_back("X-Timestamp",  timestamp);
+    msg.headers.emplace_back("Path",         "ssml");
+    msg.body = std::move(*ssml_result);
 
     serialization::ProtocolSerializer serializer;
     return common::Result<std::string>::ok(serializer.serialize(msg));

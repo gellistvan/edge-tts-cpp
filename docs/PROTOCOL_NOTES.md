@@ -305,7 +305,19 @@ Path:ssml\r\n
 \r\n
 {ssml_body}
 ```
-Note: `Z` is appended to the timestamp — documented as a Microsoft Edge bug.
+
+**C++ implementation:** `communication::EdgeProtocol::build_ssml_frame(config, text_chunk, metadata)`.
+
+Key invariants:
+- `X-RequestId` uses `metadata.request_id` (32-char lowercase hex, no hyphens).
+- `X-Timestamp` has a trailing `Z` — documented as a Microsoft Edge bug in the source.
+- Header order: `X-RequestId`, `Content-Type`, `X-Timestamp`, `Path`.
+- `text_chunk` is passed raw to `serialization::SsmlBuilder::build()`, which normalizes
+  (UTF-8 validation + control-char replacement) and XML-escapes exactly once.
+  Do NOT pre-escape text — it will be double-escaped.
+- Config errors from `SsmlBuilder` (invalid rate/volume/pitch/voice) propagate as
+  `Result` failures — no silent truncation.
+- No chunking logic — callers are responsible for splitting text before calling.
 
 **Speech config frame** (`send_command_request()` in communicate.py):
 ```
