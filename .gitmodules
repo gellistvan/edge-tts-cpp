@@ -1,3 +1,7 @@
 [submodule "submodules/json"]
 	path = submodules/json
 	url = https://github.com/nlohmann/json.git
+
+[submodule "submodules/ixwebsocket"]
+	path = submodules/ixwebsocket
+	url = https://github.com/machinezone/IXWebSocket.git

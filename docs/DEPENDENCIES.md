@@ -71,10 +71,84 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 
 ---
 
+## ixwebsocket (IXWebSocket)
+
+| Property | Value |
+|----------|-------|
+| Source | Git submodule at `submodules/ixwebsocket` (https://github.com/machinezone/IXWebSocket) |
+| Purpose | WebSocket client (`communication::WebSocketTransport`) and HTTP client (`communication::IHttpClient` implementation) for the voice-list and synthesis endpoints |
+| Integration | `cmake/EdgeTtsDependencies.cmake` adds `submodules/ixwebsocket` via `add_subdirectory(… EXCLUDE_FROM_ALL)` when the submodule is present; the top-level `CMakeLists.txt` links `ixwebsocket` to `edge_tts_communication` when the target exists |
+| Consumers | `edge_tts::communication` (WebSocketTransport, HTTP voice-list client) |
+| License | BSD 3-Clause (`submodules/ixwebsocket/LICENSE`) |
+| CMake target | `ixwebsocket` |
+
+**Why ixwebsocket over alternatives:**
+
+| Criterion | ixwebsocket | cpr | libcurl |
+|-----------|-------------|-----|---------|
+| Single submodule for both HTTP and WebSocket | ✓ | ✗ (HTTP only) | ✗ (HTTP only) |
+| Already planned in this project | ✓ | ✗ | ✗ |
+| Header/source library; no OS install required | ✓ | ✗ (needs curl) | ✗ (system install) |
+| Aligns with Python reference (aiohttp = HTTP+WS) | ✓ | partial | partial |
+
+Choosing ixwebsocket avoids a second WebSocket submodule later and matches the
+project's existing plan documented in `submodules/README.md`.
+
+**Warning suppression:** `cmake/EdgeTtsDependencies.cmake` sets
+`INTERFACE_SYSTEM_INCLUDE_DIRECTORIES` on the `ixwebsocket` target so that our
+`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion` flags are silenced on
+ixwebsocket headers.  Downstream targets inherit this automatically.
+
+**Public header isolation:** ixwebsocket types are only used in `src/communication/`
+implementation files. No ixwebsocket header appears in `include/edge_tts/`; the
+`IHttpClient` and `IWebSocketClient` interfaces use only standard library types.
+
+### Initializing the submodule
+
+After a fresh clone or when `submodules/ixwebsocket/` is empty:
+
+```sh
+git submodule update --init submodules/ixwebsocket
+```
+
+To initialize all submodules at once:
+
+```sh
+git submodule update --init --recursive
+```
+
+### Updating ixwebsocket
+
+```sh
+cd submodules/ixwebsocket
+git fetch origin
+git checkout <desired-tag-or-commit>
+cd ../..
+git add submodules/ixwebsocket
+git commit -m "chore: bump ixwebsocket to <version>"
+```
+
+### Building without TLS
+
+By default `EdgeTtsDependencies.cmake` sets `IXWEBSOCKET_USE_TLS=OFF` so the
+library builds without an OpenSSL or mbedTLS dependency.  To enable TLS (required
+for production HTTPS/WSS connections to the Edge TTS service):
+
+```sh
+cmake -S . -B build -DIXWEBSOCKET_USE_TLS=ON -DUSE_OPEN_SSL=ON
+```
+
+or, for mbedTLS:
+
+```sh
+cmake -S . -B build -DIXWEBSOCKET_USE_TLS=ON -DUSE_MBEDTLS=ON
+```
+
+---
+
 ## Planned / Not Yet Integrated
 
 | Library | Submodule path | Purpose | Status |
 |---------|----------------|---------|--------|
 | CLI11 | `submodules/CLI11` | Command-line argument parsing for `edge-tts` / `edge-playback` | Not yet added |
-| ixwebsocket | `submodules/ixwebsocket` | WebSocket client for `communication::WebSocketTransport` | Not yet added |
 | googletest | `submodules/googletest` | Alternative test runner (optional, currently unused) | Conditional in `Dependencies.cmake` |
