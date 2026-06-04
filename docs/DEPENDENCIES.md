@@ -55,6 +55,20 @@ Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prev
 
 ---
 
+## std::filesystem (C++17/20 standard library)
+
+| Property | Value |
+|----------|-------|
+| Source | C++20 standard library — always present on all supported platforms |
+| Purpose | `media::ExecutableDiscovery` — PATH scanning to locate `mpv`, `ffmpeg`, `edge-tts` and other external tools without spawning any child process |
+| Integration | Included via `<filesystem>` in `include/edge_tts/media/ExecutableDiscovery.hpp` and `src/media/ExecutableDiscovery.cpp`; available through the module's existing `cxx_std_20` compile feature |
+| Consumers | `edge_tts::media` (`ExecutableDiscovery`) |
+| License | System library; no additional license obligation |
+
+Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py _check_deps()` to verify `mpv` and `edge-tts` are installed.  `ExecutableDiscovery::find_on_path()` replicates that PATH scan deterministically without process execution.
+
+---
+
 ## Planned / Not Yet Integrated
 
 | Library | Submodule path | Purpose | Status |

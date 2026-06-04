@@ -75,6 +75,7 @@ edge_tts_add_module_test(
     NAME media
     SOURCES
         common/test_main.cpp
+        media/ExecutableDiscoveryTests.cpp
         media/ProcessRunnerTests.cpp
     LIBRARIES edge_tts::media
 )
