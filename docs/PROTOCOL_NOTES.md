@@ -399,6 +399,58 @@ parses headers from byte 2 onwards, so all headers parse correctly regardless of
 | `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` |
 | `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` |
 
+---
+
+## SynthesisSession Lifecycle
+
+**Source:** `communicate.py Communicate.__stream()` and `stream()`
+
+**C++ implementation:** `communication::SynthesisSession::synthesize(tts_config, text_chunks)`
+
+### Per-chunk sequence (matches `__stream()` exactly)
+
+```
+1. metadata_factory.create_for_request()   → connection_id + request_id
+2. token_provider.sec_ms_gec()             → Sec-MS-GEC token
+3. url = endpoint + &ConnectionId=<id>
+               + &Sec-MS-GEC=<token>
+               + &Sec-MS-GEC-Version=<ver>
+4. websocket.connect(url)
+5. websocket.send_text(build_speech_config_frame(tts_config, metadata))
+6. websocket.send_text(build_ssml_frame(tts_config, text, metadata))
+7. receive loop:
+     audio    → accumulate AudioChunk
+     boundary → accumulate BoundaryChunk
+     turn_end → break
+     ignored  → continue
+     error    → fall through to close + return error
+8. if no audio received → service_error  (reference: NoAudioReceived)
+9. websocket.close()   ← always, on success AND error (context manager)
+```
+
+### Multi-chunk behavior
+
+`stream()` iterates over all text chunks and calls `__stream()` per chunk.
+C++ `SynthesisSession::synthesize` replicates this: for each chunk, the full
+lifecycle in step 1–9 is repeated with a **new** WebSocket connection.
+
+### Error propagation
+
+| Step that fails | Python exception | C++ ErrorCode |
+|-----------------|-----------------|---------------|
+| `sec_ms_gec()` | — | `protocol_error` |
+| `connect()` | transport error | `network_error` |
+| `send_text()` | transport error | `network_error` |
+| `receive()` | transport error | `network_error` |
+| `parse_incoming()` | `UnknownResponse` / `UnexpectedResponse` | `protocol_error` |
+| no audio received | `NoAudioReceived` | `service_error` |
+
+On any error after `connect()`, `close()` is always called before the error is
+returned (matching Python's context manager `__aexit__`). The close result is
+silently discarded.
+
+---
+
 ### Metadata all-SessionEnd deviation
 
 Python's `__parse_metadata()` raises `UnexpectedResponse("No WordBoundary metadata found")`

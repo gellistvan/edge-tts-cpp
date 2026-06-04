@@ -16,7 +16,7 @@ protocol details from assumptions — consult `REFERENCE_BEHAVIOR.md` first.
 | `edge_tts::common` | `src/common` | `include/edge_tts/common` | `edge_tts::common` | `Exception` hierarchy (`Errors.hpp`), value-type `Error` + `ErrorCode` (`Error.hpp`), `Result<T>` / `Result<void>` (`Result.hpp`), `Expected<T,E>`, and UTF-8 utilities. Must not depend on other modules. |
 | `edge_tts::core` | `src/core` | `include/edge_tts/core` | `edge_tts::core` | Domain value types and pure business rules: `TtsConfig`, `Voice`/`VoiceGender`, `Chunk.hpp` types (`BoundaryType`, `AudioChunk`, `BoundaryChunk`, `TtsChunk`), `TextChunker`. No networking, filesystem, process execution, or protocol transport. |
 | `edge_tts::serialization` | `src/serialization` | `include/edge_tts/serialization` | `edge_tts::serialization` | Edge protocol serialization and parsing: SSML, speech config payloads, protocol headers, token and connection metadata. May depend on `core` and `common`. |
-| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | Public orchestration and transport-facing services: `Communicate`, voice service, WebSocket transport abstraction (`IWebSocketClient`) and fake test double (`FakeWebSocketClient`), incoming message parsing (`EdgeProtocol::parse_incoming`), and outgoing frame builders (`EdgeProtocol::build_speech_config_frame`, `build_ssml_frame`). May depend on all modules but should keep business rules delegated. |
+| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | Public orchestration and transport-facing services: `Communicate`, voice service, WebSocket transport abstraction (`IWebSocketClient`) and fake test double (`FakeWebSocketClient`), incoming message parsing (`EdgeProtocol::parse_incoming`), outgoing frame builders (`EdgeProtocol::build_speech_config_frame`, `build_ssml_frame`), and `SynthesisSession` which orchestrates the full per-chunk lifecycle. May depend on all modules but should keep business rules delegated. |
 | `edge_tts::media` | `src/media` | `include/edge_tts/media` | `edge_tts::media` | Audio conversion and playback integration. Owns the `ffmpeg`/`ffplay` process boundary. Must not parse protocol messages or own TTS configuration rules. |
 | `edge_tts::subtitles` | `src/subtitles` | `include/edge_tts/subtitles` | `edge_tts::subtitles` | Subtitle cue modeling, boundary-to-cue conversion, and SRT composition. May depend on `core` for boundary chunks. |
 
@@ -48,6 +48,9 @@ Rules:
   - `EdgeProtocol` owns all outgoing frame construction and incoming frame dispatch.
   - `IncomingMessage` / `WebSocketMessage` are the typed event vocabulary returned by
     `parse_incoming()`.
+  - `SynthesisSession` orchestrates the full per-chunk synthesis lifecycle:
+    URL construction → connect → speech.config → SSML → receive loop → close.
+    One `IWebSocketClient` connection is opened and closed per text chunk.
 
 ## Public API policy
 

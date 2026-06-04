@@ -67,6 +67,7 @@ edge_tts_add_module_test(
         communication/EdgeProtocolSsmlFrameTests.cpp
         communication/EdgeProtocolIncomingTests.cpp
         communication/FakeWebSocketClientTests.cpp
+        communication/SynthesisSessionTests.cpp
     LIBRARIES edge_tts::communication
 )
 
