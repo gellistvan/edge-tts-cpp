@@ -61,8 +61,8 @@ printing and `exit()`.
 | 6 | **No custom SSML.** The Python project explicitly removed custom SSML support because the service only permits the single `<voice><prosody>` structure that the library already generates. | `README.md` | `exact` (no custom-SSML flag) |
 | 7 | **Exit code 0 on success,** non-zero on error. `--list-voices` calls `sys.exit(0)` explicitly. | `util.py:amain()` | `planned` |
 | 8 | **Negative-value syntax.** `--rate=-50%` works; `--rate -50%` is misinterpreted by argparse as an unknown option. The README documents this limitation explicitly. C++ CLI11 has the same behavior; users must use `=`-form for negative values. | `README.md` | `exact` (same constraint) |
-| 9 | **Voice list sort order.** Voices are sorted ascending by `ShortName` before display. | `util.py:_print_voices()` | `planned` |
-| 10 | **Voice list columns.** `Name`, `Gender`, `ContentCategories` (comma-joined), `VoicePersonalities` (comma-joined). Formatted as a tab-aligned table using `tabulate`. | `util.py:_print_voices()` | `planned` — C++ equivalent via stream formatting |
+| 9 | **Voice list sort order.** Voices are sorted ascending by `ShortName` before display. | `util.py:_print_voices()` | `exact` |
+| 10 | **Voice list columns.** `Name`, `Gender`, `ContentCategories` (comma-joined), `VoicePersonalities` (comma-joined). Formatted as a tab-aligned table using `tabulate`. | `util.py:_print_voices()` | `exact` — `VoiceFormatter` produces tabulate "simple" format: left-aligned columns padded to max width, separated by two spaces, dash separator row |
 
 ---
 

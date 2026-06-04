@@ -23,7 +23,7 @@ include/edge_tts/
   communication/   Communicate facade, HTTP/WebSocket transport boundary
   media/           ffmpeg/ffplay process integration boundary
   subtitles/       subtitle cues and SRT composition
-  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments, InputLoader)
+  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments, InputLoader, VoiceFormatter)
 
 src/
   core/
