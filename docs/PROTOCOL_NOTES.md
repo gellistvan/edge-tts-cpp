@@ -347,13 +347,16 @@ Key invariants:
 | `Path` header | Type | Handling |
 |---------------|------|----------|
 | `audio.metadata` | text | Parse JSON body as boundary metadata |
-| `turn.end` | text | Compute offset compensation; break loop |
+| `turn.end` | text | Turn-end marker; break loop |
 | `response` | text | Silently ignored |
 | `turn.start` | text | Silently ignored |
 | `audio` | binary | Parse audio payload |
-| anything else | — | `UnknownResponse` (protocol error) |
+| anything else | — | `UnknownResponse` (protocol_error) |
 
-### Parsing note
+**C++ implementation:** `communication::EdgeProtocol::parse_incoming(message)` →
+`Result<vector<IncomingMessage>>`.
+
+### Incoming text frame parsing
 
 The Python reference parses via `get_headers_and_data(data, data.find(b"\r\n\r\n"))`:
 - `data[:pos]` is the header section (split on `\r\n`, then each line on first `:`).
@@ -363,6 +366,45 @@ The Python reference parses via `get_headers_and_data(data, data.find(b"\r\n\r\n
   produce a clean body with no prefix.
 - Headers are returned as `vector<pair<string,string>>` (preserves duplicates and
   ordering), unlike the Python dict (which overwrites earlier duplicate values).
+
+### Incoming binary frame format
+
+```
+[HL_MSB, HL_LSB, header_content (HL-2 bytes), \r\n, body_bytes...]
+```
+
+- `HL` = big-endian uint16 from bytes 0–1 = total size of prefix + header content
+  (i.e., HL = 2 + len(header_content_without_trailing_CRLF))
+- Header content at bytes `[2 .. HL)` — parsed without the 2-byte length prefix
+- `\r\n` separator at bytes `[HL .. HL+2)`
+- Body at bytes `[HL+2 ..)`
+
+**Python quirk:** `get_headers_and_data(data, HL)` slices `data[:HL]` which includes
+the 2-byte length prefix. Splitting on `\r\n` makes the first header line include that
+prefix (e.g., `b"\x00\x24X-RequestId:abc"`). The code relies on the service always
+placing a "don't care" header (like `X-RequestId`) FIRST so that `Path` and
+`Content-Type` are on subsequent (correctly-parsed) lines. The C++ implementation
+parses headers from byte 2 onwards, so all headers parse correctly regardless of order.
+
+**Binary frame validation (reference behavior):**
+
+| Condition | Reference exception | C++ result |
+|-----------|--------------------|----|
+| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` |
+| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` |
+| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` |
+| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` |
+
+### Metadata all-SessionEnd deviation
+
+Python's `__parse_metadata()` raises `UnexpectedResponse("No WordBoundary metadata found")`
+when the Metadata array is empty or all-`SessionEnd`. C++ `MetadataJsonParser` returns
+an empty vector in that case; `parse_incoming` treats an empty result as `protocol_error`
+to match reference behavior.
 
 ---
 

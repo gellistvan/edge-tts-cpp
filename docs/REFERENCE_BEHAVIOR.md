@@ -552,15 +552,31 @@ boundary; headers are split on `\r\n` then on the first `:`.
 
 **Incoming binary frames:**
 
-- First 2 bytes: header length (big-endian unsigned 16-bit integer).
-- Bytes `[2 .. 2+header_length]`: headers (same `\r\n`/`:` format).
-- Bytes `[2+header_length+2 ..]`: audio payload.
-- `Path: audio` is the only expected binary path.
-- `Content-Type: audio/mpeg` is the expected content type; `None` content type
-  with empty data is silently skipped (stream termination signal).
-- Any other content type raises `UnexpectedResponse`.
+Binary frame layout:
+```
+[HL_MSB, HL_LSB, header_content (HL-2 bytes), \r\n, body...]
+```
 
-**Match exactly:** Yes — same URL, same headers, same frame parsing logic.
+- Bytes 0–1: `HL` = big-endian uint16 = length prefix (2 bytes) + header content length.
+- Bytes `[2 .. HL)`: header content in `Key:Value\r\nKey:Value` format (no trailing CRLF).
+- Bytes `[HL .. HL+2)`: `\r\n` separator.
+- Bytes `[HL+2 ..)`: audio payload.
+- `Path: audio` is the only expected binary path.
+- `Content-Type: audio/mpeg` is expected; absent `Content-Type` with empty body is
+  silently skipped (stream termination signal); any other value raises `UnexpectedResponse`.
+
+**Python header-parsing quirk:** `get_headers_and_data(data, HL)` includes the
+2-byte prefix in `data[:HL]`, so the first header line has garbage prefix bytes.
+The service always places a "don't care" header (e.g., `X-RequestId`) first, so
+`Path` and `Content-Type` on subsequent lines parse correctly. The C++ implementation
+parses headers from byte 2 only — all headers parse correctly regardless of order.
+
+**C++ implementation:** `communication::EdgeProtocol::parse_incoming(WebSocketMessage)`
+→ `Result<vector<IncomingMessage>>`. Defined in `src/communication/EdgeProtocolIncoming.cpp`.
+Types: `WebSocketMessage` (in/out), `IncomingMessage` + `IncomingMessageKind` (parsed result).
+
+**Match exactly:** Yes for all documented cases; see PROTOCOL_NOTES.md for the
+binary frame format analysis and binary frame validation table.
 
 ---
 

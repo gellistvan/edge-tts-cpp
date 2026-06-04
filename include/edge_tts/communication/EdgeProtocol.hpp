@@ -3,10 +3,13 @@
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Result.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
+#include "edge_tts/communication/IncomingMessage.hpp"
+#include "edge_tts/communication/WebSocketMessage.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
 #include <chrono>
 #include <string>
+#include <vector>
 
 namespace edge_tts::communication {
 
@@ -63,6 +66,41 @@ public:
         const core::TtsConfig&     config,
         std::string_view           text_chunk,
         const ConnectionMetadata&  metadata) const;
+
+    // Parses an incoming WebSocket message into zero or more typed events.
+    //
+    // Reference: communicate.py __stream() message dispatch loop
+    //
+    // Text frame dispatch (by Path header):
+    //   "audio.metadata" → one IncomingMessage per BoundaryChunk
+    //   "turn.end"       → single IncomingMessage{turn_end}
+    //   "response"       → single IncomingMessage{ignored}   (silently ignored)
+    //   "turn.start"     → single IncomingMessage{ignored}   (silently ignored)
+    //   anything else    → protocol_error (reference: UnknownResponse)
+    //
+    // Binary frame dispatch:
+    //   - First 2 bytes: big-endian uint16 = header_length (includes these 2 bytes)
+    //   - Header content at bytes [2 .. header_length)
+    //   - Separator \r\n at bytes [header_length .. header_length+2)
+    //   - Body at bytes [header_length+2 ..)
+    //   - Path must be "audio"
+    //   - Content-Type must be "audio/mpeg" or absent
+    //   - Absent Content-Type + empty body → IncomingMessage{ignored}
+    //   - Absent Content-Type + non-empty body → protocol_error
+    //   - "audio/mpeg" + empty body → protocol_error
+    //   - "audio/mpeg" + non-empty body → IncomingMessage{audio, AudioChunk}
+    //
+    // Error cases (all return protocol_error):
+    //   - Text frame: missing \r\n\r\n separator or malformed header
+    //   - Text frame Path:audio.metadata: malformed JSON or unknown type
+    //   - Text frame Path:audio.metadata: empty metadata (all SessionEnd) →
+    //     protocol_error (reference: UnexpectedResponse "No WordBoundary metadata found")
+    //   - Binary frame: fewer than 2 bytes
+    //   - Binary frame: header_length > message size
+    //   - Binary frame: Path != "audio"
+    //   - Binary frame: unexpected Content-Type
+    [[nodiscard]] common::Result<std::vector<IncomingMessage>> parse_incoming(
+        const WebSocketMessage& message) const;
 
 private:
     const common::IClock& clock_;
