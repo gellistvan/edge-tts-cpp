@@ -42,11 +42,14 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     "subtitles":     {"common", "core"},
     "media":         {"common"},
     "communication": {"common", "core", "serialization", "subtitles", "media"},
-    "cli":           {"common", "core", "serialization", "subtitles", "media",
+    # api is the public facade above communication; it may include everything below.
+    "api":           {"common", "core", "serialization", "subtitles", "media",
                       "communication"},
+    "cli":           {"common", "core", "serialization", "subtitles", "media",
+                      "communication", "api"},
     # apps/ executables sit above the cli layer and may include any module.
     "apps":          {"common", "core", "serialization", "subtitles", "media",
-                      "communication", "cli"},
+                      "communication", "api", "cli"},
 }
 
 # Known module names — used to validate that a scanned file belongs to a

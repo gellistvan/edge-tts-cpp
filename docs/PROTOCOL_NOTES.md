@@ -305,7 +305,19 @@ Path:ssml\r\n
 \r\n
 {ssml_body}
 ```
-Note: `Z` is appended to the timestamp — documented as a Microsoft Edge bug.
+
+**C++ implementation:** `communication::EdgeProtocol::build_ssml_frame(config, text_chunk, metadata)`.
+
+Key invariants:
+- `X-RequestId` uses `metadata.request_id` (32-char lowercase hex, no hyphens).
+- `X-Timestamp` has a trailing `Z` — documented as a Microsoft Edge bug in the source.
+- Header order: `X-RequestId`, `Content-Type`, `X-Timestamp`, `Path`.
+- `text_chunk` is passed raw to `serialization::SsmlBuilder::build()`, which normalizes
+  (UTF-8 validation + control-char replacement) and XML-escapes exactly once.
+  Do NOT pre-escape text — it will be double-escaped.
+- Config errors from `SsmlBuilder` (invalid rate/volume/pitch/voice) propagate as
+  `Result` failures — no silent truncation.
+- No chunking logic — callers are responsible for splitting text before calling.
 
 **Speech config frame** (`send_command_request()` in communicate.py):
 ```
@@ -313,22 +325,38 @@ X-Timestamp:{js_date_string}\r\n
 Content-Type:application/json; charset=utf-8\r\n
 Path:speech.config\r\n
 \r\n
-{"context":{"synthesis":{"audio":{"metadataoptions":{...},"outputFormat":"..."}}}}
+{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"{sq}","wordBoundaryEnabled":"{wd}"},"outputFormat":"{format}"}}}}\r\n
 ```
-Note: NO `Z` suffix on the timestamp in `speech.config` — only SSML has it.
+
+**C++ implementation:** `communication::EdgeProtocol::build_speech_config_frame(config, metadata)`.
+
+Key invariants:
+- NO `Z` suffix on the timestamp in `speech.config` — only SSML has it.
+- NO `X-RequestId` header — speech.config carries only `X-Timestamp`, `Content-Type`, and `Path`.
+- `sentenceBoundaryEnabled` and `wordBoundaryEnabled` values are **JSON strings** (`"true"`/`"false"`), not JSON booleans — matches Python's f-string interpolation exactly.
+- Boundary logic (from Python `send_command_request()`):
+  - `WordBoundary` → `wordBoundaryEnabled:"true"`, `sentenceBoundaryEnabled:"false"`
+  - `SentenceBoundary` (default) → `sentenceBoundaryEnabled:"true"`, `wordBoundaryEnabled:"false"`
+- Output format is taken from `TtsConfig::output_format.value()` (not hardcoded).
+- Body includes a trailing `\r\n` — matches the Python reference string exactly.
+- `EdgeProtocol` takes a `common::IClock&` for testable timestamps; use `FixedClock` in tests.
+- `ConnectionMetadata` is accepted for API consistency but not used (speech.config has no per-request ID).
 
 ### Incoming frame paths
 
 | `Path` header | Type | Handling |
 |---------------|------|----------|
 | `audio.metadata` | text | Parse JSON body as boundary metadata |
-| `turn.end` | text | Compute offset compensation; break loop |
+| `turn.end` | text | Turn-end marker; break loop |
 | `response` | text | Silently ignored |
 | `turn.start` | text | Silently ignored |
 | `audio` | binary | Parse audio payload |
-| anything else | — | `UnknownResponse` (protocol error) |
+| anything else | — | `UnknownResponse` (protocol_error) |
 
-### Parsing note
+**C++ implementation:** `communication::EdgeProtocol::parse_incoming(message)` →
+`Result<vector<IncomingMessage>>`.
+
+### Incoming text frame parsing
 
 The Python reference parses via `get_headers_and_data(data, data.find(b"\r\n\r\n"))`:
 - `data[:pos]` is the header section (split on `\r\n`, then each line on first `:`).
@@ -338,6 +366,97 @@ The Python reference parses via `get_headers_and_data(data, data.find(b"\r\n\r\n
   produce a clean body with no prefix.
 - Headers are returned as `vector<pair<string,string>>` (preserves duplicates and
   ordering), unlike the Python dict (which overwrites earlier duplicate values).
+
+### Incoming binary frame format
+
+```
+[HL_MSB, HL_LSB, header_content (HL-2 bytes), \r\n, body_bytes...]
+```
+
+- `HL` = big-endian uint16 from bytes 0–1 = total size of prefix + header content
+  (i.e., HL = 2 + len(header_content_without_trailing_CRLF))
+- Header content at bytes `[2 .. HL)` — parsed without the 2-byte length prefix
+- `\r\n` separator at bytes `[HL .. HL+2)`
+- Body at bytes `[HL+2 ..)`
+
+**Python quirk:** `get_headers_and_data(data, HL)` slices `data[:HL]` which includes
+the 2-byte length prefix. Splitting on `\r\n` makes the first header line include that
+prefix (e.g., `b"\x00\x24X-RequestId:abc"`). The code relies on the service always
+placing a "don't care" header (like `X-RequestId`) FIRST so that `Path` and
+`Content-Type` are on subsequent (correctly-parsed) lines. The C++ implementation
+parses headers from byte 2 onwards, so all headers parse correctly regardless of order.
+
+**Binary frame validation (reference behavior):**
+
+| Condition | Reference exception | C++ result |
+|-----------|--------------------|----|
+| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` |
+| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` |
+| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` |
+| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` |
+| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` |
+
+---
+
+## SynthesisSession Lifecycle
+
+**Source:** `communicate.py Communicate.__stream()` and `stream()`
+
+**C++ implementation:** `communication::SynthesisSession::synthesize(tts_config, text_chunks)`
+
+### Per-chunk sequence (matches `__stream()` exactly)
+
+```
+1. metadata_factory.create_for_request()   → connection_id + request_id
+2. token_provider.sec_ms_gec()             → Sec-MS-GEC token
+3. url = endpoint + &ConnectionId=<id>
+               + &Sec-MS-GEC=<token>
+               + &Sec-MS-GEC-Version=<ver>
+4. websocket.connect(url)
+5. websocket.send_text(build_speech_config_frame(tts_config, metadata))
+6. websocket.send_text(build_ssml_frame(tts_config, text, metadata))
+7. receive loop:
+     audio    → accumulate AudioChunk
+     boundary → accumulate BoundaryChunk
+     turn_end → break
+     ignored  → continue
+     error    → fall through to close + return error
+8. if no audio received → service_error  (reference: NoAudioReceived)
+9. websocket.close()   ← always, on success AND error (context manager)
+```
+
+### Multi-chunk behavior
+
+`stream()` iterates over all text chunks and calls `__stream()` per chunk.
+C++ `SynthesisSession::synthesize` replicates this: for each chunk, the full
+lifecycle in step 1–9 is repeated with a **new** WebSocket connection.
+
+### Error propagation
+
+| Step that fails | Python exception | C++ ErrorCode |
+|-----------------|-----------------|---------------|
+| `sec_ms_gec()` | — | `protocol_error` |
+| `connect()` | transport error | `network_error` |
+| `send_text()` | transport error | `network_error` |
+| `receive()` | transport error | `network_error` |
+| `parse_incoming()` | `UnknownResponse` / `UnexpectedResponse` | `protocol_error` |
+| no audio received | `NoAudioReceived` | `service_error` |
+
+On any error after `connect()`, `close()` is always called before the error is
+returned (matching Python's context manager `__aexit__`). The close result is
+silently discarded.
+
+---
+
+### Metadata all-SessionEnd deviation
+
+Python's `__parse_metadata()` raises `UnexpectedResponse("No WordBoundary metadata found")`
+when the Metadata array is empty or all-`SessionEnd`. C++ `MetadataJsonParser` returns
+an empty vector in that case; `parse_incoming` treats an empty result as `protocol_error`
+to match reference behavior.
 
 ---
 

@@ -63,13 +63,31 @@ edge_tts_add_module_test(
         communication/ConnectionMetadataTests.cpp
         communication/HttpClientInterfaceTests.cpp
         communication/VoiceServiceTests.cpp
+        communication/EdgeProtocolSpeechConfigTests.cpp
+        communication/EdgeProtocolSsmlFrameTests.cpp
+        communication/EdgeProtocolIncomingTests.cpp
+        communication/FakeWebSocketClientTests.cpp
+        communication/SynthesisSessionTests.cpp
     LIBRARIES edge_tts::communication
 )
 
 edge_tts_add_module_test(
     NAME media
-    SOURCES common/test_main.cpp
+    SOURCES
+        common/test_main.cpp
+        media/ExecutableDiscoveryTests.cpp
+        media/FfmpegAudioConverterTests.cpp
+        media/ProcessRunnerTests.cpp
     LIBRARIES edge_tts::media
+)
+
+edge_tts_add_module_test(
+    NAME api
+    SOURCES
+        common/test_main.cpp
+        api/FileWriterTests.cpp
+        api/CommunicateTests.cpp
+    LIBRARIES edge_tts::api
 )
 
 edge_tts_add_module_test(
@@ -77,5 +95,10 @@ edge_tts_add_module_test(
     SOURCES
         common/test_main.cpp
         cli/test_cli.cpp
+        cli/EdgeTtsArgumentParserTests.cpp
+        cli/InputLoaderTests.cpp
+        cli/VoiceFormatterTests.cpp
+        cli/EdgeTtsCommandDispatcherTests.cpp
+        cli/PlaybackCommandDispatcherTests.cpp
     LIBRARIES edge_tts::cli
 )

@@ -16,7 +16,8 @@ protocol details from assumptions — consult `REFERENCE_BEHAVIOR.md` first.
 | `edge_tts::common` | `src/common` | `include/edge_tts/common` | `edge_tts::common` | `Exception` hierarchy (`Errors.hpp`), value-type `Error` + `ErrorCode` (`Error.hpp`), `Result<T>` / `Result<void>` (`Result.hpp`), `Expected<T,E>`, and UTF-8 utilities. Must not depend on other modules. |
 | `edge_tts::core` | `src/core` | `include/edge_tts/core` | `edge_tts::core` | Domain value types and pure business rules: `TtsConfig`, `Voice`/`VoiceGender`, `Chunk.hpp` types (`BoundaryType`, `AudioChunk`, `BoundaryChunk`, `TtsChunk`), `TextChunker`. No networking, filesystem, process execution, or protocol transport. |
 | `edge_tts::serialization` | `src/serialization` | `include/edge_tts/serialization` | `edge_tts::serialization` | Edge protocol serialization and parsing: SSML, speech config payloads, protocol headers, token and connection metadata. May depend on `core` and `common`. |
-| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | Public orchestration and transport-facing services: `Communicate`, voice service, WebSocket transport abstraction and implementation stubs. May depend on all modules but should keep business rules delegated. |
+| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | WebSocket transport infrastructure and synthesis orchestration: `IWebSocketClient`, `FakeWebSocketClient`, `EdgeProtocol` (frame builders + incoming parser), `SynthesisSession`, voice service, token provider. Does NOT own the public `Communicate` facade — that belongs in `api`. |
+| `edge_tts::api` | `src/api` | `include/edge_tts/api` | `edge_tts::api` | **Public synthesis facade.** `Communicate` — the only class end-users and the CLI layer should import. Orchestrates `SynthesisSession`, `TextChunker`, `SubMaker`, and media I/O. `FileWriter` handles binary media and UTF-8 text file writes for `save()`. Sits above `communication` so the transport layer stays clean. |
 | `edge_tts::media` | `src/media` | `include/edge_tts/media` | `edge_tts::media` | Audio conversion and playback integration. Owns the `ffmpeg`/`ffplay` process boundary. Must not parse protocol messages or own TTS configuration rules. |
 | `edge_tts::subtitles` | `src/subtitles` | `include/edge_tts/subtitles` | `edge_tts::subtitles` | Subtitle cue modeling, boundary-to-cue conversion, and SRT composition. May depend on `core` for boundary chunks. |
 
@@ -28,11 +29,13 @@ The intended dependency graph is:
 common
   ↑
 core
-  ↑          media
-serialization ↑
-      subtitles
-          ↑
-communication
+  ↑          media    subtitle
+serialization  ↑          ↑
+      └─────── communication ──┘
+                    ↑
+                   api
+                    ↑
+                   cli
 ```
 
 Rules:
@@ -43,18 +46,63 @@ Rules:
 - `subtitles` converts core boundary chunks into subtitle output.
 - `media` owns process execution and audio conversion/playback concerns.
 - `communication` coordinates modules and adapts transports; it should remain thin.
+  - `IWebSocketClient` is the WebSocket transport boundary; `FakeWebSocketClient` is
+    the in-memory test double used to test session logic without real networking.
+  - `EdgeProtocol` owns all outgoing frame construction and incoming frame dispatch.
+  - `IncomingMessage` / `WebSocketMessage` are the typed event vocabulary returned by
+    `parse_incoming()`.
+  - `SynthesisSession` orchestrates the full per-chunk synthesis lifecycle:
+    URL construction → connect → speech.config → SSML → receive loop → close.
+    One `IWebSocketClient` connection is opened and closed per text chunk.
 
 ## Public API policy
 
 Headers are grouped by module:
 
 ```cpp
-#include <edge_tts/core/TtsConfig.hpp>
-#include <edge_tts/communication/Communicate.hpp>
-#include <edge_tts/subtitles/SrtComposer.hpp>
+#include "edge_tts/api/Communicate.hpp"   // public TTS facade
+#include "edge_tts/core/TtsConfig.hpp"
+#include "edge_tts/subtitles/SrtComposer.hpp"
 ```
 
 Avoid adding new public headers at `include/edge_tts/` root unless they are deliberate umbrella headers. Module-local concepts should stay inside their module folder.
+
+## C++ usage example
+
+```cpp
+#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/core/TtsConfig.hpp"
+
+// Build configuration (defaults match Python reference edge-tts v7.2.8).
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+cfg.rate  = "+0%";
+
+// Synthesize text.
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+
+// Save audio and optional SRT subtitles — reference: Communicate.save().
+auto result = c.save("hello.mp3", "hello.srt");
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+}
+
+// OR stream chunks for custom processing — reference: Communicate.stream().
+edge_tts::api::Communicate c2("Hello again!");
+auto chunks = c2.stream_sync();
+if (chunks) {
+    for (const auto& chunk : *chunks) {
+        if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
+        else                                  { /* process boundary event */ }
+    }
+}
+```
+
+**Note:** `stream_sync()` and `save()` are each single-use (reference:
+`Communicate.stream()` raises `RuntimeError` on a second call). Calling either
+a second time returns `ErrorCode::invalid_state`. Until the WebSocket transport
+is wired, the production constructor returns `ErrorCode::network_error`;
+inject a `SynthesizerFn` for testing.
 
 ## Core domain type ownership
 
@@ -153,6 +201,7 @@ a minimal GTest-compatible single-header runner located at
 | `edge_tts_core_tests` | `tests/core` | `edge_tts::core` |
 | `edge_tts_serialization_tests` | `tests/serialization` | `edge_tts::serialization` |
 | `edge_tts_communication_tests` | `tests/communication` | `edge_tts::communication` |
+| `edge_tts_api_tests` | `tests/api` | `edge_tts::api` |
 | `edge_tts_media_tests` | `tests/media` | `edge_tts::media` |
 | `edge_tts_subtitles_tests` | `tests/subtitles` | `edge_tts::subtitles` |
 
@@ -167,4 +216,5 @@ Each module test target should prefer behavior-level tests over implementation-d
 | `serialization` | `XmlEscaper.hpp`, `TextNormalizer.hpp`, `TextChunker.hpp`, `SsmlBuilder.hpp` implemented |
 | `subtitles` | `SubtitleTime`, `SubtitleCue`, `SrtComposer`, `SubMaker` implemented |
 | `communication` | `EdgeServiceConfig`, `EdgeTokenProvider`, `ConnectionMetadataFactory`, `IHttpClient`/`FakeHttpClient`, `VoiceService` implemented; WebSocket and real networking stubs remain |
+| `api` | `Communicate` facade implemented: validate → chunk → synthesize (via `SynthesizerFn`) → stream/save; `FileWriter` (binary + UTF-8 text writes) implemented |
 | `media` | Skeleton only |

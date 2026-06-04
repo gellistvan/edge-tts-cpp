@@ -50,15 +50,16 @@ def ok(msg: str) -> None:
 def test_module_of_file_recognition() -> None:
     root = Path("/repo")
     cases = [
-        (Path("/repo/include/edge_tts/core/TtsConfig.hpp"), "core"),
-        (Path("/repo/include/edge_tts/common/Errors.hpp"), "common"),
-        (Path("/repo/include/edge_tts/communication/Communicate.hpp"), "communication"),
-        (Path("/repo/src/core/TtsConfig.cpp"), "core"),
-        (Path("/repo/src/subtitles/SrtComposer.cpp"), "subtitles"),
-        (Path("/repo/apps/edge-tts/main.cpp"), "apps"),
-        (Path("/repo/apps/edge-playback/main.cpp"), "apps"),
-        (Path("/repo/tests/core/test_tts_config.cpp"), None),
-        (Path("/repo/CMakeLists.txt"), None),
+        (Path("/repo/include/edge_tts/core/TtsConfig.hpp"),    "core"),
+        (Path("/repo/include/edge_tts/common/Errors.hpp"),     "common"),
+        (Path("/repo/include/edge_tts/api/Communicate.hpp"),   "api"),
+        (Path("/repo/src/api/Communicate.cpp"),                "api"),
+        (Path("/repo/src/core/TtsConfig.cpp"),                 "core"),
+        (Path("/repo/src/subtitles/SrtComposer.cpp"),          "subtitles"),
+        (Path("/repo/apps/edge-tts/main.cpp"),                 "apps"),
+        (Path("/repo/apps/edge-playback/main.cpp"),            "apps"),
+        (Path("/repo/tests/core/test_tts_config.cpp"),         None),
+        (Path("/repo/CMakeLists.txt"),                         None),
     ]
     for path, expected in cases:
         got = checker.module_of_file(path, root)
@@ -92,12 +93,21 @@ def test_allowed_includes_inline(tmp_path: Path) -> None:
          '#include "edge_tts/serialization/EdgeProtocol.hpp"\n'
          '#include "edge_tts/subtitles/SrtComposer.hpp"\n'
          '#include "edge_tts/media/AudioConverter.hpp"\n'),
+        # api is the public facade — may include communication and everything below
+        ("src/api/F.cpp",
+         '#include "edge_tts/communication/SynthesisSession.hpp"\n'
+         '#include "edge_tts/core/TtsConfig.hpp"\n'),
+        # cli may include api headers (Communicate facade)
         ("src/cli/F.cpp",
-         '#include "edge_tts/communication/Communicate.hpp"\n'),
+         '#include "edge_tts/api/Communicate.hpp"\n'),
         ("include/edge_tts/core/Self.hpp",
          '#include "edge_tts/core/TtsConfig.hpp"\n'),  # same-module include
+        # apps use api as the primary public entry point
         ("apps/edge-tts/main.cpp",
-         '#include "edge_tts/cli/CliOptions.hpp"\n'),  # app using cli module
+         '#include "edge_tts/api/Communicate.hpp"\n'),
+        # apps may also use cli directly
+        ("apps/edge-tts/cli.cpp",
+         '#include "edge_tts/cli/CliOptions.hpp"\n'),
     ]
     for rel, content in cases:
         path = tmp_path / rel
@@ -118,12 +128,21 @@ def test_forbidden_includes_inline(tmp_path: Path) -> None:
         ("src/core/Bad.cpp",
          '#include "edge_tts/serialization/EdgeProtocol.hpp"\n',
          "[core] forbidden include of [serialization]"),
+        # core must not include api (api is above core)
         ("src/core/Bad2.cpp",
-         '#include "edge_tts/communication/Communicate.hpp"\n',
+         '#include "edge_tts/api/Communicate.hpp"\n',
+         "[core] forbidden include of [api]"),
+        # core must not include communication either
+        ("src/core/Bad3.cpp",
+         '#include "edge_tts/communication/SynthesisSession.hpp"\n',
          "[core] forbidden include of [communication]"),
         ("src/serialization/Bad.cpp",
          '#include "edge_tts/communication/Communicate.hpp"\n',
          "[serialization] forbidden include of [communication]"),
+        # serialization must not include api
+        ("src/serialization/Bad2.cpp",
+         '#include "edge_tts/api/Communicate.hpp"\n',
+         "[serialization] forbidden include of [api]"),
         ("src/media/Bad.cpp",
          '#include "edge_tts/communication/Communicate.hpp"\n',
          "[media] forbidden include of [communication]"),
@@ -136,7 +155,11 @@ def test_forbidden_includes_inline(tmp_path: Path) -> None:
         ("src/subtitles/Bad2.cpp",
          '#include "edge_tts/media/AudioConverter.hpp"\n',
          "[subtitles] forbidden include of [media]"),
+        # communication must not include api (api is above communication)
         ("src/communication/Bad.cpp",
+         '#include "edge_tts/api/Communicate.hpp"\n',
+         "[communication] forbidden include of [api]"),
+        ("src/communication/Bad2.cpp",
          '#include "edge_tts/cli/CliOptions.hpp"\n',
          "[communication] forbidden include of [cli]"),
     ]
@@ -169,11 +192,11 @@ def test_private_header_from_app_inline(tmp_path: Path) -> None:
 def test_app_public_include_is_allowed_inline(tmp_path: Path) -> None:
     root = tmp_path
     path = tmp_path / "apps/edge-tts/main.cpp"
-    content = '#include "edge_tts/communication/Communicate.hpp"\n'
+    content = '#include "edge_tts/api/Communicate.hpp"\n'
     viols = _check_content(path, root, content)
     if viols:
-        fail(f"App including public communication header should be allowed, got: {viols}")
-    ok("app including public module header is allowed")
+        fail(f"App including public api header should be allowed, got: {viols}")
+    ok("app including public api::Communicate header is allowed")
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +227,7 @@ def test_forbidden_fixture_tree() -> None:
         "[core] forbidden include of [serialization]",
         "[media] forbidden include of [communication]",
         "[serialization] forbidden include of [communication]",
+        "[api] forbidden include of [cli]",
         "private header",
     ]
     for pattern in expected_patterns:

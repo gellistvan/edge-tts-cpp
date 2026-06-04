@@ -21,9 +21,11 @@ include/edge_tts/
   core/            pure domain types: TtsConfig, Voice, Chunk, TextChunker
   serialization/   SSML, Edge protocol payloads, token metadata
   communication/   Communicate facade, HTTP/WebSocket transport boundary
-  media/           ffmpeg/ffplay process integration boundary
+  media/           external process integration: IAudioConverter, FfmpegAudioConverter (ffmpeg/ffplay via IProcessRunner, no library linking), ExecutableDiscovery, ProcessRunner
   subtitles/       subtitle cues and SRT composition
-  cli/             CLI argument parsing (CliOptions)
+  cli/             CLI argument parsing and dispatch (EdgeTtsArgumentParser, EdgeTtsArguments,
+                   PlaybackArgumentParser, PlaybackArguments, PlaybackCommandDispatcher,
+                   InputLoader, VoiceFormatter, EdgeTtsCommandDispatcher)
 
 src/
   core/
@@ -56,6 +58,7 @@ the aggregate unless writing examples.
 | subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` | `edge_tts_subtitle_tests` |
 | media | `edge_tts_media` | `edge_tts::media` | `edge_tts_media_tests` |
 | communication | `edge_tts_communication` | `edge_tts::communication` | `edge_tts_communication_tests` |
+| api | `edge_tts_api` | `edge_tts::api` | `edge_tts_api_tests` |
 | cli | `edge_tts_cli` | `edge_tts::cli` | `edge_tts_cli_tests` |
 
 The aggregate convenience target:
@@ -122,7 +125,51 @@ cmake --build build --target edge_tts_core_tests
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
 
+## Usage
+
+```cpp
+#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/core/TtsConfig.hpp"
+
+// Save audio and optional SRT subtitles (reference: Communicate.save()).
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+auto result = c.save("hello.mp3", "hello.srt");
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+}
+
+// Or stream chunks for custom processing (reference: Communicate.stream()).
+edge_tts::api::Communicate c2("Hello again!");
+auto chunks = c2.stream_sync();
+if (chunks) {
+    for (const auto& chunk : *chunks) {
+        if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
+        else                                  { /* process boundary event */ }
+    }
+}
+```
+
+Both `stream_sync()` and `save()` are single-use — a second call returns
+`ErrorCode::invalid_state`, matching Python's `RuntimeError`.
+
+**Note:** The WebSocket transport is not yet wired; until it is, production
+calls fail with `ErrorCode::network_error`. Inject a `SynthesizerFn` for
+testing without a live service connection.
+
 ## Applications
+
+The CLI is wired end-to-end via `EdgeTtsCommandDispatcher`, which routes parsed arguments to the right handler with injectable dependencies (voice service, Communicate factory, streams):
+
+```
+edge-tts --text "Hello" --write-media hello.mp3 --write-subtitles hello.srt
+edge-tts --list-voices
+edge-tts --help
+edge-tts --version
+```
+
+The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — matching Python `argparse` and `sys.exit()` behavior.
 
 The skeleton builds two placeholder apps:
 
@@ -131,7 +178,29 @@ edge-tts
 edge-playback
 ```
 
-`edge-tts` will eventually expose options such as `--text`, `--file`, `--voice`, `--list-voices`, `--rate`, `--volume`, `--pitch`, `--write-media`, `--write-subtitles`, and `--proxy`.
+`edge-tts` supports the following options (argument parsing is fully implemented via `EdgeTtsArgumentParser`):
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--text` | `-t` | (required\*) | Text to synthesize |
+| `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
+| `--list-voices` | `-l` | (required\*) | List available voices and exit |
+| `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
+| `--rate` | — | `+0%` | Speech rate (use `--rate=-50%` for negatives) |
+| `--volume` | — | `+0%` | Speech volume |
+| `--pitch` | — | `+0Hz` | Speech pitch |
+| `--write-media` | — | (stdout) | Write MP3 to file |
+| `--write-subtitles` | — | (none) | Write SRT to file (`-` for stderr) |
+| `--proxy` | — | (none) | HTTP proxy for TTS and voice list |
+| `--version` | — | — | Print version and exit |
+| `--help` | `-h` | — | Print help and exit |
+
+\* `--text`, `--file`, and `--list-voices` are mutually exclusive; exactly one must be given.
+
+**Input loading** (`cli::InputLoader`) resolves text in the order the reference dictates:
+1. `--text TEXT` → used verbatim
+2. `--file -` or `--file /dev/stdin` → read from stdin
+3. `--file PATH` → open UTF-8 file and read entirely (CRLF preserved on Linux)
 
 ## Tests
 
@@ -142,6 +211,7 @@ edge_tts_common_tests
 edge_tts_core_tests
 edge_tts_serialization_tests
 edge_tts_communication_tests
+edge_tts_api_tests
 edge_tts_media_tests
 edge_tts_subtitles_tests
 ```

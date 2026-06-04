@@ -78,14 +78,20 @@ edge_tts_add_module(
     NAME media
     SOURCES
         src/media/AudioConverter.cpp
+        src/media/ExecutableDiscovery.cpp
+        src/media/FfmpegAudioConverter.cpp
+        src/media/ProcessRunner.cpp
     PUBLIC_DEPS edge_tts::common
 )
 
 edge_tts_add_module(
     NAME communication
     SOURCES
-        src/communication/Communicate.cpp
         src/communication/ConnectionMetadata.cpp
+        src/communication/EdgeProtocol.cpp
+        src/communication/EdgeProtocolIncoming.cpp
+        src/communication/FakeWebSocketClient.cpp
+        src/communication/SynthesisSession.cpp
         src/communication/FakeHttpClient.cpp
         src/communication/VoiceService.cpp
         src/communication/EdgeServiceConfig.cpp
@@ -102,11 +108,29 @@ edge_tts_add_module(
 )
 
 edge_tts_add_module(
+    NAME api
+    SOURCES
+        src/api/Communicate.cpp
+        src/api/FileWriter.cpp
+    PUBLIC_DEPS
+        edge_tts::communication
+        edge_tts::serialization
+        edge_tts::subtitle
+)
+
+edge_tts_add_module(
     NAME cli
     SOURCES
         src/cli/CliPlaceholder.cpp
+        src/cli/EdgeTtsArgumentParser.cpp
+        src/cli/EdgeTtsCommandDispatcher.cpp
+        src/cli/InputLoader.cpp
+        src/cli/PlaybackArgumentParser.cpp
+        src/cli/PlaybackCommandDispatcher.cpp
+        src/cli/VoiceFormatter.cpp
     PUBLIC_DEPS
-        edge_tts::communication
+        edge_tts::api
+        edge_tts::media
 )
 
 # ---------------------------------------------------------------------------
@@ -132,6 +156,7 @@ target_link_libraries(edge_tts
         edge_tts::core
         edge_tts::serialization
         edge_tts::communication
+        edge_tts::api
         edge_tts::media
         edge_tts::subtitle
         edge_tts::cli
