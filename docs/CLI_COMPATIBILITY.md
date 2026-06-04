@@ -24,22 +24,28 @@ planned C++ `edge-tts-cpp` CLI.
 
 ## `edge-tts`
 
+**Argument parsing implementation:** `include/edge_tts/cli/EdgeTtsArgumentParser.hpp` /
+`src/cli/EdgeTtsArgumentParser.cpp`.  `EdgeTtsArgumentParser::parse()` is stateless
+and testable without synthesis, file I/O, or network calls.  It returns a
+`ParseResult{action, arguments, message, exit_code}` — callers (main.cpp) handle
+printing and `exit()`.
+
 ### Option matrix
 
 | Option | Short | Argument | Default | Python behavior | C++ planned behavior | Status |
 |--------|-------|----------|---------|-----------------|----------------------|--------|
-| `--text` | `-t` | `STRING` | (required\*) | Text to synthesize. Mutually exclusive with `--file` and `--list-voices`. | Identical. | `planned` |
-| `--file` | `-f` | `PATH` | (required\*) | Read text from file; `-` or `/dev/stdin` reads stdin. Opens with UTF-8 encoding. Mutually exclusive with `--text` and `--list-voices`. | Identical. | `planned` |
-| `--list-voices` | `-l` | (flag) | (required\*) | Fetch voice list from service, print a tab-aligned table (Name, Gender, ContentCategories, VoicePersonalities), sorted by `ShortName`, then `sys.exit(0)`. Mutually exclusive with `--text` and `--file`. | Identical table format and sort order. | `planned` |
-| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Voice name (short or full form). Normalized and validated at construction time. | Identical validation and normalization via `TtsConfig::validate()`. | `partial` (config validates; CLI arg not wired) |
-| `--rate` | — | `RATE` | `+0%` | Speech rate. Must match `^[+-]\d+%$`. Negative values require `--rate=-50%` syntax (not `--rate -50%`) to avoid argparse misparse. | Identical pattern; same negative-value syntax note in help text. | `planned` |
-| `--volume` | — | `VOL` | `+0%` | Speech volume. Must match `^[+-]\d+%$`. Same negative-value syntax caveat as `--rate`. | Identical. | `planned` |
-| `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `planned` |
-| `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `planned` |
-| `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `planned` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Identical; forwarded to HTTP/WebSocket client. | `planned` |
+| `--text` | `-t` | `STRING` | (required\*) | Text to synthesize. Mutually exclusive with `--file` and `--list-voices`. | Identical. | `exact` |
+| `--file` | `-f` | `PATH` | (required\*) | Read text from file; `-` or `/dev/stdin` reads stdin. Opens with UTF-8 encoding. Mutually exclusive with `--text` and `--list-voices`. | Identical. | `partial` (parser done; file I/O in runner) |
+| `--list-voices` | `-l` | (flag) | (required\*) | Fetch voice list from service, print a tab-aligned table (Name, Gender, ContentCategories, VoicePersonalities), sorted by `ShortName`, then `sys.exit(0)`. Mutually exclusive with `--text` and `--file`. | Identical table format and sort order. | `partial` (parser done; service call not wired) |
+| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Voice name (short or full form). Normalized and validated at construction time. | Identical validation and normalization via `TtsConfig::validate()`. | `partial` (parser done; validation on TtsConfig construction) |
+| `--rate` | — | `RATE` | `+0%` | Speech rate. Must match `^[+-]\d+%$`. Negative values require `--rate=-50%` syntax (not `--rate -50%`) to avoid argparse misparse. | Identical pattern; same negative-value syntax note in help text. | `exact` |
+| `--volume` | — | `VOL` | `+0%` | Speech volume. Must match `^[+-]\d+%$`. Same negative-value syntax caveat as `--rate`. | Identical. | `exact` |
+| `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
+| `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `exact` |
+| `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `exact` |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Identical; forwarded to HTTP/WebSocket client. | `exact` |
 | `--version` | — | (flag) | — | Print `edge-tts {version}` (e.g. `edge-tts 7.2.8`) to stdout and exit 0. | Print `edge-tts-cpp {semver}` to stdout and exit 0. | `deviation` (version string differs) |
-| `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via CLI11 or similar. | `planned` |
+| `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via hand-rolled parser. | `exact` |
 
 \* `--text`, `--file`, and `--list-voices` form a **mutually exclusive required group** — exactly one must be provided.
 

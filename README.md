@@ -23,7 +23,7 @@ include/edge_tts/
   communication/   Communicate facade, HTTP/WebSocket transport boundary
   media/           ffmpeg/ffplay process integration boundary
   subtitles/       subtitle cues and SRT composition
-  cli/             CLI argument parsing (CliOptions)
+  cli/             CLI argument parsing (EdgeTtsArgumentParser, EdgeTtsArguments)
 
 src/
   core/
@@ -165,7 +165,24 @@ edge-tts
 edge-playback
 ```
 
-`edge-tts` will eventually expose options such as `--text`, `--file`, `--voice`, `--list-voices`, `--rate`, `--volume`, `--pitch`, `--write-media`, `--write-subtitles`, and `--proxy`.
+`edge-tts` supports the following options (argument parsing is fully implemented via `EdgeTtsArgumentParser`):
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--text` | `-t` | (required\*) | Text to synthesize |
+| `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
+| `--list-voices` | `-l` | (required\*) | List available voices and exit |
+| `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
+| `--rate` | — | `+0%` | Speech rate (use `--rate=-50%` for negatives) |
+| `--volume` | — | `+0%` | Speech volume |
+| `--pitch` | — | `+0Hz` | Speech pitch |
+| `--write-media` | — | (stdout) | Write MP3 to file |
+| `--write-subtitles` | — | (none) | Write SRT to file (`-` for stderr) |
+| `--proxy` | — | (none) | HTTP proxy for TTS and voice list |
+| `--version` | — | — | Print version and exit |
+| `--help` | `-h` | — | Print help and exit |
+
+\* `--text`, `--file`, and `--list-voices` are mutually exclusive; exactly one must be given.
 
 ## Tests
 
