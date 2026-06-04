@@ -84,7 +84,6 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME communication
     SOURCES
-        src/communication/Communicate.cpp
         src/communication/ConnectionMetadata.cpp
         src/communication/EdgeProtocol.cpp
         src/communication/EdgeProtocolIncoming.cpp
@@ -106,11 +105,19 @@ edge_tts_add_module(
 )
 
 edge_tts_add_module(
+    NAME api
+    SOURCES
+        src/api/Communicate.cpp
+    PUBLIC_DEPS
+        edge_tts::communication
+)
+
+edge_tts_add_module(
     NAME cli
     SOURCES
         src/cli/CliPlaceholder.cpp
     PUBLIC_DEPS
-        edge_tts::communication
+        edge_tts::api
 )
 
 # ---------------------------------------------------------------------------
@@ -136,6 +143,7 @@ target_link_libraries(edge_tts
         edge_tts::core
         edge_tts::serialization
         edge_tts::communication
+        edge_tts::api
         edge_tts::media
         edge_tts::subtitle
         edge_tts::cli

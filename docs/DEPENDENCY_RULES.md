@@ -12,15 +12,16 @@ justified by this table.
 A ✓ in cell (row → column) means the **row** module may depend on the **column**
 module.  A blank cell means the dependency is **forbidden**.
 
-| Depending module | common | core | serialization | subtitle | media | communication | cli |
-|------------------|:------:|:----:|:-------------:|:--------:|:-----:|:-------------:|:---:|
-| `common`         | —      |      |               |          |       |               |     |
-| `core`           | ✓      | —    |               |          |       |               |     |
-| `serialization`  | ✓      | ✓    | —             |          |       |               |     |
-| `subtitle`       | ✓ (transitively via core) | ✓ | | — |  |             |     |
-| `media`          | ✓      |      |               |          | —     |               |     |
-| `communication`  | ✓      | ✓    | ✓             | ✓        | ✓     | —             |     |
-| `cli`            |        |      |               |          |       | ✓             | —   |
+| Depending module | common | core | serialization | subtitle | media | communication | api | cli |
+|------------------|:------:|:----:|:-------------:|:--------:|:-----:|:-------------:|:---:|:---:|
+| `common`         | —      |      |               |          |       |               |     |     |
+| `core`           | ✓      | —    |               |          |       |               |     |     |
+| `serialization`  | ✓      | ✓    | —             |          |       |               |     |     |
+| `subtitle`       | ✓ (transitively via core) | ✓ | | — |  |             |     |     |
+| `media`          | ✓      |      |               |          | —     |               |     |     |
+| `communication`  | ✓      | ✓    | ✓             | ✓        | ✓     | —             |     |     |
+| `api`            | ✓      | ✓    | ✓             | ✓        | ✓     | ✓             | —   |     |
+| `cli`            |        |      |               |          |       |               | ✓   | —   |
 
 **Rules in plain language:**
 
@@ -35,9 +36,13 @@ module.  A blank cell means the dependency is **forbidden**.
 5. `media` depends on `common` only.  It must not include TTS domain types
    or protocol headers.
 6. `communication` may depend on all modules below it.  Business logic must
-   stay in `core` and `serialization`; `communication` orchestrates only.
-7. `cli` depends on `communication` only.  It must not reach past `communication`
-   to touch module internals directly.
+   stay in `core` and `serialization`; `communication` is pure transport
+   orchestration and must not depend on `api` or `cli`.
+7. `api` is the public synthesis facade.  It may depend on all modules below
+   it (`communication` and everything `communication` links).  It must not
+   depend on `cli`.  Future tasks implement `Communicate` behavior here.
+8. `cli` depends on `api` only (which transitively provides everything needed).
+   It must not reach past `api` to touch transport or domain internals directly.
 
 ## Forbidden dependency examples
 
@@ -112,6 +117,7 @@ cmake --build build --target edge_tts_core -- VERBOSE=1 2>&1 | grep -o "libedge.
 | subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` |
 | media | `edge_tts_media` | `edge_tts::media` |
 | communication | `edge_tts_communication` | `edge_tts::communication` |
+| api | `edge_tts_api` | `edge_tts::api` |
 | cli | `edge_tts_cli` | `edge_tts::cli` |
 | *(aggregate)* | `edge_tts` | `edge_tts::edge_tts` |
 
@@ -128,4 +134,5 @@ examples.  Applications and tests must link specific module targets.
 | subtitle | `edge_tts_subtitle_tests` |
 | media | `edge_tts_media_tests` |
 | communication | `edge_tts_communication_tests` |
+| api | *(no separate test target — tested via communication_tests and integration)* |
 | cli | `edge_tts_cli_tests` |

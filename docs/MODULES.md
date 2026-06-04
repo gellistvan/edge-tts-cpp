@@ -220,9 +220,9 @@ spawning system executables — no direct linking to FFmpeg libraries.
 **Test target:** `edge_tts_communication_tests`
 **Headers:** `include/edge_tts/communication/`
 
-Public facade (`Communicate`), voice-list service (`HttpVoiceService`,
-`VoicesManager`), and WebSocket transport abstraction.  Also owns all
-service infrastructure and transport boundary types.
+WebSocket transport infrastructure, voice-list service, and synthesis
+orchestration.  Does NOT own the public `Communicate` facade — that lives
+in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 
 | File | Description |
 |------|-------------|
@@ -233,10 +233,39 @@ service infrastructure and transport boundary types.
 | `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
 | `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
 
-**Allowed dependencies:** all modules below it in the dependency graph.
+**Allowed dependencies:** `common`, `core`, `serialization`, `subtitle`, `media`.
 
 **Convention:** keep business rules delegated to `core`/`serialization`; this
-module should remain a thin orchestration layer.
+module is pure transport orchestration.  The public `Communicate` facade lives
+in `api`, above `communication`.
+
+---
+
+## `edge_tts::api`
+
+**CMake target:** `edge_tts_api` / `edge_tts::api`
+**Test target:** *(no separate test target — tested via `communication_tests` and integration)*
+**Headers:** `include/edge_tts/api/`
+**Sources:** `src/api/`
+
+Public user-facing facade module.  This is the only module end-users and
+the CLI layer should depend on for synthesis.
+
+| File | Description |
+|------|-------------|
+| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Behavior is a stub pending Task 9.x. |
+
+**Rationale for a separate module:** `Communicate` needs `SynthesisSession` from
+`communication`, `SubMaker` from `subtitle`, and `media` for audio saving.
+Placing it above `communication` keeps the transport infrastructure clean and
+avoids a fat `communication` module that also owns public API semantics.
+
+**Namespace:** `edge_tts::api`
+
+**Allowed dependencies:** `common`, `core`, `serialization`, `subtitle`, `media`,
+`communication`.
+
+**Forbidden:** `cli` or anything above `api` in the dependency graph.
 
 ---
 
@@ -251,10 +280,9 @@ CLI argument parsing and application-level plumbing shared between the
 `edge-tts` and `edge-playback` executables.  Will use CLI11 for argument
 parsing once the dependency is wired.
 
-**Allowed dependencies:** `edge_tts::communication` only.
+**Allowed dependencies:** `edge_tts::api` (transitively provides everything).
 
-**Forbidden:** direct access to `core`, `serialization`, or `media` internals —
-route through `communication`.
+**Forbidden:** bypass `api` to reach `communication` or `core` internals directly.
 
 ---
 

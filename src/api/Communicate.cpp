@@ -1,39 +1,40 @@
-#include "edge_tts/communication/Communicate.hpp"
+#include "edge_tts/api/Communicate.hpp"
 #include "edge_tts/common/Errors.hpp"
 
 #include <fstream>
 #include <utility>
 
-namespace edge_tts::communication {
+namespace edge_tts::api {
 
 Communicate::Communicate(std::string text, core::TtsConfig config)
-    : text_(std::move(text)), config_(std::move(config)) {
+    : text_(std::move(text)), config_(std::move(config))
+{
     config_.validate();
 }
 
 const std::string& Communicate::text() const noexcept { return text_; }
 const core::TtsConfig& Communicate::config() const noexcept { return config_; }
 
-std::vector<core::TtsChunk> Communicate::stream_sync() const {
-    // Placeholder: real implementation will coordinate core, serialization, and communication modules.
+std::vector<core::TtsChunk> Communicate::stream_sync() const
+{
+    // Placeholder: real implementation wires SynthesisSession + TextChunker.
     return {};
 }
 
 void Communicate::save(const std::filesystem::path& media_path,
-                       const std::optional<std::filesystem::path>& subtitles_path) const {
+                       const std::optional<std::filesystem::path>& subtitles_path) const
+{
     std::ofstream media(media_path, std::ios::binary);
-    if (!media) {
+    if (!media)
         throw common::AudioError{"Failed to open media output file"};
-    }
     media << "";
 
     if (subtitles_path.has_value()) {
         std::ofstream subtitles(*subtitles_path);
-        if (!subtitles) {
+        if (!subtitles)
             throw common::SubtitleError{"Failed to open subtitle output file"};
-        }
         subtitles << "";
     }
 }
 
-} // namespace edge_tts::communication
+} // namespace edge_tts::api
