@@ -63,6 +63,7 @@ edge_tts_add_module_test(
         communication/ConnectionMetadataTests.cpp
         communication/HttpClientInterfaceTests.cpp
         communication/VoiceServiceTests.cpp
+        communication/EdgeProtocolSpeechConfigTests.cpp
     LIBRARIES edge_tts::communication
 )
 

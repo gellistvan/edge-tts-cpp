@@ -313,9 +313,22 @@ X-Timestamp:{js_date_string}\r\n
 Content-Type:application/json; charset=utf-8\r\n
 Path:speech.config\r\n
 \r\n
-{"context":{"synthesis":{"audio":{"metadataoptions":{...},"outputFormat":"..."}}}}
+{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"{sq}","wordBoundaryEnabled":"{wd}"},"outputFormat":"{format}"}}}}\r\n
 ```
-Note: NO `Z` suffix on the timestamp in `speech.config` — only SSML has it.
+
+**C++ implementation:** `communication::EdgeProtocol::build_speech_config_frame(config, metadata)`.
+
+Key invariants:
+- NO `Z` suffix on the timestamp in `speech.config` — only SSML has it.
+- NO `X-RequestId` header — speech.config carries only `X-Timestamp`, `Content-Type`, and `Path`.
+- `sentenceBoundaryEnabled` and `wordBoundaryEnabled` values are **JSON strings** (`"true"`/`"false"`), not JSON booleans — matches Python's f-string interpolation exactly.
+- Boundary logic (from Python `send_command_request()`):
+  - `WordBoundary` → `wordBoundaryEnabled:"true"`, `sentenceBoundaryEnabled:"false"`
+  - `SentenceBoundary` (default) → `sentenceBoundaryEnabled:"true"`, `wordBoundaryEnabled:"false"`
+- Output format is taken from `TtsConfig::output_format.value()` (not hardcoded).
+- Body includes a trailing `\r\n` — matches the Python reference string exactly.
+- `EdgeProtocol` takes a `common::IClock&` for testable timestamps; use `FixedClock` in tests.
+- `ConnectionMetadata` is accepted for API consistency but not used (speech.config has no per-request ID).
 
 ### Incoming frame paths
 
