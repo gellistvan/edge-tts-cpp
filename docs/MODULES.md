@@ -212,6 +212,11 @@ spawning system executables — no direct linking to FFmpeg libraries.
 
 **Forbidden:** TTS configuration logic, protocol parsing.
 
+| File | Description |
+|------|-------------|
+| `ProcessRunner.hpp` | `ProcessCommand` (executable + argument list, no shell string), `ProcessResult` (exit_code, stdout_text, stderr_text), `IProcessRunner` (injectable interface), `FakeProcessRunner` (test double), `ProcessRunner` (POSIX fork+execvp, no `system()` or shell) |
+| `AudioConverter.hpp` | `FfmpegProcessConverter` stub — will delegate to `ProcessRunner` |
+
 ---
 
 ## `edge_tts::communication`

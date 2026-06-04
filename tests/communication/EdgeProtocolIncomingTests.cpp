@@ -78,8 +78,8 @@ static WebSocketMessage make_audio_frame(
 static std::vector<std::byte> to_bytes(const std::string& s) {
     std::vector<std::byte> v;
     v.reserve(s.size());
-    for (unsigned char c : s)
-        v.push_back(static_cast<std::byte>(c));
+    for (char c : s)
+        v.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
     return v;
 }
 

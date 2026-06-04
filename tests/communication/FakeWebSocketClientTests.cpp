@@ -98,9 +98,9 @@ TEST(FakeWebSocketClient, SendCountStartsAtZero) {
 
 TEST(FakeWebSocketClient, SendCountIncrementsPerCall) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
-    fake.send_text("a");
-    fake.send_text("b");
+    (void)fake.connect("wss://a");
+    (void)fake.send_text("a");
+    (void)fake.send_text("b");
     EXPECT_EQ(fake.send_count(), 2);
 }
 
@@ -111,7 +111,7 @@ TEST(FakeWebSocketClient, SendCountIncrementsPerCall) {
 TEST(FakeWebSocketClient, ReceivePopsQueuedTextMessage) {
     FakeWebSocketClient fake;
     fake.push_incoming(make_text("Path:turn.end\r\n\r\n"));
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
 
     const auto r = fake.receive();
     EXPECT_TRUE(r.has_value());
@@ -124,7 +124,7 @@ TEST(FakeWebSocketClient, ReceivePopsMessagesInFifoOrder) {
     fake.push_incoming(make_text("first"));
     fake.push_incoming(make_text("second"));
     fake.push_incoming(make_text("third"));
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
 
     EXPECT_EQ(fake.receive()->text, "first");
     EXPECT_EQ(fake.receive()->text, "second");
@@ -135,7 +135,7 @@ TEST(FakeWebSocketClient, ReceivePopsQueuedBinaryMessage) {
     FakeWebSocketClient fake;
     const std::vector<std::byte> payload = {std::byte{0xAB}, std::byte{0xCD}};
     fake.push_incoming(make_binary(payload));
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
 
     const auto r = fake.receive();
     EXPECT_TRUE(r.has_value());
@@ -149,11 +149,11 @@ TEST(FakeWebSocketClient, IncomingQueueSizeDecrementsOnReceive) {
     fake.push_incoming(make_text("b"));
     EXPECT_EQ(fake.incoming_queue_size(), 2u);
 
-    fake.connect("wss://a");
-    fake.receive();
+    (void)fake.connect("wss://a");
+    (void)fake.receive();
     EXPECT_EQ(fake.incoming_queue_size(), 1u);
 
-    fake.receive();
+    (void)fake.receive();
     EXPECT_EQ(fake.incoming_queue_size(), 0u);
 }
 
@@ -163,7 +163,7 @@ TEST(FakeWebSocketClient, IncomingQueueSizeDecrementsOnReceive) {
 
 TEST(FakeWebSocketClient, ReceiveEmptyQueueReturnsError) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     const auto r = fake.receive();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::network_error);
@@ -184,7 +184,7 @@ TEST(FakeWebSocketClient, ConnectErrorIsReturned) {
 TEST(FakeWebSocketClient, ConnectErrorStillCapturesUrl) {
     FakeWebSocketClient fake;
     fake.set_connect_error(Error{ErrorCode::network_error, "refused"});
-    fake.connect("wss://captured");
+    (void)fake.connect("wss://captured");
     EXPECT_EQ(fake.connected_url(), "wss://captured");
 }
 
@@ -203,7 +203,7 @@ TEST(FakeWebSocketClient, ConnectErrorPersistsUntilCleared) {
 
 TEST(FakeWebSocketClient, SendErrorIsReturned) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_send_error(Error{ErrorCode::network_error, "send failed"});
     const auto r = fake.send_text("hello");
     EXPECT_FALSE(r.has_value());
@@ -212,16 +212,16 @@ TEST(FakeWebSocketClient, SendErrorIsReturned) {
 
 TEST(FakeWebSocketClient, SendErrorStillCapturesPayload) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_send_error(Error{ErrorCode::network_error, "send failed"});
-    fake.send_text("captured");
+    (void)fake.send_text("captured");
     EXPECT_EQ(fake.sent_messages().size(), 1u);
     EXPECT_EQ(fake.sent_messages()[0], "captured");
 }
 
 TEST(FakeWebSocketClient, SendErrorPersistsUntilCleared) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_send_error(Error{ErrorCode::network_error, "fail"});
     EXPECT_FALSE(fake.send_text("a").has_value());
     EXPECT_FALSE(fake.send_text("b").has_value());
@@ -235,7 +235,7 @@ TEST(FakeWebSocketClient, SendErrorPersistsUntilCleared) {
 
 TEST(FakeWebSocketClient, ReceiveErrorIsReturned) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_receive_error(Error{ErrorCode::network_error, "connection dropped"});
     const auto r = fake.receive();
     EXPECT_FALSE(r.has_value());
@@ -245,7 +245,7 @@ TEST(FakeWebSocketClient, ReceiveErrorIsReturned) {
 TEST(FakeWebSocketClient, ReceiveErrorTakesPriorityOverQueuedMessages) {
     FakeWebSocketClient fake;
     fake.push_incoming(make_text("should not be returned"));
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_receive_error(Error{ErrorCode::network_error, "dropped"});
     const auto r = fake.receive();
     EXPECT_FALSE(r.has_value());
@@ -253,7 +253,7 @@ TEST(FakeWebSocketClient, ReceiveErrorTakesPriorityOverQueuedMessages) {
 
 TEST(FakeWebSocketClient, ReceiveErrorPersistsUntilCleared) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_receive_error(Error{ErrorCode::network_error, "fail"});
     EXPECT_FALSE(fake.receive().has_value());
     fake.clear_receive_error();
@@ -272,7 +272,7 @@ TEST(FakeWebSocketClient, IsClosedFalseInitially) {
 
 TEST(FakeWebSocketClient, CloseChangesIsClosedToTrue) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     EXPECT_FALSE(fake.is_closed());
     const auto r = fake.close();
     EXPECT_TRUE(r.has_value());
@@ -287,7 +287,7 @@ TEST(FakeWebSocketClient, CloseWithoutConnectAlsoSetsClosedState) {
 
 TEST(FakeWebSocketClient, CloseErrorIsReturned) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_close_error(Error{ErrorCode::network_error, "close failed"});
     const auto r = fake.close();
     EXPECT_FALSE(r.has_value());
@@ -296,7 +296,7 @@ TEST(FakeWebSocketClient, CloseErrorIsReturned) {
 
 TEST(FakeWebSocketClient, CloseErrorStillSetsClosedState) {
     FakeWebSocketClient fake;
-    fake.connect("wss://a");
+    (void)fake.connect("wss://a");
     fake.set_close_error(Error{ErrorCode::network_error, "close failed"});
     (void)fake.close();
     EXPECT_TRUE(fake.is_closed());

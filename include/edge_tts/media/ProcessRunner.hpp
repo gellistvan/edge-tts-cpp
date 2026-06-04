@@ -1,0 +1,91 @@
+#pragma once
+
+#include "edge_tts/common/Error.hpp"
+#include "edge_tts/common/Result.hpp"
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace edge_tts::media {
+
+// An external command to execute.
+//
+// Reference: playback.py _run_edge_tts() / _play_media() — both use list-form
+// subprocess.Popen() so no shell quoting or concatenation is ever needed.
+// The executable and each argument are passed as separate tokens to execvp().
+//
+// Forbidden: never join these into a shell string (no system(), no popen("…")).
+struct ProcessCommand {
+    std::filesystem::path    executable; // full path or name found via $PATH
+    std::vector<std::string> arguments;  // each argument is a separate element
+};
+
+// Result captured from a completed subprocess.
+struct ProcessResult {
+    int         exit_code{0};
+    std::string stdout_text;
+    std::string stderr_text;
+};
+
+// Abstract process runner interface — allows test doubles.
+class IProcessRunner {
+public:
+    virtual ~IProcessRunner() = default;
+
+    // Run the command and return its result.
+    // Returns fail() on launch failure (e.g. executable not found, fork error).
+    // A non-zero exit code is returned inside ProcessResult, not as a failure.
+    [[nodiscard]] virtual common::Result<ProcessResult>
+    run(const ProcessCommand& cmd) = 0;
+};
+
+// ---------------------------------------------------------------------------
+// FakeProcessRunner — in-memory test double, no child process.
+// ---------------------------------------------------------------------------
+
+class FakeProcessRunner final : public IProcessRunner {
+public:
+    // Configure the result returned by the next run() call.
+    // Default: ProcessResult{0, "", ""} (success, no output).
+    void set_result(ProcessResult result) noexcept;
+
+    // Configure run() to return an error (transport-level failure).
+    // Clears any configured result override.
+    void set_error(common::Error error) noexcept;
+
+    // Clear a configured error, reverting to the configured result.
+    void clear_error() noexcept;
+
+    // The most recent command passed to run(), or nullopt if never called.
+    [[nodiscard]] const std::optional<ProcessCommand>& last_command() const noexcept;
+
+    // Total number of times run() has been called.
+    [[nodiscard]] int run_count() const noexcept;
+
+    // IProcessRunner
+    [[nodiscard]] common::Result<ProcessResult>
+    run(const ProcessCommand& cmd) override;
+
+private:
+    ProcessResult                  result_{};
+    std::optional<common::Error>   error_;
+    std::optional<ProcessCommand>  last_command_;
+    int                            run_count_{0};
+};
+
+// ---------------------------------------------------------------------------
+// ProcessRunner — real POSIX implementation (fork + execvp, no shell).
+// ---------------------------------------------------------------------------
+
+class ProcessRunner final : public IProcessRunner {
+public:
+    // Run cmd.executable with cmd.arguments as argv[1..].
+    // stdout and stderr are captured and returned in ProcessResult.
+    // Returns ErrorCode::external_process_failed if fork or exec fails.
+    [[nodiscard]] common::Result<ProcessResult>
+    run(const ProcessCommand& cmd) override;
+};
+
+} // namespace edge_tts::media

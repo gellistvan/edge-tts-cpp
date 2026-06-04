@@ -41,6 +41,20 @@ is not built.
 
 ---
 
+## POSIX process API (`fork` / `execvp` / `pipe` / `waitpid`)
+
+| Property | Value |
+|----------|-------|
+| Source | POSIX standard library — always present on Linux |
+| Purpose | `media::ProcessRunner` — runs external commands (mpv, ffmpeg, edge-tts) as child processes with no shell involvement |
+| Integration | Included via `<unistd.h>`, `<sys/wait.h>` directly in `src/media/ProcessRunner.cpp`; `std::thread` drains stderr concurrently |
+| Consumers | `edge_tts::media` (`ProcessRunner`) |
+| License | System library; no additional license obligation |
+
+Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prevents shell injection and word-splitting of arguments containing spaces.  `ProcessRunner::run()` uses the same safe pattern via `execvp()`.
+
+---
+
 ## Planned / Not Yet Integrated
 
 | Library | Submodule path | Purpose | Status |
