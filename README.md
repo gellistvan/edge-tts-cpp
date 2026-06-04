@@ -21,7 +21,7 @@ include/edge_tts/
   core/            pure domain types: TtsConfig, Voice, Chunk, TextChunker
   serialization/   SSML, Edge protocol payloads, token metadata
   communication/   Communicate facade, HTTP/WebSocket transport boundary
-  media/           external process integration: AudioConverter, ExecutableDiscovery, ProcessRunner
+  media/           external process integration: IAudioConverter, FfmpegAudioConverter (ffmpeg/ffplay via IProcessRunner, no library linking), ExecutableDiscovery, ProcessRunner
   subtitles/       subtitle cues and SRT composition
   cli/             CLI argument parsing and dispatch (EdgeTtsArgumentParser, EdgeTtsArguments,
                    InputLoader, VoiceFormatter, EdgeTtsCommandDispatcher)

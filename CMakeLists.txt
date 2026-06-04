@@ -79,6 +79,7 @@ edge_tts_add_module(
     SOURCES
         src/media/AudioConverter.cpp
         src/media/ExecutableDiscovery.cpp
+        src/media/FfmpegAudioConverter.cpp
         src/media/ProcessRunner.cpp
     PUBLIC_DEPS edge_tts::common
 )
