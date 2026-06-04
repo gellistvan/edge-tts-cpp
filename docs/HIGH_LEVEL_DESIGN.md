@@ -60,12 +60,49 @@ Rules:
 Headers are grouped by module:
 
 ```cpp
-#include <edge_tts/core/TtsConfig.hpp>
-#include <edge_tts/communication/Communicate.hpp>
-#include <edge_tts/subtitles/SrtComposer.hpp>
+#include "edge_tts/api/Communicate.hpp"   // public TTS facade
+#include "edge_tts/core/TtsConfig.hpp"
+#include "edge_tts/subtitles/SrtComposer.hpp"
 ```
 
 Avoid adding new public headers at `include/edge_tts/` root unless they are deliberate umbrella headers. Module-local concepts should stay inside their module folder.
+
+## C++ usage example
+
+```cpp
+#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/core/TtsConfig.hpp"
+
+// Build configuration (defaults match Python reference edge-tts v7.2.8).
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+cfg.rate  = "+0%";
+
+// Synthesize text.
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+
+// Save audio and optional SRT subtitles — reference: Communicate.save().
+auto result = c.save("hello.mp3", "hello.srt");
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+}
+
+// OR stream chunks for custom processing — reference: Communicate.stream().
+edge_tts::api::Communicate c2("Hello again!");
+auto chunks = c2.stream_sync();
+if (chunks) {
+    for (const auto& chunk : *chunks) {
+        if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
+        else                                  { /* process boundary event */ }
+    }
+}
+```
+
+**Note:** `stream_sync()` and `save()` are each single-use (reference:
+`Communicate.stream()` raises `RuntimeError` on a second call). Calling either
+a second time returns `ErrorCode::invalid_state`. Until the WebSocket transport
+is wired, the production constructor returns `ErrorCode::network_error`;
+inject a `SynthesizerFn` for testing.
 
 ## Core domain type ownership
 
@@ -179,5 +216,5 @@ Each module test target should prefer behavior-level tests over implementation-d
 | `serialization` | `XmlEscaper.hpp`, `TextNormalizer.hpp`, `TextChunker.hpp`, `SsmlBuilder.hpp` implemented |
 | `subtitles` | `SubtitleTime`, `SubtitleCue`, `SrtComposer`, `SubMaker` implemented |
 | `communication` | `EdgeServiceConfig`, `EdgeTokenProvider`, `ConnectionMetadataFactory`, `IHttpClient`/`FakeHttpClient`, `VoiceService` implemented; WebSocket and real networking stubs remain |
-| `api` | `Communicate` placeholder; `FileWriter` (binary write + UTF-8 text write with `Result<void>` errors) implemented |
+| `api` | `Communicate` facade implemented: validate → chunk → synthesize (via `SynthesizerFn`) → stream/save; `FileWriter` (binary + UTF-8 text writes) implemented |
 | `media` | Skeleton only |

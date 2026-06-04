@@ -48,7 +48,7 @@ __version__, __version_info__
 
 | Python symbol | C++ target |
 |---------------|-----------|
-| `Communicate` | `edge_tts::communication::Communicate` |
+| `Communicate` | `edge_tts::api::Communicate` |
 | `SubMaker` | `edge_tts::subtitles::SubMaker` |
 | `list_voices()` | `edge_tts::communication::HttpVoiceService::list_voices()` |
 | `VoicesManager` | `edge_tts::communication::VoicesManager` |
@@ -666,6 +666,12 @@ with `offset_compensation` before yielding.
 `Data.text.Text` field.
 
 **`stream()` is single-use:** calling it twice raises `RuntimeError`.
+
+**C++ single-use behavior (`api::Communicate`):** `stream_sync()` and `save()`
+are both single-use. Calling either a second time (or calling one after the
+other) returns `ErrorCode::invalid_state` — matching the Python `RuntimeError`.
+`save()` calls the synthesis pipeline internally, so both methods consume the
+stream.
 
 **C++ chunk types** (`include/edge_tts/core/Chunk.hpp`):
 

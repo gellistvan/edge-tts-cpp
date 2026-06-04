@@ -111,6 +111,8 @@ edge_tts_add_module(
         src/api/FileWriter.cpp
     PUBLIC_DEPS
         edge_tts::communication
+        edge_tts::serialization
+        edge_tts::subtitle
 )
 
 edge_tts_add_module(

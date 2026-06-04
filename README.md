@@ -123,6 +123,39 @@ cmake --build build --target edge_tts_core_tests
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
 
+## Usage
+
+```cpp
+#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/core/TtsConfig.hpp"
+
+// Save audio and optional SRT subtitles (reference: Communicate.save()).
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+auto result = c.save("hello.mp3", "hello.srt");
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+}
+
+// Or stream chunks for custom processing (reference: Communicate.stream()).
+edge_tts::api::Communicate c2("Hello again!");
+auto chunks = c2.stream_sync();
+if (chunks) {
+    for (const auto& chunk : *chunks) {
+        if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
+        else                                  { /* process boundary event */ }
+    }
+}
+```
+
+Both `stream_sync()` and `save()` are single-use — a second call returns
+`ErrorCode::invalid_state`, matching Python's `RuntimeError`.
+
+**Note:** The WebSocket transport is not yet wired; until it is, production
+calls fail with `ErrorCode::network_error`. Inject a `SynthesizerFn` for
+testing without a live service connection.
+
 ## Applications
 
 The skeleton builds two placeholder apps:

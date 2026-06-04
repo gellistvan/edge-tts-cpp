@@ -82,6 +82,7 @@ edge_tts_add_module_test(
     SOURCES
         common/test_main.cpp
         api/FileWriterTests.cpp
+        api/CommunicateTests.cpp
     LIBRARIES edge_tts::api
 )
 
