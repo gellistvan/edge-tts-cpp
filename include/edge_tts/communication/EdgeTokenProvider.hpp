@@ -35,9 +35,18 @@ public:
     // Returns the Sec-MS-GEC-Version header value from config.
     [[nodiscard]] std::string sec_ms_gec_version() const;
 
+    // Accumulate a clock skew correction in seconds.
+    // Reference: drm.py DRM.adj_clock_skew_seconds(skew_seconds)
+    // Called when a 403 response Date header reveals client/server time drift.
+    void adjust_clock_skew(double seconds) noexcept;
+
+    // Returns the current accumulated skew (seconds).  Primarily for tests.
+    [[nodiscard]] double clock_skew_seconds() const noexcept;
+
 private:
-    EdgeServiceConfig  config_;
+    EdgeServiceConfig     config_;
     const common::IClock& clock_;
+    double                clock_skew_seconds_{0.0};
 };
 
 } // namespace edge_tts::communication

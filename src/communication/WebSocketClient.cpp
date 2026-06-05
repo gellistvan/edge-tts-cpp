@@ -176,8 +176,14 @@ common::Result<void> WebSocketClient::connect(std::string_view url)
     // --- Synchronous connect --------------------------------------------------
     const auto init = impl_->ws.connect(connect_secs);
     if (!init.success) {
+        // HTTP 403 from the upgrade response indicates a DRM token rejection.
+        // Reference: communicate.py catches aiohttp.ClientResponseError(status=403)
+        // and retries after adjusting the clock skew.
+        const common::ErrorCode code = (init.http_status == 403)
+            ? common::ErrorCode::drm_error
+            : common::ErrorCode::network_error;
         return common::Result<void>::fail(
-            common::Error{common::ErrorCode::network_error,
+            common::Error{code,
                           init.errorStr.empty() ? "WebSocket connect failed"
                                                 : init.errorStr});
     }

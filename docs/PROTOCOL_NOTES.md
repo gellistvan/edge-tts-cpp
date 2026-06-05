@@ -75,6 +75,37 @@ Reference `__stream()` receive loop behavior:
 | BINARY | all other conditions | `UnexpectedResponse` → `protocol_error` |
 | ERROR | any | `WebSocketError` → `network_error` |
 
+### Retry on HTTP 403 (DRM token rejection)
+
+**Source:** `communicate.py Communicate.stream()` try/except block, `drm.py DRM.handle_client_response_error()`
+
+```python
+try:
+    async for message in self.__stream():
+        yield message
+except aiohttp.ClientResponseError as e:
+    if e.status != 403:
+        raise
+    DRM.handle_client_response_error(e)   # adjust clock skew from Date header
+    async for message in self.__stream():  # one retry with corrected token
+        yield message
+```
+
+**Rules:**
+- **One retry** per chunk, only on HTTP 403 from the WebSocket upgrade (`ws_connect`).
+- All other errors propagate immediately (no retry).
+- The clock skew is adjusted from the server's `Date` response header, then the token is regenerated.
+
+**C++ implementation:** `communication::RetryPolicy` + `EdgeTokenProvider::adjust_clock_skew(double)`.
+
+| Python | C++ |
+|--------|-----|
+| `e.status == 403` | `ErrorCode::drm_error` from `WebSocketClient::connect()` |
+| `DRM.adj_clock_skew_seconds(delta)` | `EdgeTokenProvider::adjust_clock_skew(seconds)` |
+| `max_retries` | `RetryPolicy::max_retries` (default 1) |
+
+**Clock skew ambiguity:** `aiohttp.ClientResponseError` carries the 403 response headers, from which `DRM.handle_client_response_error` parses the `Date` header to compute skew. In the C++ implementation, `ix::WebSocket::connect()` returns `http_status == 403` but does not surface response headers on a failed upgrade. Therefore clock skew correction cannot be performed automatically from the transport layer. The `EdgeTokenProvider::adjust_clock_skew()` API is provided for callers that can obtain the server date by another means (e.g. an HTTP HEAD request or future ixwebsocket exposure of response headers). Without skew correction, a retry within the same 5-minute bucket produces the same token and may fail again.
+
 ### Close behavior
 
 Python uses an `async with … as websocket:` context manager that closes on exit
