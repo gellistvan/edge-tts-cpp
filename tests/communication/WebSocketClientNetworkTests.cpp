@@ -1,0 +1,212 @@
+// Network tests for WebSocketClient — opt-in only.
+//
+// Enable with:
+//   cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
+//   cmake --build build --target edge_tts_communication_network_tests
+//   ctest --test-dir build -R edge_tts_communication_network_tests
+//
+// Do not enable in CI unless the environment has reliable outbound TLS access to
+//   wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
+//
+// Reference: communicate.py Communicate.__stream() — complete per-chunk lifecycle:
+//   1. ws_connect(url, headers=WSS_HEADERS)
+//   2. send speech.config frame
+//   3. send SSML frame
+//   4. receive loop until Path:turn.end
+//   5. close
+
+#include "edge_tts/communication/WebSocketClient.hpp"
+#include "edge_tts/communication/SynthesisSession.hpp"
+#include "edge_tts/communication/EdgeProtocol.hpp"
+#include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
+#include "edge_tts/communication/ConnectionMetadata.hpp"
+#include "edge_tts/common/Clock.hpp"
+#include "edge_tts/common/IdGenerator.hpp"
+#include "edge_tts/core/TtsConfig.hpp"
+#include "edge_tts/core/Chunk.hpp"
+#include "vendor/minigtest/minigtest.hpp"
+
+#include <string>
+#include <variant>
+#include <vector>
+
+using edge_tts::communication::WebSocketClient;
+using edge_tts::communication::WebSocketClientOptions;
+using edge_tts::communication::SynthesisSession;
+using edge_tts::communication::EdgeProtocol;
+using edge_tts::communication::EdgeTokenProvider;
+using edge_tts::communication::ConnectionMetadataFactory;
+using edge_tts::communication::default_edge_service_config;
+using edge_tts::common::SystemClock;
+using edge_tts::common::IdGenerator;
+using edge_tts::core::TtsConfig;
+using edge_tts::core::TtsChunk;
+using edge_tts::core::AudioChunk;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// Builds the WebSocketClientOptions with the headers the Edge TTS service
+// expects on the upgrade request.
+//
+// Reference: communicate.py WSS_HEADERS (constants.py)
+static WebSocketClientOptions make_edge_tts_options()
+{
+    auto cfg = default_edge_service_config();
+
+    WebSocketClientOptions opts;
+    opts.connect_timeout = std::chrono::milliseconds{15'000};
+    opts.read_timeout    = std::chrono::milliseconds{60'000};
+
+    // Reference: constants.py WSS_HEADERS
+    // The Cookie muid value uses a random hex string in the Python reference
+    // (token_hex(16)).  Here we use a fixed-looking value since the service
+    // does not validate its content — it is present only to resemble a browser.
+    opts.extra_headers = {
+        {"Pragma",          "no-cache"},
+        {"Cache-Control",   "no-cache"},
+        {"Origin",          cfg.origin},
+        {"User-Agent",      cfg.user_agent},
+        {"Accept-Encoding", "gzip, deflate, br, zstd"},
+        {"Accept-Language", "en-US,en;q=0.9"},
+        {"Cookie",          "muid=4d65726f736f66746565646765"},
+    };
+    return opts;
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end synthesis: SynthesisSession + WebSocketClient
+// ---------------------------------------------------------------------------
+
+TEST(WebSocketClientNetwork, ShortSynthesisReturnsNonEmptyAudio) {
+    // Reference: communicate.py Communicate.stream() with a short text.
+    // One chunk → one WebSocket connection → audio frames → turn.end → close.
+
+    auto cfg = default_edge_service_config();
+
+    WebSocketClient client{make_edge_tts_options()};
+    SystemClock     clock;
+    IdGenerator     ids;
+
+    EdgeProtocol              protocol{clock};
+    EdgeTokenProvider         tokens{cfg, clock};
+    ConnectionMetadataFactory meta_factory{ids};
+
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+
+    TtsConfig tts;
+    tts.voice = "en-US-EmmaMultilingualNeural";
+
+    const std::vector<std::string> chunks{"Hello."};
+    auto result = session.synthesize(tts, chunks);
+
+    EXPECT_TRUE(result.has_value());
+    if (!result.has_value())
+        return;
+
+    // At least one AudioChunk must be present.
+    bool has_audio = false;
+    for (const auto& chunk : *result) {
+        if (std::holds_alternative<AudioChunk>(chunk)) {
+            const auto& audio = std::get<AudioChunk>(chunk);
+            if (!audio.data.empty())
+                has_audio = true;
+        }
+    }
+    EXPECT_TRUE(has_audio);
+}
+
+TEST(WebSocketClientNetwork, ShortSynthesisResultIsNonEmpty) {
+    auto cfg = default_edge_service_config();
+
+    WebSocketClient client{make_edge_tts_options()};
+    SystemClock     clock;
+    IdGenerator     ids;
+
+    EdgeProtocol              protocol{clock};
+    EdgeTokenProvider         tokens{cfg, clock};
+    ConnectionMetadataFactory meta_factory{ids};
+
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+
+    TtsConfig tts;
+    tts.voice = "en-US-EmmaMultilingualNeural";
+
+    const std::vector<std::string> chunks{"Testing."};
+    auto result = session.synthesize(tts, chunks);
+
+    EXPECT_TRUE(result.has_value());
+    if (result.has_value())
+        EXPECT_FALSE(result->empty());
+}
+
+TEST(WebSocketClientNetwork, SynthesisReceivesTurnEnd) {
+    // Verifies the session correctly terminates on turn.end and returns ok
+    // (turn.end is the break condition in the receive loop — if it is never
+    // received the session would block until read_timeout).
+    auto cfg = default_edge_service_config();
+
+    WebSocketClient client{make_edge_tts_options()};
+    SystemClock     clock;
+    IdGenerator     ids;
+
+    EdgeProtocol              protocol{clock};
+    EdgeTokenProvider         tokens{cfg, clock};
+    ConnectionMetadataFactory meta_factory{ids};
+
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+
+    TtsConfig tts;
+    tts.voice = "en-US-EmmaMultilingualNeural";
+
+    const std::vector<std::string> chunks{"Hi."};
+    auto result = session.synthesize(tts, chunks);
+
+    // If turn.end was NOT received the session would timeout; success here
+    // confirms turn.end was observed and the loop exited cleanly.
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST(WebSocketClientNetwork, SynthesisWithWordBoundaryMetadata) {
+    // The word boundary metadata path exercises the audio.metadata text frame
+    // branch of the receive loop in addition to the binary audio frames.
+    // Reference: communicate.py — TtsConfig with WordBoundary boundary type.
+    auto cfg = default_edge_service_config();
+
+    WebSocketClient client{make_edge_tts_options()};
+    SystemClock     clock;
+    IdGenerator     ids;
+
+    EdgeProtocol              protocol{clock};
+    EdgeTokenProvider         tokens{cfg, clock};
+    ConnectionMetadataFactory meta_factory{ids};
+
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+
+    TtsConfig tts;
+    tts.voice = "en-US-EmmaMultilingualNeural";
+    // WordBoundary triggers sentenceBoundaryEnabled:false, wordBoundaryEnabled:true
+    tts.boundary_type = edge_tts::core::BoundaryType::word;
+
+    const std::vector<std::string> chunks{"Hello world."};
+    auto result = session.synthesize(tts, chunks);
+
+    EXPECT_TRUE(result.has_value());
+    if (!result.has_value())
+        return;
+
+    // With word boundaries enabled the result should contain boundary chunks
+    // alongside audio chunks.
+    bool has_audio    = false;
+    bool has_boundary = false;
+    for (const auto& chunk : *result) {
+        if (std::holds_alternative<AudioChunk>(chunk))
+            has_audio = true;
+        if (std::holds_alternative<edge_tts::core::BoundaryChunk>(chunk))
+            has_boundary = true;
+    }
+    EXPECT_TRUE(has_audio);
+    EXPECT_TRUE(has_boundary);
+}

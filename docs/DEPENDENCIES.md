@@ -128,6 +128,28 @@ git add submodules/ixwebsocket
 git commit -m "chore: bump ixwebsocket to <version>"
 ```
 
+### WebSocketClient integration
+
+`communication::WebSocketClient` (in `include/edge_tts/communication/WebSocketClient.hpp` /
+`src/communication/WebSocketClient.cpp`) implements `IWebSocketClient` using
+`ix::WebSocket` from ixwebsocket.  The ixwebsocket types are confined to
+`WebSocketClient.cpp` behind a Pimpl idiom — no ixwebsocket header appears in
+the public interface.
+
+`WebSocketClientOptions` controls:
+- `connect_timeout` — maps to `ix::WebSocket::setHandshakeTimeout()` (default 10 s, reference `sock_connect=10`)
+- `read_timeout` — used as the `wait_for` deadline in the blocking `receive()` call (default 60 s, reference `sock_read=60`)
+- `proxy` — stored for callers; ixwebsocket's synchronous API does not expose WebSocket CONNECT-tunnel proxy, so this is not yet forwarded
+- `extra_headers` — forwarded to `ix::WebSocket::setExtraHeaders()` for the upgrade request (reference: `WSS_HEADERS` in `constants.py`)
+
+After a successful `connect()`, an internal thread runs `ws.run()` and pumps
+incoming frames into a thread-safe queue.  `receive()` blocks on that queue until
+a frame arrives or `read_timeout` elapses.  `close()` calls `ws.stop()` and
+joins the receive thread.
+
+TLS: `tls_opts.caFile = "SYSTEM"` tells ixwebsocket to use the platform CA
+bundle (matching Python's `ssl.create_default_context()` in `communicate.py`).
+
 ### HttpClient integration
 
 `communication::HttpClient` (in `include/edge_tts/communication/HttpClient.hpp` /

@@ -69,11 +69,13 @@ edge_tts_add_module_test(
         communication/EdgeProtocolIncomingTests.cpp
         communication/FakeWebSocketClientTests.cpp
         communication/SynthesisSessionTests.cpp
+        communication/WebSocketClientTests.cpp
     LIBRARIES edge_tts::communication
 )
 
 # Propagate ixwebsocket availability to the offline communication tests so
-# the #ifdef EDGE_TTS_HAVE_IXWEBSOCKET guards in HttpClientTests.cpp fire correctly.
+# the #ifdef EDGE_TTS_HAVE_IXWEBSOCKET guards in HttpClientTests.cpp and
+# WebSocketClientTests.cpp fire correctly.
 if(TARGET ixwebsocket)
     target_compile_definitions(edge_tts_communication_tests
         PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
@@ -85,6 +87,7 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
         SOURCES
             common/test_main.cpp
             communication/HttpClientNetworkTests.cpp
+            communication/WebSocketClientNetworkTests.cpp
         LIBRARIES edge_tts::communication
     )
     # Propagate the ixwebsocket availability flag to network tests as well.

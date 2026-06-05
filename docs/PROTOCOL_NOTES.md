@@ -13,6 +13,84 @@ reference:
 
 ---
 
+## WebSocket Transport
+
+**Source:** `communicate.py Communicate.__stream()`, `constants.py WSS_HEADERS`
+
+**C++ implementation:** `communication::WebSocketClient` (`WebSocketClient.hpp` / `WebSocketClient.cpp`)
+
+### URL construction
+
+The full WebSocket URL is assembled by `SynthesisSession` before calling `connect()`:
+
+```
+wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
+  ?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4
+  &ConnectionId=<uuid_without_hyphens>
+  &Sec-MS-GEC=<sha256_token>
+  &Sec-MS-GEC-Version=1-143.0.3650.75
+```
+
+- Base URL: `constants.py WSS_URL`
+- `ConnectionId`: `connect_id()` — UUID v4 without hyphens (32 lowercase hex chars)
+- `Sec-MS-GEC`: `DRM.generate_sec_ms_gec()` — SHA-256 of Windows file time rounded to 5 min + token
+- `Sec-MS-GEC-Version`: `constants.py SEC_MS_GEC_VERSION` = `1-<CHROMIUM_FULL_VERSION>`
+
+### Upgrade request headers
+
+The following HTTP headers are sent on the WebSocket upgrade request
+(`WSS_HEADERS` in `constants.py`, with `Cookie` added by `DRM.headers_with_muid()`):
+
+| Header | Value |
+|--------|-------|
+| `Pragma` | `no-cache` |
+| `Cache-Control` | `no-cache` |
+| `Origin` | `chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold` |
+| `User-Agent` | `Mozilla/5.0 … Chrome/143.0.0.0 … Edg/143.0.0.0` |
+| `Accept-Encoding` | `gzip, deflate, br, zstd` |
+| `Accept-Language` | `en-US,en;q=0.9` |
+| `Cookie` | `muid=<random_16_byte_hex_uppercase>` |
+
+In C++, these are passed as `WebSocketClientOptions::extra_headers` by the `SynthesisSession` caller.
+
+### Timeouts
+
+| Parameter | Python default | C++ default |
+|-----------|---------------|-------------|
+| Connect timeout | `sock_connect=10` s | `connect_timeout = 10 000 ms` |
+| Read timeout | `sock_read=60` s | `read_timeout = 60 000 ms` |
+
+### Message receive loop
+
+Reference `__stream()` receive loop behavior:
+
+| Message type | Path / condition | C++ action |
+|---|---|---|
+| TEXT | `audio.metadata` | Parse JSON → `BoundaryChunk` |
+| TEXT | `turn.end` | `__compensate_offset()`; break loop |
+| TEXT | `response`, `turn.start` | silently ignored |
+| TEXT | anything else | `UnknownResponse` → `protocol_error` |
+| BINARY | `Path: audio`, `Content-Type: audio/mpeg`, non-empty | `AudioChunk` |
+| BINARY | `Path: audio`, no `Content-Type`, empty body | ignored |
+| BINARY | all other conditions | `UnexpectedResponse` → `protocol_error` |
+| ERROR | any | `WebSocketError` → `network_error` |
+
+### Close behavior
+
+Python uses an `async with … as websocket:` context manager that closes on exit
+(both success and error paths). C++ `SynthesisSession::synthesize()` calls
+`websocket.close()` in a `finally`-style block: after the receive loop regardless
+of success or error, and before returning any error.
+
+### Proxy
+
+`WebSocketClientOptions::proxy` stores an optional proxy URL, matching Python's
+`proxy=self.proxy` passed to `ws_connect()`. Forwarding to the ixwebsocket
+synchronous API is deferred (ixwebsocket WebSocket CONNECT proxy is not exposed
+via the synchronous `connect()` / `run()` API).
+
+---
+
 ## Connection and Request IDs
 
 **Source:** `communicate.py connect_id()`, `__stream()`, `ssml_headers_plus_data()`

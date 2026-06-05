@@ -100,6 +100,7 @@ edge_tts_add_module(
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
         src/communication/WebSocketTransport.cpp
+        src/communication/WebSocketClient.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::serialization
