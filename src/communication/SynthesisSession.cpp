@@ -15,12 +15,14 @@ SynthesisSession::SynthesisSession(
     EdgeProtocol&              protocol,
     EdgeServiceConfig          config,
     EdgeTokenProvider&         token_provider,
-    ConnectionMetadataFactory& metadata_factory)
+    ConnectionMetadataFactory& metadata_factory,
+    RetryPolicy                retry_policy)
     : websocket_(websocket)
     , protocol_(protocol)
     , config_(std::move(config))
     , token_provider_(token_provider)
     , metadata_factory_(metadata_factory)
+    , retry_policy_(retry_policy)
 {}
 
 // -------------------------------------------------------------------------
@@ -107,38 +109,59 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
     std::vector<core::TtsChunk> all_chunks;
 
     for (const auto& text : text_chunks) {
-        // --- Generate metadata for this chunk --------------------------------
-        auto metadata = metadata_factory_.create_for_request();
+        // Retry loop — reference: communicate.py stream() try/except around
+        // __stream(), retrying once on ClientResponseError(status=403).
+        for (int attempt = 0; ; ++attempt) {
+            // --- Generate metadata for this chunk ----------------------------
+            // New metadata per attempt → new ConnectionId each time.
+            auto metadata = metadata_factory_.create_for_request();
 
-        // --- Build WebSocket URL ---------------------------------------------
-        // Reference: f"{WSS_URL}&ConnectionId={connect_id()}"
-        //            f"&Sec-MS-GEC={DRM.generate_sec_ms_gec()}"
-        //            f"&Sec-MS-GEC-Version={SEC_MS_GEC_VERSION}"
-        auto gec = token_provider_.sec_ms_gec();
-        if (!gec)
-            return common::Result<std::vector<core::TtsChunk>>::fail(gec.error());
+            // --- Build WebSocket URL -----------------------------------------
+            // Reference: f"{WSS_URL}&ConnectionId={connect_id()}"
+            //            f"&Sec-MS-GEC={DRM.generate_sec_ms_gec()}"
+            //            f"&Sec-MS-GEC-Version={SEC_MS_GEC_VERSION}"
+            // Token is regenerated each attempt; if adjust_clock_skew() was
+            // called between attempts the token will reflect the corrected clock.
+            auto gec = token_provider_.sec_ms_gec();
+            if (!gec)
+                return common::Result<std::vector<core::TtsChunk>>::fail(gec.error());
 
-        const std::string url =
-            config_.websocket_endpoint
-            + "&ConnectionId=" + metadata.connection_id
-            + "&Sec-MS-GEC=" + *gec
-            + "&Sec-MS-GEC-Version=" + token_provider_.sec_ms_gec_version();
+            const std::string url =
+                config_.websocket_endpoint
+                + "&ConnectionId=" + metadata.connection_id
+                + "&Sec-MS-GEC=" + *gec
+                + "&Sec-MS-GEC-Version=" + token_provider_.sec_ms_gec_version();
 
-        // --- Connect ---------------------------------------------------------
-        auto conn = websocket_.connect(url);
-        if (!conn)
-            return common::Result<std::vector<core::TtsChunk>>::fail(conn.error());
+            // --- Connect -----------------------------------------------------
+            auto conn = websocket_.connect(url);
+            if (!conn) {
+                // Reference: `if e.status != 403: raise` — only drm_error retries.
+                if (retry_policy_.should_retry(conn.error(), attempt)) {
+                    // Token rejected; regenerate on next loop iteration.
+                    // Caller may have called adjust_clock_skew() to shift the clock
+                    // before this session, or the next sec_ms_gec() call uses the
+                    // same clock (same token within the same 5-min bucket).
+                    // Reference: DRM.handle_client_response_error(e) adjusts skew
+                    // from the Date header; that extraction happens in WebSocketClient.
+                    continue;
+                }
+                return common::Result<std::vector<core::TtsChunk>>::fail(conn.error());
+            }
 
-        // --- Run chunk (send + receive); always close after -----------------
-        auto chunk_result = run_one_chunk(
-            websocket_, protocol_, tts_config, text, metadata, all_chunks);
+            // --- Run chunk (send + receive); always close after --------------
+            // Reference: context manager ensures close on success and error.
+            // Post-connect errors are NOT retried (Python only catches ws_connect errors).
+            auto chunk_result = run_one_chunk(
+                websocket_, protocol_, tts_config, text, metadata, all_chunks);
 
-        // Reference: context manager __aexit__ always closes
-        (void)websocket_.close();
+            (void)websocket_.close();
 
-        if (!chunk_result)
-            return common::Result<std::vector<core::TtsChunk>>::fail(
-                chunk_result.error());
+            if (!chunk_result)
+                return common::Result<std::vector<core::TtsChunk>>::fail(
+                    chunk_result.error());
+
+            break;  // chunk done, move to next
+        }
     }
 
     return common::Result<std::vector<core::TtsChunk>>::ok(std::move(all_chunks));

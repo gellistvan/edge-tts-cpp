@@ -27,6 +27,12 @@ void FakeWebSocketClient::set_connect_error(common::Error error) noexcept
 }
 void FakeWebSocketClient::clear_connect_error() noexcept { connect_error_.reset(); }
 
+void FakeWebSocketClient::set_connect_fail_count(common::Error error, int count) noexcept
+{
+    connect_fail_error_     = std::move(error);
+    connect_fail_remaining_ = count;
+}
+
 void FakeWebSocketClient::set_send_error(common::Error error) noexcept
 {
     send_error_ = std::move(error);
@@ -54,6 +60,11 @@ const std::string& FakeWebSocketClient::connected_url() const noexcept
     return connected_url_;
 }
 
+const std::vector<std::string>& FakeWebSocketClient::connect_urls() const noexcept
+{
+    return connect_urls_;
+}
+
 const std::vector<std::string>& FakeWebSocketClient::sent_messages() const noexcept
 {
     return sent_messages_;
@@ -71,6 +82,13 @@ common::Result<void> FakeWebSocketClient::connect(std::string_view url)
 {
     ++connect_count_;
     connected_url_ = std::string(url);
+    connect_urls_.push_back(connected_url_);
+
+    // Transient per-count error takes priority over persistent error.
+    if (connect_fail_remaining_ > 0) {
+        --connect_fail_remaining_;
+        return common::Result<void>::fail(*connect_fail_error_);
+    }
     if (connect_error_)
         return common::Result<void>::fail(*connect_error_);
     closed_ = false;

@@ -48,6 +48,11 @@ public:
     void set_connect_error(common::Error error) noexcept;
     void clear_connect_error() noexcept;
 
+    // Fail only the next `count` connect() calls with error, then succeed.
+    // Useful for retry tests: set_connect_fail_count(drm_error, 1) causes the
+    // first connect to fail and the second to succeed automatically.
+    void set_connect_fail_count(common::Error error, int count) noexcept;
+
     void set_send_error(common::Error error) noexcept;
     void clear_send_error() noexcept;
 
@@ -63,6 +68,9 @@ public:
 
     // The URL supplied to the most recent connect() call (empty if never called).
     [[nodiscard]] const std::string& connected_url() const noexcept;
+
+    // All URLs passed to connect() in call order (one per attempt).
+    [[nodiscard]] const std::vector<std::string>& connect_urls() const noexcept;
 
     // All payloads passed to send_text(), in call order.
     [[nodiscard]] const std::vector<std::string>& sent_messages() const noexcept;
@@ -87,6 +95,7 @@ public:
 
 private:
     std::string                      connected_url_;
+    std::vector<std::string>         connect_urls_;
     std::vector<std::string>         sent_messages_;
     std::queue<WebSocketMessage>     incoming_;
     int                              connect_count_{0};
@@ -94,6 +103,8 @@ private:
     bool                             closed_{false};
 
     std::optional<common::Error>     connect_error_;
+    std::optional<common::Error>     connect_fail_error_;
+    int                              connect_fail_remaining_{0};
     std::optional<common::Error>     send_error_;
     std::optional<common::Error>     receive_error_;
     std::optional<common::Error>     close_error_;

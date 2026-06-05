@@ -16,11 +16,12 @@ EdgeTokenProvider::EdgeTokenProvider(EdgeServiceConfig config,
 
 common::Result<std::string> EdgeTokenProvider::sec_ms_gec() const
 {
-    // Step 1: Get UTC Unix timestamp (seconds as double), matching Python's
-    //   DRM.get_unix_timestamp() = dt.now(tz.utc).timestamp()
+    // Step 1: Get UTC Unix timestamp (seconds as double) + accumulated skew,
+    //   matching Python's DRM.get_unix_timestamp():
+    //     dt.now(tz.utc).timestamp() + DRM.clock_skew_seconds
     const auto now = clock_.now();
     const double unix_seconds = std::chrono::duration<double>(
-        now.time_since_epoch()).count();
+        now.time_since_epoch()).count() + clock_skew_seconds_;
 
     // Step 2: Add Windows file time epoch offset (drm.py: WIN_EPOCH = 11644473600)
     double ticks = unix_seconds + 11644473600.0;
@@ -48,6 +49,16 @@ common::Result<std::string> EdgeTokenProvider::sec_ms_gec() const
 std::string EdgeTokenProvider::sec_ms_gec_version() const
 {
     return config_.sec_ms_gec_version;
+}
+
+void EdgeTokenProvider::adjust_clock_skew(double seconds) noexcept
+{
+    clock_skew_seconds_ += seconds;
+}
+
+double EdgeTokenProvider::clock_skew_seconds() const noexcept
+{
+    return clock_skew_seconds_;
 }
 
 } // namespace edge_tts::communication

@@ -20,6 +20,8 @@ enum class ErrorCode {
     external_process_failed,// ffmpeg/ffplay subprocess failure
     service_error,          // remote service refused or produced no data;
                             // Python: NoAudioReceived, HTTP 4xx/5xx
+    drm_error,              // DRM token rejected (HTTP 403 during WebSocket upgrade);
+                            // Python: aiohttp.ClientResponseError(status=403) → retry path
 };
 
 // Returns a short lowercase name for the code (e.g. "network_error").

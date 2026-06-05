@@ -6,6 +6,7 @@
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
 #include "edge_tts/communication/EdgeTokenProvider.hpp"
 #include "edge_tts/communication/IWebSocketClient.hpp"
+#include "edge_tts/communication/RetryPolicy.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
@@ -44,11 +45,12 @@ namespace edge_tts::communication {
 // the session.
 class SynthesisSession {
 public:
-    SynthesisSession(IWebSocketClient&         websocket,
-                     EdgeProtocol&             protocol,
-                     EdgeServiceConfig         config,
-                     EdgeTokenProvider&        token_provider,
-                     ConnectionMetadataFactory& metadata_factory);
+    SynthesisSession(IWebSocketClient&          websocket,
+                     EdgeProtocol&              protocol,
+                     EdgeServiceConfig          config,
+                     EdgeTokenProvider&         token_provider,
+                     ConnectionMetadataFactory& metadata_factory,
+                     RetryPolicy                retry_policy = {});
 
     // Run a synthesis session for all text_chunks.
     //
@@ -78,6 +80,7 @@ private:
     EdgeServiceConfig          config_;
     EdgeTokenProvider&         token_provider_;
     ConnectionMetadataFactory& metadata_factory_;
+    RetryPolicy                retry_policy_;
 };
 
 } // namespace edge_tts::communication

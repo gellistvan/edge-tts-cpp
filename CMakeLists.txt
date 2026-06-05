@@ -93,12 +93,15 @@ edge_tts_add_module(
         src/communication/FakeWebSocketClient.cpp
         src/communication/SynthesisSession.cpp
         src/communication/FakeHttpClient.cpp
+        src/communication/HttpClient.cpp
         src/communication/VoiceService.cpp
         src/communication/EdgeServiceConfig.cpp
         src/communication/EdgeTokenProvider.cpp
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
         src/communication/WebSocketTransport.cpp
+        src/communication/WebSocketClient.cpp
+        src/communication/RetryPolicy.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::serialization
@@ -142,6 +145,9 @@ if(TARGET nlohmann_json::nlohmann_json)
 endif()
 if(TARGET ixwebsocket)
     target_link_libraries(edge_tts_communication PRIVATE ixwebsocket)
+    # Signal to HttpClient.cpp that ixwebsocket is available.
+    # PRIVATE so the definition does not leak into downstream consumers.
+    target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -207,6 +213,11 @@ if(EDGE_TTS_BUILD_TESTS)
             NAME edge_tts_module_boundary_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${CMAKE_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
+        )
+        add_test(
+            NAME edge_tts_dependency_config_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/cmake/test_dependency_config.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")
