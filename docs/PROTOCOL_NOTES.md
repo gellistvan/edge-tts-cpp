@@ -551,18 +551,26 @@ placing a "don't care" header (like `X-RequestId`) FIRST so that `Path` and
 `Content-Type` are on subsequent (correctly-parsed) lines. The C++ implementation
 parses headers from byte 2 onwards, so all headers parse correctly regardless of order.
 
-**Binary frame validation (reference behavior):**
+**Binary frame validation:**
 
-| Condition | Reference exception | C++ result |
-|-----------|--------------------|----|
-| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` |
-| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` |
-| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` |
-| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` |
+Rows marked **(stricter)** are checks the Python reference does not perform.
+The Python `get_headers_and_data()` would instead crash with `ValueError`, silently
+yield an empty body, or produce garbled headers; the C++ parser rejects these cases
+deterministically with `protocol_error`.
+
+| Condition | Reference behavior | C++ result | Notes |
+|-----------|-------------------|------------|-------|
+| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `HL < 2` | `ValueError` in header split | `protocol_error` | **(stricter)** — minimum is 2 (2-byte prefix) |
+| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `HL + 2 > len(data)` | yields empty body (no check) | `protocol_error` | **(stricter)** — separator must be present |
+| `data[HL..HL+2) != \r\n` | not checked (bytes not verified) | `protocol_error` | **(stricter)** — separator bytes must be correct |
+| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` | same as reference |
+| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` | same as reference |
 
 ---
 

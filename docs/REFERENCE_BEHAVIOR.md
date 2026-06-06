@@ -590,8 +590,21 @@ parses headers from byte 2 only — all headers parse correctly regardless of or
 → `Result<vector<IncomingMessage>>`. Defined in `src/communication/EdgeProtocolIncoming.cpp`.
 Types: `WebSocketMessage` (in/out), `IncomingMessage` + `IncomingMessageKind` (parsed result).
 
-**Match exactly:** Yes for all documented cases; see PROTOCOL_NOTES.md for the
-binary frame format analysis and binary frame validation table.
+**C++ is stricter than the Python reference in three ways:**
+
+1. **`HL < 2`** — Python's `get_headers_and_data` would crash with `ValueError`
+   (splitting an empty first header line on `:`). C++ returns `protocol_error`.
+2. **`HL + 2 > len(data)` (missing separator)** — Python would silently yield an empty
+   body (`data[HL + 2:]` evaluates to `b""` when out of range). C++ returns `protocol_error`.
+3. **`data[HL..HL+2) != \r\n` (wrong separator bytes)** — Python never verifies these
+   bytes; it just uses them as an implicit offset. C++ verifies both bytes and returns
+   `protocol_error` if they are not exactly `\r\n`.
+
+All three additions are safe divergences: they reject frames the service would never
+produce, making malformed input fail loudly rather than silently.
+
+**Match exactly:** Yes for all reference-documented cases. The three stricter checks above
+are documented divergences. See PROTOCOL_NOTES.md for the full binary frame validation table.
 
 ---
 

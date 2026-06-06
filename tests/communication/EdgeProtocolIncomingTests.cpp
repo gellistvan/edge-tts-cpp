@@ -390,16 +390,81 @@ TEST(EdgeProtocolIncoming, AudioMpegEmptyBodyIsError) {
 }
 
 // ---------------------------------------------------------------------------
-// Binary frame: exactly the boundary case — header_length == data.size()
-// body would be at data.size()+2 (out of range), should be treated as empty body
+// Binary frame: exactly the boundary case — header_length + 2 == data.size()
+// Separator is present, body is empty.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, BodyOffsetBeyondEndTreatedAsEmpty) {
-    // Make a frame where header_length + 2 > data.size() → empty body
-    // Path:audio with no Content-Type → should yield ignored (empty body + no CT)
+    // make_audio_frame always appends the \r\n separator.  With an empty body
+    // argument: header_length + 2 == data.size() — separator present, body empty.
+    // Path:audio, no Content-Type → should yield ignored (empty body + no CT).
     const auto msg = make_audio_frame("X-RequestId:abc\r\nPath:audio", {});
     const auto result = proto.parse_incoming(msg);
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(result->size(), 1u);
     EXPECT_EQ((*result)[0].kind, IncomingMessageKind::ignored);
+}
+
+// ---------------------------------------------------------------------------
+// Binary frame hardening: header_length too small
+//
+// header_length encodes the 2-byte prefix + header content, so minimum is 2.
+// Values 0 and 1 are malformed — the reference crashes with a ValueError in
+// get_headers_and_data; C++ returns protocol_error deterministically.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, BinaryHeaderLengthZeroIsError) {
+    // header_length = 0 (impossible: even an empty header needs the 2-byte prefix)
+    std::vector<std::byte> frame = {
+        std::byte{0x00}, std::byte{0x00},   // header_length = 0
+        std::byte{0xAB}, std::byte{0xCD},   // more bytes follow (irrelevant)
+    };
+    const auto result = proto.parse_incoming(binary_msg(std::move(frame)));
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(EdgeProtocolIncoming, BinaryHeaderLengthOneIsError) {
+    // header_length = 1 — still below the 2-byte minimum
+    std::vector<std::byte> frame = {
+        std::byte{0x00}, std::byte{0x01},   // header_length = 1
+        std::byte{0xAB}, std::byte{0xCD},
+    };
+    const auto result = proto.parse_incoming(binary_msg(std::move(frame)));
+    EXPECT_FALSE(result.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// Binary frame hardening: \r\n separator missing or wrong
+//
+// The Python reference reads data[header_length + 2:] for the body without
+// verifying that the two bytes at [header_length..header_length+2) are \r\n.
+// The C++ parser is stricter: both presence and correctness are required.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, BinaryMissingSeparatorIsError) {
+    // Build a frame with valid header content (Path:audio) but stop before the
+    // \r\n separator.  header_length == data.size() so header_length + 2 > data.size().
+    const std::string hdr_content = "Path:audio";
+    const uint16_t hl = static_cast<uint16_t>(2 + hdr_content.size()); // = 12
+    std::vector<std::byte> frame;
+    frame.push_back(static_cast<std::byte>(hl >> 8));
+    frame.push_back(static_cast<std::byte>(hl & 0xff));
+    for (char c : hdr_content)
+        frame.push_back(static_cast<std::byte>(c));
+    // Intentionally omit the \r\n separator.
+    // frame.size() == header_length == 12; header_length + 2 = 14 > 12.
+    const auto result = proto.parse_incoming(binary_msg(std::move(frame)));
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(EdgeProtocolIncoming, BinaryWrongSeparatorBytesIsError) {
+    // Build a valid audio frame, then overwrite the \r\n separator with \n\n.
+    const std::string hdr = "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
+    auto msg = make_audio_frame(hdr, to_bytes("AUDIO"));
+    // Separator bytes are at index header_length = 2 + hdr.size().
+    const std::size_t sep_idx = 2 + hdr.size();
+    msg.binary[sep_idx]     = std::byte{'\n'};  // wrong: should be '\r'
+    msg.binary[sep_idx + 1] = std::byte{'\n'};
+    const auto result = proto.parse_incoming(msg);
+    EXPECT_FALSE(result.has_value());
 }
