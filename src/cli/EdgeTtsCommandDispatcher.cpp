@@ -16,12 +16,14 @@ EdgeTtsCommandDispatcher::EdgeTtsCommandDispatcher(
     CommunicateFactory communicate_factory,
     std::ostream&      out,
     std::ostream&      err,
-    std::istream&      in)
+    std::istream&      in,
+    TtyCheckFn         tty_check)
     : voice_service_(std::move(voice_service))
     , communicate_factory_(std::move(communicate_factory))
     , out_(out)
     , err_(err)
     , in_(in)
+    , tty_check_(std::move(tty_check))
 {}
 
 // ---------------------------------------------------------------------------
@@ -93,10 +95,15 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     config.volume = args.volume;
     config.pitch  = args.pitch;
 
-    // 3. Create Communicate via the injected factory.
-    api::Communicate communicate = communicate_factory_(*text, config);
+    // 3. Build transport options from CLI arguments.
+    //    proxy maps from --proxy; timeouts use CommunicateOptions defaults.
+    api::CommunicateOptions opts;
+    opts.proxy = args.proxy;
 
-    // 4. Determine routing per reference util.py _run_tts():
+    // 4. Create Communicate via the injected factory.
+    api::Communicate communicate = communicate_factory_(*text, config, opts);
+
+    // 5. Determine routing per reference util.py _run_tts():
     //      write_media  absent | "-" → audio → out_ (stdout)
     //      write_media  non-dash     → audio → file
     //      write_subtitles absent    → no SRT
@@ -109,14 +116,38 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     const bool srt_to_stderr =
         args.write_subtitles.has_value() && *args.write_subtitles == "-";
 
-    // 5. Stream all chunks.
+    // 5a. Interactive TTY warning.
+    //
+    // Reference: util.py _run_tts() — if stdin.isatty() and stdout.isatty()
+    //   and not write_media: warn on stderr and wait for Enter.
+    //
+    // The check fires only when write_media is absent (not when it is "-"),
+    // matching the Python condition `not args.write_media` which is True only
+    // for None, not for the string "-".
+    //
+    // If the user provides EOF on stdin (Ctrl-C on a real terminal or an empty
+    // injected stream in tests), we print "Operation canceled." and return 0,
+    // matching the Python KeyboardInterrupt handler.
+    if (!args.write_media.has_value() && tty_check_ && tty_check_()) {
+        err_ << "Warning: TTS output will be written to the terminal. "
+                "Use --write-media to write to a file.\n"
+                "Press Ctrl+C to cancel the operation. "
+                "Press Enter to continue.\n";
+        std::string dummy;
+        if (!std::getline(in_, dummy)) {
+            err_ << "\nOperation canceled.\n";
+            return 0;
+        }
+    }
+
+    // 6. Stream all chunks.
     auto chunks = communicate.stream_sync();
     if (!chunks) {
         err_ << "error: " << chunks.error().what() << '\n';
         return 1;
     }
 
-    // 6. Route audio and collect boundaries for SubMaker.
+    // 7. Route audio and collect boundaries for SubMaker.
     subtitles::SubMaker submaker;
     std::vector<std::byte> audio_bytes_for_file;
 
@@ -132,11 +163,15 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
                            static_cast<std::streamsize>(ac.data.size()));
             }
         } else if (core::is_boundary(chunk)) {
-            (void)submaker.feed(std::get<core::BoundaryChunk>(chunk));
+            auto feed_r = submaker.feed(std::get<core::BoundaryChunk>(chunk));
+            if (!feed_r) {
+                err_ << "error: " << feed_r.error().what() << '\n';
+                return 1;
+            }
         }
     }
 
-    // 7. Write audio file if requested.
+    // 8. Write audio file if requested.
     if (media_to_file) {
         api::FileWriter fw;
         auto r = fw.write_binary(*args.write_media, audio_bytes_for_file);
@@ -146,7 +181,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         }
     }
 
-    // 8. Route SRT if subtitles were requested.
+    // 9. Route SRT if subtitles were requested.
     //    Reference: if sub_file is not None: sub_file.write(submaker.get_srt())
     if (srt_to_file || srt_to_stderr) {
         auto srt = submaker.to_srt();

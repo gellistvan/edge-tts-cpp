@@ -116,6 +116,33 @@ of the Python `edge-tts` v7.2.8 reference implementation.  Tests for the
 communication and serialization layers must be written against the behaviors
 documented there, not against assumptions.
 
+## CLI tests — avoiding real network calls
+
+`edge_tts_cli_tests` (`tests/cli/`) tests the full CLI dispatch path without any
+real network calls or real process streams. This is achieved through constructor
+injection in `EdgeTtsCommandDispatcher`:
+
+| Seam | Test injection | Production value |
+|------|---------------|-----------------|
+| `VoiceServiceFn` | Lambda returning a fixed `vector<Voice>` or error | `VoiceService::list_voices()` |
+| `CommunicateFactory` | Lambda creating `Communicate` with a fake `SynthesizerFn` | `Communicate{text, cfg, opts}` |
+| `std::ostream& out` | `std::ostringstream` | `std::cout` |
+| `std::ostream& err` | `std::ostringstream` | `std::cerr` |
+| `std::istream& in` | `std::istringstream` | `std::cin` |
+| `TtyCheckFn` | Lambda returning `true` or `false` | `isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)` |
+
+The fake `Communicate` is created via the `SynthesizerFn` injection constructor:
+```cpp
+Communicate(text, cfg, opts,
+    [chunks](const TtsConfig&, std::span<const std::string>)
+        -> Result<vector<TtsChunk>> {
+        return Result<vector<TtsChunk>>::ok(chunks);
+    })
+```
+
+This lets CLI tests verify exact stdout/stderr/file bytes, exit codes, and error
+messages without any outbound network requests.
+
 ## Writing tests
 
 - Use behavior-level tests: test observable outputs, not internal implementation

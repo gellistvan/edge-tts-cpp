@@ -1,8 +1,8 @@
 # edge-tts-cpp
 
-A modern C++20 skeleton for a Microsoft Edge TTS client inspired by the Python `edge-tts` project.
+A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Python `edge-tts` project.
 
-This repository is currently a buildable project skeleton. Real networking, Edge protocol parsing, voice listing, and `ffmpeg` playback are intentionally stubbed until implemented step by step.
+Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
 
 ## Goals
 
@@ -98,6 +98,13 @@ ctest --test-dir build --output-on-failure
 | `EDGE_TTS_ENABLE_NETWORK_TESTS` | `OFF` | Enable tests that call the live Edge TTS service |
 | `EDGE_TTS_ENABLE_SANITIZERS` | `OFF` | Enable address and UB sanitizers |
 | `EDGE_TTS_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on compiled sources |
+| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically when submodules are absent |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error (prevents silently building apps against stub networking) |
+
+**Dependency resolution:** submodules are the preferred source.  When a
+submodule directory is empty (e.g. in a source archive), CMake falls back to
+`find_package` (system install) then `FetchContent` (auto-download, requires
+`EDGE_TTS_FETCH_DEPS=ON`).  See `docs/DEPENDENCIES.md` for details.
 
 Common build configurations:
 
@@ -129,18 +136,25 @@ See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guid
 
 ```cpp
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"  // transport options (proxy, timeouts)
 #include "edge_tts/core/TtsConfig.hpp"
 
-// Save audio and optional SRT subtitles (reference: Communicate.save()).
+// Speech config — voice, rate, volume, pitch only (no transport settings).
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+
+// Transport options — proxy and timeouts (no speech settings).
+edge_tts::api::CommunicateOptions opts;
+opts.proxy = "http://proxy.example.com:8080"; // optional
+
+// Save audio and optional SRT subtitles (reference: Communicate.save()).
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
 auto result = c.save("hello.mp3", "hello.srt");
 if (!result) {
     std::cerr << result.error().what() << '\n';
 }
 
-// Or stream chunks for custom processing (reference: Communicate.stream()).
+// Without a proxy — the 2-arg form uses default options.
 edge_tts::api::Communicate c2("Hello again!");
 auto chunks = c2.stream_sync();
 if (chunks) {
@@ -154,9 +168,7 @@ if (chunks) {
 Both `stream_sync()` and `save()` are single-use — a second call returns
 `ErrorCode::invalid_state`, matching Python's `RuntimeError`.
 
-**Note:** The WebSocket transport is not yet wired; until it is, production
-calls fail with `ErrorCode::network_error`. Inject a `SynthesizerFn` for
-testing without a live service connection.
+Inject a `SynthesizerFn` for testing without a live service connection.
 
 ## Applications
 
@@ -171,7 +183,51 @@ edge-tts --version
 
 The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — matching Python `argparse` and `sys.exit()` behavior.
 
-The skeleton builds two placeholder apps:
+`edge-playback` synthesizes speech to a temp MP3, plays it through `ffplay`, and cleans up. Usage:
+
+```bash
+# Speak text
+edge-playback --text "Hello, world!"
+
+# Speak from a file
+edge-playback --file speech.txt
+
+# Use a proxy
+edge-playback --text "Hello" --proxy http://proxy.example.com:8080
+
+# Keep the temp MP3 file after playback
+EDGE_PLAYBACK_KEEP_TEMP=1 edge-playback --text "Hello"
+
+# Write MP3 to a specific path (also keeps it)
+EDGE_PLAYBACK_MP3_FILE=/tmp/hello.mp3 edge-playback --text "Hello"
+
+# Write SRT subtitles alongside playback
+EDGE_PLAYBACK_SRT_FILE=/tmp/hello.srt edge-playback --text "Hello"
+
+# Show temp file paths (debug)
+EDGE_PLAYBACK_DEBUG=1 edge-playback --text "Hello"
+```
+
+`edge-playback` options (subset of `edge-tts`; `--write-media`, `--write-subtitles`, `--list-voices` are not accepted):
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--text` | `-t` | (required\*) | Text to synthesize and play |
+| `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
+| `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
+| `--rate` | — | `+0%` | Speech rate |
+| `--volume` | — | `+0%` | Speech volume |
+| `--pitch` | — | `+0Hz` | Speech pitch |
+| `--proxy` | — | (none) | HTTP proxy forwarded to synthesis |
+| `--help` | `-h` | — | Print help and exit |
+
+\* `--text` and `--file` are mutually exclusive; exactly one must be given.
+
+**Playback backend:** `ffplay` (from FFmpeg) is used on all platforms. The `--mpv` flag is explicitly rejected with a clear error — passing it returns exit 1 with a message explaining the limitation.
+
+**Platform support:** POSIX only (Linux, macOS). Building with `EDGE_TTS_BUILD_APPS=ON` on Windows will fail at compile time with a descriptive error from `ProcessRunner.cpp`.
+
+Two CLI apps are built:
 
 ```text
 edge-tts
@@ -184,7 +240,7 @@ edge-playback
 |--------|-------|---------|-------------|
 | `--text` | `-t` | (required\*) | Text to synthesize |
 | `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
-| `--list-voices` | `-l` | (required\*) | List available voices and exit |
+| `--list-voices` | `-l` | (required\*) | Fetch voice list from the Edge TTS service and print a tab-aligned table, then exit 0 |
 | `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
 | `--rate` | — | `+0%` | Speech rate (use `--rate=-50%` for negatives) |
 | `--volume` | — | `+0%` | Speech volume |

@@ -5,6 +5,40 @@ source, how they are integrated, and which modules consume them.
 
 ---
 
+## Dependency resolution
+
+All third-party dependencies follow a strict lookup order to support both
+submodule-based development checkouts and source archives / CI environments
+that cannot rely on submodules being populated.
+
+### Lookup order (per dependency)
+
+1. **Submodule present** — `submodules/<name>/CMakeLists.txt` exists →
+   `add_subdirectory` (preferred, deterministic, offline-capable).
+2. **System/package-manager install** — `find_package(... CONFIG QUIET)` →
+   use the installed package (vcpkg, conan, apt, Homebrew, etc.).
+3. **FetchContent auto-download** — `EDGE_TTS_FETCH_DEPS=ON` →
+   `FetchContent_Declare` + `FetchContent_MakeAvailable` pulls the pinned
+   tag from GitHub at configure time.
+4. **Not found** → `message(FATAL_ERROR ...)` with an actionable message.
+
+### CMake options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
+
+### Release / source archives
+
+Source archives (e.g. GitHub tarballs) do not include submodule contents.
+Use one of:
+- `EDGE_TTS_FETCH_DEPS=ON` (default) — CMake downloads pinned dependency versions at configure time.
+- Vendor the dependency sources manually into `submodules/`.
+- Pre-install via a package manager and let `find_package` locate them.
+
+---
+
 ## minigtest
 
 | Property | Value |
@@ -45,13 +79,16 @@ is not built.
 
 | Property | Value |
 |----------|-------|
-| Source | POSIX standard library — always present on Linux |
-| Purpose | `media::ProcessRunner` — runs external commands (mpv, ffmpeg, edge-tts) as child processes with no shell involvement |
+| Source | POSIX standard library — always present on Linux and macOS |
+| Purpose | `media::ProcessRunner` — runs external commands (ffplay, ffmpeg) as child processes with no shell involvement |
 | Integration | Included via `<unistd.h>`, `<sys/wait.h>` directly in `src/media/ProcessRunner.cpp`; `std::thread` drains stderr concurrently |
 | Consumers | `edge_tts::media` (`ProcessRunner`) |
 | License | System library; no additional license obligation |
+| Platform | **POSIX only.** `ProcessRunner.cpp` emits `#error` at compile time when `_WIN32` is detected. Build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows-specific `IProcessRunner` implementation to compile on Windows. |
 
 Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prevents shell injection and word-splitting of arguments containing spaces.  `ProcessRunner::run()` uses the same safe pattern via `execvp()`.
+
+`ProcessRunner` is not marked `final` so tests can subclass it and override `make_pipe(int fds[2])` to inject pipe-creation failures without spawning real child processes.
 
 ---
 
@@ -81,6 +118,8 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 | Consumers | `edge_tts::communication` (WebSocketTransport, HTTP voice-list client) |
 | License | BSD 3-Clause (`submodules/ixwebsocket/LICENSE`) |
 | CMake target | `ixwebsocket` |
+| Required when | `EDGE_TTS_REQUIRE_NETWORKING=ON` (default when `EDGE_TTS_BUILD_APPS=ON`) |
+| Optional when | `EDGE_TTS_REQUIRE_NETWORKING=OFF` — stub `FakeHttpClient`/`FakeWebSocketClient` compile without ixwebsocket |
 
 **Why ixwebsocket over alternatives:**
 
@@ -149,6 +188,14 @@ joins the receive thread.
 
 TLS: `tls_opts.caFile = "SYSTEM"` tells ixwebsocket to use the platform CA
 bundle (matching Python's `ssl.create_default_context()` in `communicate.py`).
+
+### Production app usage
+
+`communication::HttpClient` is the HTTP backend used in production by
+`apps/edge-tts/main.cpp` for `--list-voices`.  It is constructed with
+`HttpClientOptions` carrying the proxy and timeout from `CommunicateOptions`
+defaults, and is backed by `ix::HttpClient` from ixwebsocket.
+`FakeHttpClient` is only used in tests and is never compiled into the app.
 
 ### HttpClient integration
 

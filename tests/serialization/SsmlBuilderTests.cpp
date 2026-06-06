@@ -258,3 +258,64 @@ TEST(SsmlBuilder, OutputIsDeterministic) {
     EXPECT_TRUE(r2.has_value());
     EXPECT_EQ(r1.value(), r2.value());
 }
+
+// ---------------------------------------------------------------------------
+// build() escaping contract: raw input escaped exactly once
+// ---------------------------------------------------------------------------
+
+TEST(SsmlBuilder, RawInputEscapedExactlyOnce) {
+    // "Tom & Jerry <x>" raw → SSML must contain "Tom &amp; Jerry &lt;x&gt;" once.
+    const auto r = builder.build(TtsConfig::defaults(), "Tom & Jerry <x>");
+    EXPECT_TRUE(r.has_value());
+    const auto& ssml = r.value();
+    EXPECT_NE(ssml.find("Tom &amp; Jerry &lt;x&gt;"), std::string::npos);
+    // Raw characters must not survive into the SSML.
+    EXPECT_EQ(ssml.find("Tom & Jerry"), std::string::npos);
+    // Double-escaping must not occur.
+    EXPECT_EQ(ssml.find("&amp;amp;"), std::string::npos);
+    EXPECT_EQ(ssml.find("&amp;lt;"),  std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// build_from_escaped_text(): pre-escaped input embedded verbatim
+// ---------------------------------------------------------------------------
+
+TEST(SsmlBuilder, PreEscapedInputEmbeddedVerbatim) {
+    // Already-escaped "Tom &amp; Jerry" must remain "Tom &amp; Jerry" in the
+    // SSML — it must NOT become "Tom &amp;amp; Jerry".
+    const auto r = builder.build_from_escaped_text(
+        TtsConfig::defaults(), "Tom &amp; Jerry");
+    EXPECT_TRUE(r.has_value());
+    const auto& ssml = r.value();
+    EXPECT_NE(ssml.find("Tom &amp; Jerry"), std::string::npos);
+    // No double-escaping.
+    EXPECT_EQ(ssml.find("Tom &amp;amp; Jerry"), std::string::npos);
+}
+
+TEST(SsmlBuilder, PreEscapedInputAllEntitiesVerbatim) {
+    // "Tom &amp; Jerry &lt;x&gt;" pre-escaped must appear unchanged.
+    const auto r = builder.build_from_escaped_text(
+        TtsConfig::defaults(), "Tom &amp; Jerry &lt;x&gt;");
+    EXPECT_TRUE(r.has_value());
+    const auto& ssml = r.value();
+    EXPECT_NE(ssml.find("Tom &amp; Jerry &lt;x&gt;"), std::string::npos);
+    EXPECT_EQ(ssml.find("&amp;amp;"), std::string::npos);
+    EXPECT_EQ(ssml.find("&amp;lt;"),  std::string::npos);
+}
+
+TEST(SsmlBuilder, PreEscapedInvalidConfigReturnsError) {
+    TtsConfig bad = TtsConfig::defaults();
+    bad.voice = "not-a-valid-voice";
+    const auto r = builder.build_from_escaped_text(bad, "Tom &amp; Jerry");
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
+}
+
+TEST(SsmlBuilder, PreEscapedProducesStructurallyValidSsml) {
+    const auto r = builder.build_from_escaped_text(
+        TtsConfig::defaults(), "Hello &amp; world");
+    EXPECT_TRUE(r.has_value());
+    EXPECT_NE(r.value().find("<speak"),    std::string::npos);
+    EXPECT_NE(r.value().find("<prosody"),  std::string::npos);
+    EXPECT_NE(r.value().find("</speak>"), std::string::npos);
+}

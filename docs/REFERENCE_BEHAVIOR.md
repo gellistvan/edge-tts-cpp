@@ -200,9 +200,12 @@ separate entries (unlike the Python dict which overwrites earlier values).
 
 **XML unescape:** Applied to `Data.text.Text` field before storing in `BoundaryChunk::text`.
 
-**Offset compensation:** NOT applied in the parser. The communication layer adds
-`offset_compensation` before yielding to callers (reference adds it inside
-`__parse_metadata` using `self.state["offset_compensation"]`).
+**Offset compensation:** NOT applied in the parser. `MetadataJsonParser` returns
+raw ticks from the JSON; `SynthesisSession::run_one_chunk` adds the current
+`offset_compensation` to each `BoundaryChunk::offset_ticks` before appending to
+the output — matching `__parse_metadata`'s `current_offset = raw + offset_compensation`.
+Compensation is updated at `turn.end` using
+`cumulative_audio_bytes * 8 * 10_000_000 / 48_000` (64-bit integer arithmetic).
 
 **C++ vs Python difference:** The Python `__parse_metadata` returns on the FIRST
 handled item. The C++ `MetadataJsonParser::parse()` collects ALL boundary chunks
@@ -445,6 +448,18 @@ use `serialization::TextChunker`.
 
 **C++ implementation:** `serialization::SsmlBuilder` (`SsmlBuilder.hpp` / `SsmlBuilder.cpp`).
 
+**Entry points and escaping contract:**
+
+`SsmlBuilder` exposes two entry points to keep escaping unambiguous:
+
+| Entry point | Input contract | Use case |
+|-------------|---------------|----------|
+| `build(config, raw_text)` | Raw user text — normalized + XML-escaped once inside | Direct callers with unescaped text |
+| `build_from_escaped_text(config, escaped_text)` | Already XML-escaped text — embedded verbatim | `EdgeProtocol::build_ssml_frame`, which receives pre-escaped chunks from `TextChunker` |
+
+Passing raw text to `build_from_escaped_text` produces malformed SSML.
+Passing already-escaped text to `build` produces double-escaped entities (`&amp;amp;`).
+
 **SSML body template:**
 ```xml
 <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
@@ -575,8 +590,21 @@ parses headers from byte 2 only — all headers parse correctly regardless of or
 → `Result<vector<IncomingMessage>>`. Defined in `src/communication/EdgeProtocolIncoming.cpp`.
 Types: `WebSocketMessage` (in/out), `IncomingMessage` + `IncomingMessageKind` (parsed result).
 
-**Match exactly:** Yes for all documented cases; see PROTOCOL_NOTES.md for the
-binary frame format analysis and binary frame validation table.
+**C++ is stricter than the Python reference in three ways:**
+
+1. **`HL < 2`** — Python's `get_headers_and_data` would crash with `ValueError`
+   (splitting an empty first header line on `:`). C++ returns `protocol_error`.
+2. **`HL + 2 > len(data)` (missing separator)** — Python would silently yield an empty
+   body (`data[HL + 2:]` evaluates to `b""` when out of range). C++ returns `protocol_error`.
+3. **`data[HL..HL+2) != \r\n` (wrong separator bytes)** — Python never verifies these
+   bytes; it just uses them as an implicit offset. C++ verifies both bytes and returns
+   `protocol_error` if they are not exactly `\r\n`.
+
+All three additions are safe divergences: they reject frames the service would never
+produce, making malformed input fail loudly rather than silently.
+
+**Match exactly:** Yes for all reference-documented cases. The three stricter checks above
+are documented divergences. See PROTOCOL_NOTES.md for the full binary frame validation table.
 
 ---
 
@@ -901,9 +929,21 @@ is propagated.
 **Clock skew is global state:** `DRM.clock_skew_seconds` is a class variable
 shared across all `Communicate` and `list_voices` calls in the same process.
 
-**Match exactly:** Yes — single retry on 403, accumulate skew, no further
-retries.  In C++ the clock-skew state should be application-global (or
-injectable for testability).
+**C++ implementation status:** Implemented.
+
+- `WebSocketClient::connect()` maps HTTP 403 → `ErrorCode::drm_error` and stores the
+  `Date` response header (from `ix::WebSocketInitResult::headers`) as `error.context()`.
+- `SynthesisSession` retry path: if `should_retry()` returns true, calls
+  `parse_http_date(error.context())`, computes
+  `skew = server_time - (client_now + existing_skew)`, then calls
+  `token_provider_.adjust_clock_skew(skew)` before retrying with a new ConnectionId
+  and freshly computed `Sec-MS-GEC`.
+- If the Date header is absent or malformed, skew adjustment is skipped (no error raised —
+  divergence from Python's `SkewAdjustmentError`; the retry still proceeds).
+- `parse_http_date()` is in `communication/HttpDate.hpp`; format:
+  `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (reference: `drm.py DRM.parse_rfc2616_date()`).
+- `EdgeTokenProvider::clock_skew_seconds()` is per-instance (injectable for tests),
+  not global process state as in Python.
 
 ---
 

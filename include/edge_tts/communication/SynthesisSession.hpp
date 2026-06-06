@@ -1,5 +1,6 @@
 #pragma once
 
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Result.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
@@ -50,9 +51,15 @@ public:
                      EdgeServiceConfig          config,
                      EdgeTokenProvider&         token_provider,
                      ConnectionMetadataFactory& metadata_factory,
+                     const common::IClock&      clock,
                      RetryPolicy                retry_policy = {});
 
     // Run a synthesis session for all text_chunks.
+    //
+    // CONTRACT: text_chunks must be XML-escaped strings produced by
+    // serialization::TextChunker.  Each chunk is passed directly to
+    // EdgeProtocol::build_ssml_frame, which embeds it verbatim.  Passing raw
+    // (unescaped) text will produce malformed SSML.
     //
     // Each chunk opens a new WebSocket connection (matching the Python reference
     // which calls __stream() per chunk, each opening its own ws_connect()).
@@ -80,6 +87,7 @@ private:
     EdgeServiceConfig          config_;
     EdgeTokenProvider&         token_provider_;
     ConnectionMetadataFactory& metadata_factory_;
+    const common::IClock&      clock_;
     RetryPolicy                retry_policy_;
 };
 

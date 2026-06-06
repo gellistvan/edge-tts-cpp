@@ -51,7 +51,33 @@ The following HTTP headers are sent on the WebSocket upgrade request
 | `Accept-Language` | `en-US,en;q=0.9` |
 | `Cookie` | `muid=<random_16_byte_hex_uppercase>` |
 
-In C++, these are passed as `WebSocketClientOptions::extra_headers` by the `SynthesisSession` caller.
+In C++, these are built by `communication::build_websocket_headers(config, ids)` in
+`EdgeRequestHeaders.hpp/.cpp` and passed as `WebSocketClientOptions::extra_headers` by the
+`SynthesisSession` caller.
+
+#### MUID generation
+
+Python reference: `DRM.generate_muid() = secrets.token_hex(16).upper()` (32 uppercase hex chars)
+followed by `Cookie: f"muid={muid};"`.
+
+C++ implementation: `IdGenerator::random_32_hex()` produces 32 lowercase hex chars; the
+`make_muid_cookie()` helper (local to `EdgeRequestHeaders.cpp`) uppercases them and produces
+the full `"muid=<32 UPPER HEX>;"` string.  One fresh MUID is generated per call to either
+builder — matching Python's per-request cookie generation.
+
+#### Voice-list request headers
+
+The following HTTP headers are sent by `VoiceService::list_voices()`
+(`VOICE_HEADERS` in `constants.py`, with `Cookie` added by `DRM.headers_with_muid()`).
+Built by `communication::build_voice_list_headers(config, ids)`:
+
+| Header | Value |
+|--------|-------|
+| `User-Agent` | `Mozilla/5.0 … Chrome/143.0.0.0 … Edg/143.0.0.0` |
+| `Accept-Encoding` | `gzip, deflate, br, zstd` |
+| `Accept-Language` | `en-US,en;q=0.9` |
+| `Accept` | `*/*` |
+| `Cookie` | `muid=<random_16_byte_hex_uppercase>` |
 
 ### Timeouts
 
@@ -96,15 +122,27 @@ except aiohttp.ClientResponseError as e:
 - All other errors propagate immediately (no retry).
 - The clock skew is adjusted from the server's `Date` response header, then the token is regenerated.
 
-**C++ implementation:** `communication::RetryPolicy` + `EdgeTokenProvider::adjust_clock_skew(double)`.
+**C++ implementation:** `communication::RetryPolicy` + `SynthesisSession` retry path + `EdgeTokenProvider::adjust_clock_skew(double)`.
 
 | Python | C++ |
 |--------|-----|
 | `e.status == 403` | `ErrorCode::drm_error` from `WebSocketClient::connect()` |
+| `DRM.parse_rfc2616_date(date)` | `parse_http_date()` in `communication/HttpDate.hpp` |
 | `DRM.adj_clock_skew_seconds(delta)` | `EdgeTokenProvider::adjust_clock_skew(seconds)` |
 | `max_retries` | `RetryPolicy::max_retries` (default 1) |
 
-**Clock skew ambiguity:** `aiohttp.ClientResponseError` carries the 403 response headers, from which `DRM.handle_client_response_error` parses the `Date` header to compute skew. In the C++ implementation, `ix::WebSocket::connect()` returns `http_status == 403` but does not surface response headers on a failed upgrade. Therefore clock skew correction cannot be performed automatically from the transport layer. The `EdgeTokenProvider::adjust_clock_skew()` API is provided for callers that can obtain the server date by another means (e.g. an HTTP HEAD request or future ixwebsocket exposure of response headers). Without skew correction, a retry within the same 5-minute bucket produces the same token and may fail again.
+**Date header extraction:** `ix::WebSocketInitResult::headers` is a `CaseInsensitiveLess` map that includes all HTTP response headers from the upgrade attempt. On HTTP 403, `WebSocketClient::connect()` reads `init.headers["Date"]` and stores it as the `context()` field of the `drm_error`. `SynthesisSession` then parses this with `parse_http_date()`.
+
+**Clock skew formula** (matching Python `DRM.handle_client_response_error()`):
+```
+skew = server_time - (client_now + existing_skew)
+EdgeTokenProvider::adjust_clock_skew(skew)
+// After adjustment: total_skew = server_time - client_now
+```
+
+**Fallback behavior:** If the 403 response carries no Date header (context is empty) or the date string is malformed, the retry still proceeds — just without skew correction. This matches the Python reference where `parse_rfc2616_date` returns `None` and the adjustment is skipped.
+
+**RFC 2616 date format:** `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (e.g. `"Mon, 15 Jan 2024 08:31:15 GMT"`). Implemented in `communication::parse_http_date()` using Howard Hinnant's Gregorian day-count algorithm. Weekday and timezone fields are accepted but not validated.
 
 ### Close behavior
 
@@ -421,12 +459,30 @@ Key invariants:
 - `X-RequestId` uses `metadata.request_id` (32-char lowercase hex, no hyphens).
 - `X-Timestamp` has a trailing `Z` — documented as a Microsoft Edge bug in the source.
 - Header order: `X-RequestId`, `Content-Type`, `X-Timestamp`, `Path`.
-- `text_chunk` is passed raw to `serialization::SsmlBuilder::build()`, which normalizes
-  (UTF-8 validation + control-char replacement) and XML-escapes exactly once.
-  Do NOT pre-escape text — it will be double-escaped.
+- `text_chunk` MUST be XML-escaped (output of `serialization::TextChunker`).
+  `SsmlBuilder::build_from_escaped_text` embeds it verbatim — no second escape.
+  Passing raw text will embed literal XML special characters and produce malformed SSML.
 - Config errors from `SsmlBuilder` (invalid rate/volume/pitch/voice) propagate as
   `Result` failures — no silent truncation.
 - No chunking logic — callers are responsible for splitting text before calling.
+
+**XML-escaping contract across the pipeline:**
+
+```
+api::Communicate::run_synthesis()
+  → serialization::TextChunker::chunk()     ← normalize + xml_escape + split
+      → text_chunks (XML-escaped strings)
+  → SynthesisSession::synthesize(tts_config, text_chunks)
+      → EdgeProtocol::build_ssml_frame(config, text_chunk, metadata)
+          → SsmlBuilder::build_from_escaped_text(config, text_chunk)
+              → embeds text_chunk verbatim (no second escape)
+```
+
+`SsmlBuilder` provides two entry points:
+- `build(config, raw_text)` — normalizes + XML-escapes + assembles.
+  Use for user-supplied raw text (e.g. direct `SsmlBuilder` callers).
+- `build_from_escaped_text(config, escaped_text)` — assembles from already-escaped text.
+  Used by `EdgeProtocol::build_ssml_frame` to avoid double-escaping chunked input.
 
 **Speech config frame** (`send_command_request()` in communicate.py):
 ```
@@ -495,18 +551,26 @@ placing a "don't care" header (like `X-RequestId`) FIRST so that `Path` and
 `Content-Type` are on subsequent (correctly-parsed) lines. The C++ implementation
 parses headers from byte 2 onwards, so all headers parse correctly regardless of order.
 
-**Binary frame validation (reference behavior):**
+**Binary frame validation:**
 
-| Condition | Reference exception | C++ result |
-|-----------|--------------------|----|
-| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` |
-| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` |
-| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` |
-| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` |
-| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` |
+Rows marked **(stricter)** are checks the Python reference does not perform.
+The Python `get_headers_and_data()` would instead crash with `ValueError`, silently
+yield an empty body, or produce garbled headers; the C++ parser rejects these cases
+deterministically with `protocol_error`.
+
+| Condition | Reference behavior | C++ result | Notes |
+|-----------|-------------------|------------|-------|
+| `len(data) < 2` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `HL < 2` | `ValueError` in header split | `protocol_error` | **(stricter)** — minimum is 2 (2-byte prefix) |
+| `HL > len(data)` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `HL + 2 > len(data)` | yields empty body (no check) | `protocol_error` | **(stricter)** — separator must be present |
+| `data[HL..HL+2) != \r\n` | not checked (bytes not verified) | `protocol_error` | **(stricter)** — separator bytes must be correct |
+| `Path != "audio"` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type` not in `{audio/mpeg, absent}` | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type` absent + empty body | `continue` (ignored) | `IncomingMessageKind::ignored` | same as reference |
+| `Content-Type` absent + non-empty body | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type: audio/mpeg` + empty body | `UnexpectedResponse` | `protocol_error` | same as reference |
+| `Content-Type: audio/mpeg` + non-empty body | `yield audio` | `IncomingMessageKind::audio` | same as reference |
 
 ---
 
@@ -617,10 +681,27 @@ Note: `text` (lowercase) contains `Text` (uppercase) — both keys are case-sens
 
 ### Offset compensation
 
-The Python reference adds `self.state["offset_compensation"]` to each offset
-before yielding. The C++ `MetadataJsonParser` does NOT apply offset compensation
-— it returns raw ticks from the JSON. The communication layer applies
-compensation before yielding `BoundaryChunk` to callers.
+**Status: implemented in `communication::SynthesisSession`.**
+
+The Python reference adds `self.state["offset_compensation"]` to each boundary
+offset before yielding, and calls `__compensate_offset()` at `turn.end`.
+The C++ `MetadataJsonParser` does NOT apply offset compensation — it returns raw
+ticks from the JSON.  `SynthesisSession` applies compensation in `run_one_chunk`:
+
+```
+// At the start of each text chunk:
+offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 / 48_000
+
+// For each BoundaryChunk received:
+bc.offset_ticks += offset_compensation    // before yielding
+
+// After turn.end (chunk complete):
+cumulative_audio_bytes += chunk_audio_bytes
+```
+
+Constants: `TICKS_PER_SECOND = 10_000_000`, `MP3_BITRATE_BPS = 48_000`
+(from `constants.py`).  All arithmetic uses 64-bit integers (`int64_t`).
+`duration_ticks` is never modified.
 
 ### XML unescape
 

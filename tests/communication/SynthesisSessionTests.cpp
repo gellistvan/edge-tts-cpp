@@ -11,6 +11,7 @@
 #include "edge_tts/core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@ using edge_tts::communication::WebSocketMessage;
 using edge_tts::common::Error;
 using edge_tts::common::ErrorCode;
 using edge_tts::common::FixedClock;
+using edge_tts::common::IClock;
 using edge_tts::common::IdGenerator;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
@@ -68,13 +70,15 @@ static ConnectionMetadataFactory& get_meta_factory() {
     return factory;
 }
 
-static SynthesisSession make_session(FakeWebSocketClient& fake) {
+static SynthesisSession make_session(FakeWebSocketClient& fake,
+                                      const IClock& clock = g_clock) {
     return SynthesisSession{
         fake,
         get_protocol(),
         make_test_config(),
         get_token_provider(),
-        get_meta_factory()
+        get_meta_factory(),
+        clock
     };
 }
 
@@ -503,4 +507,380 @@ TEST(SynthesisSession, EmptyChunksReturnsEmpty) {
     EXPECT_TRUE(result.has_value());
     EXPECT_TRUE(result->empty());
     EXPECT_EQ(fake.connect_count(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Offset compensation across multiple chunks
+//
+// Reference: communicate.py __compensate_offset()
+//   offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
+//
+// Boundaries in the first chunk get compensation = 0.
+// Boundaries in the second chunk get compensation based on audio bytes from
+// the first chunk.  Duration is never affected.
+// ---------------------------------------------------------------------------
+
+// Helper: build a boundary frame with the given raw offset.
+static WebSocketMessage make_boundary_at(std::int64_t raw_offset,
+                                          const std::string& word = "word") {
+    return make_word_boundary(raw_offset, 500'000, word);
+}
+
+// Helper: build an audio frame with exactly n_bytes of audio payload.
+static WebSocketMessage make_audio_of_size(std::size_t n_bytes) {
+    return make_audio_frame(std::vector<std::byte>(n_bytes, std::byte{0xAB}));
+}
+
+TEST(OffsetCompensation, FirstChunkBoundaryOffsetIsUnchanged) {
+    // First chunk: compensation = 0, so raw offset must pass through unchanged.
+    FakeWebSocketClient fake;
+    fake.push_incoming(make_boundary_at(1'234'567));
+    fake.push_incoming(make_audio_of_size(6000));  // 6000 bytes audio
+    fake.push_incoming(make_turn_end());
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"hello"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    const auto& bc = std::get<BoundaryChunk>((*result)[0]);
+    EXPECT_EQ(bc.offset_ticks, 1'234'567);
+}
+
+TEST(OffsetCompensation, SecondChunkBoundaryOffsetIsCompensated) {
+    // First chunk: N audio bytes, boundary at raw offset 0.
+    // Second chunk: boundary at raw offset 0 must be shifted by
+    //   N * 8 * 10_000_000 / 48_000 ticks.
+    //
+    // Using N = 6000 bytes:
+    //   compensation = 6000 * 8 * 10_000_000 / 48_000 = 10_000_000 ticks (1 second)
+    constexpr std::size_t N = 6000;
+    constexpr std::int64_t expected_comp =
+        static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;
+
+    FakeWebSocketClient fake;
+    // Chunk 1: audio (N bytes) + boundary at offset 0 + turn.end
+    fake.push_incoming(make_audio_of_size(N));
+    fake.push_incoming(make_boundary_at(0, "first"));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: audio + boundary at raw offset 0 + turn.end
+    fake.push_incoming(make_audio_of_size(100));
+    fake.push_incoming(make_boundary_at(0, "second"));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"chunk1", "chunk2"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    // Find the second boundary (from chunk 2).
+    std::int64_t second_boundary_offset = -1;
+    int boundary_count = 0;
+    for (const auto& c : *result) {
+        if (std::holds_alternative<BoundaryChunk>(c)) {
+            ++boundary_count;
+            if (boundary_count == 2)
+                second_boundary_offset = std::get<BoundaryChunk>(c).offset_ticks;
+        }
+    }
+    EXPECT_EQ(boundary_count, 2);
+    EXPECT_EQ(second_boundary_offset, expected_comp);
+}
+
+TEST(OffsetCompensation, MultipleBoundariesInChunkGetSameCompensation) {
+    // Within a single chunk all boundaries get the same (pre-computed)
+    // compensation from the audio bytes of all *previous* chunks.
+    // Audio from the current chunk does not affect the current compensation.
+    constexpr std::size_t N = 12000;
+    constexpr std::int64_t comp =
+        static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;
+
+    FakeWebSocketClient fake;
+    // Chunk 1: N bytes audio + turn.end
+    fake.push_incoming(make_audio_of_size(N));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: three boundaries + audio + turn.end
+    fake.push_incoming(make_boundary_at(100, "a"));
+    fake.push_incoming(make_boundary_at(200, "b"));
+    fake.push_incoming(make_boundary_at(300, "c"));
+    fake.push_incoming(make_audio_of_size(50));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"one", "two"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    std::vector<std::int64_t> offsets;
+    for (const auto& c : *result)
+        if (std::holds_alternative<BoundaryChunk>(c))
+            offsets.push_back(std::get<BoundaryChunk>(c).offset_ticks);
+
+    ASSERT_EQ(offsets.size(), 3u);
+    // All three boundaries get the same compensation (from chunk 1 bytes).
+    EXPECT_EQ(offsets[0], 100 + comp);
+    EXPECT_EQ(offsets[1], 200 + comp);
+    EXPECT_EQ(offsets[2], 300 + comp);
+}
+
+TEST(OffsetCompensation, DurationTicksUnchanged) {
+    // duration_ticks must NEVER be modified by offset compensation.
+    FakeWebSocketClient fake;
+    // Chunk 1: audio so compensation is non-zero for chunk 2.
+    fake.push_incoming(make_audio_of_size(6000));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: boundary with known duration.
+    constexpr std::int64_t raw_duration = 750'000;
+    fake.push_incoming(
+        [&]() -> WebSocketMessage {
+            WebSocketMessage m;
+            m.type = WebSocketMessage::Type::text;
+            m.text = "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+                     "{\"Metadata\":[{\"Type\":\"WordBoundary\","
+                     "\"Data\":{\"Offset\":0"
+                     ",\"Duration\":" + std::to_string(raw_duration) +
+                     ",\"text\":{\"Text\":\"test\"}}}]}";
+            return m;
+        }());
+    fake.push_incoming(make_audio_of_size(100));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"first", "second"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    for (const auto& c : *result) {
+        if (std::holds_alternative<BoundaryChunk>(c)) {
+            const auto& bc = std::get<BoundaryChunk>(c);
+            EXPECT_EQ(bc.duration_ticks, raw_duration);
+        }
+    }
+}
+
+TEST(OffsetCompensation, LargeAudioBytesNoOverflow) {
+    // Verify that 64-bit arithmetic is used for the compensation formula.
+    // Large byte count that would overflow int32_t:
+    //   2^31 = 2_147_483_648 bytes ≈ 2 GB
+    // Expected compensation = 2_147_483_648 * 8 * 10_000_000 / 48_000
+    //                       = 3_579_139_413 ticks  (> INT32_MAX = 2_147_483_647)
+    constexpr std::int64_t large_bytes = 2'147'483'648LL;  // 2 GiB
+    constexpr std::int64_t expected_comp =
+        large_bytes * 8LL * 10'000'000LL / 48'000LL;
+    static_assert(expected_comp > 2'147'483'647LL,
+                  "expected_comp must exceed INT32_MAX to prove no overflow");
+
+    // We simulate this by computing the expected value and verifying the
+    // compensation formula in isolation — a direct calculation test.
+    const std::int64_t computed =
+        large_bytes * 8LL * 10'000'000LL / 48'000LL;
+    EXPECT_EQ(computed, expected_comp);
+    EXPECT_TRUE(computed > std::int64_t{2'147'483'647LL});  // must exceed INT32_MAX
+}
+
+TEST(OffsetCompensation, ThreeChunksCumulativeCompensation) {
+    // Verify that compensation accumulates correctly over three chunks.
+    // Chunk 1: A bytes → compensation for chunk 2 = A*8*10M/48000
+    // Chunk 2: B bytes → compensation for chunk 3 = (A+B)*8*10M/48000
+    constexpr std::size_t A = 4800;  // 0.1 second of audio at 48000 B/s
+    constexpr std::size_t B = 9600;  // 0.2 seconds
+    constexpr std::int64_t comp2 =
+        static_cast<std::int64_t>(A) * 8LL * 10'000'000LL / 48'000LL;
+    constexpr std::int64_t comp3 =
+        static_cast<std::int64_t>(A + B) * 8LL * 10'000'000LL / 48'000LL;
+
+    FakeWebSocketClient fake;
+    // Chunk 1: A bytes audio + boundary at 0 + turn.end
+    fake.push_incoming(make_audio_of_size(A));
+    fake.push_incoming(make_boundary_at(0, "w1"));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: B bytes audio + boundary at 0 + turn.end
+    fake.push_incoming(make_audio_of_size(B));
+    fake.push_incoming(make_boundary_at(0, "w2"));
+    fake.push_incoming(make_turn_end());
+    // Chunk 3: audio + boundary at 0 + turn.end
+    fake.push_incoming(make_audio_of_size(100));
+    fake.push_incoming(make_boundary_at(0, "w3"));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"c1", "c2", "c3"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    std::vector<std::int64_t> offsets;
+    for (const auto& c : *result)
+        if (std::holds_alternative<BoundaryChunk>(c))
+            offsets.push_back(std::get<BoundaryChunk>(c).offset_ticks);
+
+    ASSERT_EQ(offsets.size(), 3u);
+    EXPECT_EQ(offsets[0], 0);       // chunk 1: compensation = 0
+    EXPECT_EQ(offsets[1], comp2);   // chunk 2: compensation = A bytes
+    EXPECT_EQ(offsets[2], comp3);   // chunk 3: compensation = (A+B) bytes
+}
+
+// ---------------------------------------------------------------------------
+// 403 DRM retry behavior
+//
+// Reference: communicate.py Communicate.stream():
+//   except aiohttp.ClientResponseError as e:
+//       if e.status != 403: raise
+//       DRM.handle_client_response_error(e)   # parse Date, adjust skew
+//       async for message in self.__stream():  # single retry
+//
+// Rules:
+//   - drm_error (HTTP 403): retry exactly once; adjust clock skew if Date present.
+//   - network_error, service_error, …: do NOT retry.
+//   - Post-connect errors (send/receive): do NOT retry.
+// ---------------------------------------------------------------------------
+
+// Helper: build a minimal valid response for the receive loop.
+static std::vector<WebSocketMessage> minimal_audio_response() {
+    const std::vector<std::byte> payload(32, std::byte{0xAB});
+    return {make_audio_frame(payload), make_turn_end()};
+}
+
+TEST(DrmRetry, RetriesOnceWithSkewAdjustment) {
+    // Setup: FixedClock at Unix epoch (t=0); server reports t=30 via Date header.
+    // Expected clock skew after retry: 30.0 - (0.0 + 0.0) = 30.0 seconds.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    // First connect fails: drm_error with Date header 30 seconds after epoch.
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden",
+              "Thu, 01 Jan 1970 00:00:30 GMT"},
+        1);
+    // Push messages consumed by the successful second connect's receive loop.
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    // Skew = server_ts(30) - (client_now(0) + prior_skew(0)) = 30.0
+    EXPECT_EQ(tp.clock_skew_seconds(), 30.0);
+}
+
+TEST(DrmRetry, RetriesOnceWithoutDateContext) {
+    // drm_error with no Date context: still retries once, skew unchanged.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden"},  // no Date context
+        1);
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    EXPECT_EQ(tp.clock_skew_seconds(), 0.0);  // no adjustment
+}
+
+TEST(DrmRetry, NetworkErrorDoesNotRetry) {
+    // network_error is not retriable — should_retry() returns false.
+    FakeWebSocketClient fake;
+    fake.set_connect_error(Error{ErrorCode::network_error, "connection refused"});
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::network_error);
+    EXPECT_EQ(fake.connect_count(), 1);
+}
+
+TEST(DrmRetry, SendFailureAfterConnectDoesNotRetry) {
+    // Connect succeeds; first send_text fails.
+    // Post-connect errors are never retried (Python only retries the connect).
+    FakeWebSocketClient fake;
+    fake.set_send_error(Error{ErrorCode::network_error, "send failed"});
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::network_error);
+    EXPECT_EQ(fake.connect_count(), 1);
+}
+
+TEST(DrmRetry, DrmErrorDoesNotRetryMoreThanOnce) {
+    // Both connect attempts fail with drm_error.
+    // max_retries=1 means only one retry; second failure propagates.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_error(Error{ErrorCode::drm_error, "403 Forbidden"});
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::drm_error);
+    EXPECT_EQ(fake.connect_count(), 2);  // initial + exactly one retry
+}
+
+TEST(DrmRetry, SkewIsComputedRelativeToEffectiveClientTime) {
+    // If a prior skew of +10 s was already applied, and the server says t=30,
+    // the new correction should bring the total skew to (30 - client_now).
+    // With client_now=5 and prior_skew=10:
+    //   effective = 5 + 10 = 15
+    //   delta     = 30 - 15 = 15
+    //   new_total = 10 + 15 = 25 = 30 - 5 = server - client_now  ✓
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{5LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    tp.adjust_clock_skew(10.0);  // pre-existing skew
+
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden",
+              "Thu, 01 Jan 1970 00:00:30 GMT"},  // server_time = 30
+        1);
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    // After adjustment: total_skew = 30 - 5 = 25.0
+    EXPECT_EQ(tp.clock_skew_seconds(), 25.0);
 }

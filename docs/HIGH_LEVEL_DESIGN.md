@@ -54,32 +54,94 @@ Rules:
   - `SynthesisSession` orchestrates the full per-chunk synthesis lifecycle:
     URL construction → connect → speech.config → SSML → receive loop → close.
     One `IWebSocketClient` connection is opened and closed per text chunk.
+    `SynthesisSession` also owns **boundary offset compensation**: it tracks
+    cumulative audio bytes across chunks and adds
+    `cumulative_bytes * 8 * 10_000_000 / 48_000` ticks to each
+    `BoundaryChunk::offset_ticks` so subtitles align correctly across chunk
+    boundaries.  `duration_ticks` is never modified.
+
+**TextChunker / SsmlBuilder escaping contract:**
+
+`serialization::TextChunker::chunk()` returns XML-escaped strings — escaping happens
+once at the chunking step, sized against the escaped byte length (4096-byte limit).
+
+`serialization::SsmlBuilder` provides two entry points:
+- `build(config, raw_text)` — for raw user text: normalizes + XML-escapes + assembles SSML.
+- `build_from_escaped_text(config, escaped_text)` — for pre-escaped text: assembles SSML
+  without any additional escaping.  This is what `EdgeProtocol::build_ssml_frame` uses.
+
+`EdgeProtocol::build_ssml_frame` expects pre-escaped input (from `TextChunker`) and
+calls `build_from_escaped_text` to embed it verbatim.  This ensures XML-escaping
+occurs **exactly once** across the full pipeline and never produces `&amp;amp;`.
 
 ## Public API policy
 
 Headers are grouped by module:
 
 ```cpp
-#include "edge_tts/api/Communicate.hpp"   // public TTS facade
+#include "edge_tts/api/Communicate.hpp"        // public TTS facade
+#include "edge_tts/api/CommunicateOptions.hpp" // transport / proxy options
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/subtitles/SrtComposer.hpp"
 ```
 
 Avoid adding new public headers at `include/edge_tts/` root unless they are deliberate umbrella headers. Module-local concepts should stay inside their module folder.
 
+### Speech config vs. transport options
+
+`core::TtsConfig` is **speech-only**: voice, rate, volume, pitch.  It must
+never hold transport settings (proxy URL, timeouts).
+
+`api::CommunicateOptions` is **transport-only**: proxy URL, WebSocket connect/
+read timeouts, HTTP timeout.  It must never hold speech settings.
+
+The separation keeps `TtsConfig` serializable into SSML without any network
+knowledge, and lets transport configuration evolve independently.
+
+| What | Type | Field |
+|------|------|-------|
+| Voice, rate, volume, pitch | `core::TtsConfig` | `voice`, `rate`, `volume`, `pitch` |
+| HTTP/WebSocket proxy | `api::CommunicateOptions` | `proxy` |
+| WS connect timeout | `api::CommunicateOptions` | `ws_connect_timeout` (default 10 s) |
+| WS read timeout | `api::CommunicateOptions` | `ws_read_timeout` (default 60 s) |
+| HTTP timeout | `api::CommunicateOptions` | `http_timeout` (default 30 s) |
+
+### `Communicate` constructor matrix
+
+| Constructor | Purpose |
+|-------------|---------|
+| `Communicate(text, config = {})` | Production; default options; real networking stack |
+| `Communicate(text, config, CommunicateOptions)` | Production with explicit proxy/timeouts |
+| `Communicate(text, config, SynthesizerFn)` | Test injection; default options |
+| `Communicate(text, config, CommunicateOptions, SynthesizerFn)` | Test injection with options (seam test) |
+
+The two production constructors own a heap-allocated `ProductionSynthesizer`
+that composes the full networking stack at construction time:
+`SystemClock → IdGenerator → EdgeServiceConfig → EdgeTokenProvider →
+EdgeProtocol → ConnectionMetadataFactory → WebSocketClient → SynthesisSession`.
+No network work is performed in the constructor — synthesis is deferred to
+`stream_sync()` / `save()` call time.
+
 ## C++ usage example
 
 ```cpp
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
-// Build configuration (defaults match Python reference edge-tts v7.2.8).
+// Build speech configuration.
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 cfg.rate  = "+0%";
 
-// Synthesize text.
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+// Build transport options (optional — defaults match Python reference).
+edge_tts::api::CommunicateOptions opts;
+opts.proxy = "http://proxy.example.com:8080"; // optional
+opts.ws_connect_timeout = std::chrono::milliseconds{10'000};
+opts.ws_read_timeout    = std::chrono::milliseconds{60'000};
+
+// Synthesize text — speech config and transport options are separate.
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
 
 // Save audio and optional SRT subtitles — reference: Communicate.save().
 auto result = c.save("hello.mp3", "hello.srt");
@@ -100,9 +162,8 @@ if (chunks) {
 
 **Note:** `stream_sync()` and `save()` are each single-use (reference:
 `Communicate.stream()` raises `RuntimeError` on a second call). Calling either
-a second time returns `ErrorCode::invalid_state`. Until the WebSocket transport
-is wired, the production constructor returns `ErrorCode::network_error`;
-inject a `SynthesizerFn` for testing.
+a second time returns `ErrorCode::invalid_state`. Inject a `SynthesizerFn` for
+unit testing without a live service connection.
 
 ## Core domain type ownership
 

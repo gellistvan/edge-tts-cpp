@@ -4,6 +4,7 @@
 #include "edge_tts/core/Voice.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 #include "edge_tts/common/Error.hpp"
+#include "edge_tts/common/IdGenerator.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <string>
@@ -16,6 +17,7 @@ using edge_tts::communication::default_edge_service_config;
 using edge_tts::core::VoiceGender;
 using edge_tts::serialization::VoiceJsonParser;
 using edge_tts::common::ErrorCode;
+using edge_tts::common::IdGenerator;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,6 +25,7 @@ using edge_tts::common::ErrorCode;
 
 static const VoiceJsonParser k_parser{};
 static const auto k_cfg = default_edge_service_config();
+static IdGenerator k_ids{};
 
 // Minimal valid JSON for a single voice.
 static std::string one_voice_json(
@@ -60,7 +63,7 @@ static std::string wire_order_json() {
 TEST(VoiceService, SendsGetMethod) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->method, "GET");
 }
@@ -68,7 +71,7 @@ TEST(VoiceService, SendsGetMethod) {
 TEST(VoiceService, SendsToVoicesEndpoint) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->url, k_cfg.voices_endpoint);
 }
@@ -76,7 +79,7 @@ TEST(VoiceService, SendsToVoicesEndpoint) {
 TEST(VoiceService, UrlContainsTrustedClientToken) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     EXPECT_NE(http.last_request()->url.find(k_cfg.trusted_client_token), std::string::npos);
 }
@@ -88,7 +91,7 @@ TEST(VoiceService, UrlContainsTrustedClientToken) {
 TEST(VoiceService, SetsUserAgentHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->headers.at("User-Agent"), k_cfg.user_agent);
 }
@@ -96,7 +99,7 @@ TEST(VoiceService, SetsUserAgentHeader) {
 TEST(VoiceService, SetsAcceptHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     // Reference: VOICE_HEADERS["Accept"] = "*/*"
     EXPECT_EQ(http.last_request()->headers.at("Accept"), "*/*");
@@ -105,9 +108,53 @@ TEST(VoiceService, SetsAcceptHeader) {
 TEST(VoiceService, SetsAcceptLanguageHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->headers.at("Accept-Language"), "en-US,en;q=0.9");
+}
+
+TEST(VoiceService, SetsAcceptEncodingHeader) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    (void)svc.list_voices();
+    // Reference: BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"
+    EXPECT_EQ(http.last_request()->headers.at("Accept-Encoding"), "gzip, deflate, br, zstd");
+}
+
+TEST(VoiceService, SetsCookieMuidHeader) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    (void)svc.list_voices();
+    // Reference: DRM.headers_with_muid() → Cookie: muid=<32-upper-hex>;
+    const auto& cookie = http.last_request()->headers.at("Cookie");
+    EXPECT_EQ(cookie.substr(0, 5), "muid=");
+    EXPECT_EQ(cookie.back(), ';');
+    // muid= (5) + 32 hex chars + ; (1) = 38
+    EXPECT_EQ(cookie.size(), 38u);
+    // All hex chars must be uppercase
+    for (std::size_t i = 5; i < 37; ++i) {
+        const char c = cookie[i];
+        EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'));
+    }
+}
+
+TEST(VoiceService, FreshMuidPerRequest) {
+    // Reference: drm.py DRM.generate_muid() called on every request.
+    // Two consecutive list_voices() calls must produce different MUID cookies.
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    IdGenerator fresh_ids;
+    VoiceService svc{k_cfg, http, k_parser, fresh_ids};
+
+    (void)svc.list_voices();
+    const std::string first_cookie = http.last_request()->headers.at("Cookie");
+
+    (void)svc.list_voices();
+    const std::string second_cookie = http.last_request()->headers.at("Cookie");
+
+    EXPECT_NE(first_cookie, second_cookie);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +164,7 @@ TEST(VoiceService, SetsAcceptLanguageHeader) {
 TEST(VoiceService, ParsesSuccessfulJson) {
     FakeHttpClient http;
     http.set_response({200, {}, one_voice_json("en-US-EmmaMultilingualNeural", "en-US")});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
@@ -129,7 +176,7 @@ TEST(VoiceService, ParsesSuccessfulJson) {
 TEST(VoiceService, EmptyArrayReturnsEmptyVector) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(r.value().empty());
@@ -142,7 +189,7 @@ TEST(VoiceService, EmptyArrayReturnsEmptyVector) {
 TEST(VoiceService, Http403ReturnsServiceError) {
     FakeHttpClient http;
     http.set_response({403, {}, "Forbidden"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::service_error);
@@ -151,7 +198,7 @@ TEST(VoiceService, Http403ReturnsServiceError) {
 TEST(VoiceService, Http500ReturnsServiceError) {
     FakeHttpClient http;
     http.set_response({500, {}, "Internal Server Error"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::service_error);
@@ -160,7 +207,7 @@ TEST(VoiceService, Http500ReturnsServiceError) {
 TEST(VoiceService, Non200StatusCodeInErrorContext) {
     FakeHttpClient http;
     http.set_response({503, {}, ""});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     // Context should contain the status code
@@ -174,7 +221,7 @@ TEST(VoiceService, Non200StatusCodeInErrorContext) {
 TEST(VoiceService, HttpNetworkErrorPropagates) {
     FakeHttpClient http;
     http.set_error({ErrorCode::network_error, "connection refused"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::network_error);
@@ -183,7 +230,7 @@ TEST(VoiceService, HttpNetworkErrorPropagates) {
 TEST(VoiceService, HttpTimeoutPropagates) {
     FakeHttpClient http;
     http.set_error({ErrorCode::timeout, "read timeout"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::timeout);
@@ -196,7 +243,7 @@ TEST(VoiceService, HttpTimeoutPropagates) {
 TEST(VoiceService, MalformedJsonPropagatesParseError) {
     FakeHttpClient http;
     http.set_response({200, {}, "not valid json {{{"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
@@ -207,7 +254,7 @@ TEST(VoiceService, MissingRequiredFieldPropagatesParseError) {
     FakeHttpClient http;
     http.set_response({200, {},
         R"json([{"Name":"N","ShortName":"en-US-X","Locale":"en-US","SuggestedCodec":"mp3","FriendlyName":"F","Status":"GA"}])json"});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
@@ -220,7 +267,7 @@ TEST(VoiceService, MissingRequiredFieldPropagatesParseError) {
 TEST(VoiceService, FilterByLocale) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.locale = "zh-CN";
@@ -234,7 +281,7 @@ TEST(VoiceService, FilterByLocale) {
 TEST(VoiceService, FilterByLocaleNoMatch) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.locale = "ja-JP";
@@ -256,7 +303,7 @@ TEST(VoiceService, FilterByGenderFemale) {
       {"Name":"N2","ShortName":"en-GB-RyanNeural","Gender":"Male","Locale":"en-GB","SuggestedCodec":"mp3","FriendlyName":"F2","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.gender = VoiceGender::female;
@@ -274,7 +321,7 @@ TEST(VoiceService, FilterByGenderMale) {
       {"Name":"N2","ShortName":"en-GB-RyanNeural","Gender":"Male","Locale":"en-GB","SuggestedCodec":"mp3","FriendlyName":"F2","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.gender = VoiceGender::male;
@@ -292,7 +339,7 @@ TEST(VoiceService, FilterByGenderMale) {
 TEST(VoiceService, FilterByShortName) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.short_name = "en-US-EmmaMultilingualNeural";
@@ -315,7 +362,7 @@ TEST(VoiceService, FilterByLocaleAndGender) {
       {"Name":"N3","ShortName":"zh-CN-XiaoxiaoNeural","Gender":"Female","Locale":"zh-CN","SuggestedCodec":"mp3","FriendlyName":"F3","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     VoiceFilter filter;
     filter.locale = "en-US";
@@ -338,7 +385,7 @@ TEST(VoiceService, FilterByLocaleAndGender) {
 TEST(VoiceService, WireOrderPreserved) {
     FakeHttpClient http;
     http.set_response({200, {}, wire_order_json()});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
@@ -355,7 +402,7 @@ TEST(VoiceService, NoImplicitSortingApplied) {
     // The reference sorts only in _print_voices() for CLI display.
     FakeHttpClient http;
     http.set_response({200, {}, wire_order_json()});
-    VoiceService svc{k_cfg, http, k_parser};
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());

@@ -34,38 +34,32 @@
 # Submodule: submodules/ixwebsocket
 # URL: https://github.com/machinezone/IXWebSocket
 # CMake target produced: ixwebsocket
+#
+# Lookup order:
+#   1. submodules/ixwebsocket/CMakeLists.txt present → add_subdirectory
+#   2. find_package(ixwebsocket CONFIG QUIET)        → system/vcpkg install
+#   3. EDGE_TTS_FETCH_DEPS=ON                        → FetchContent
+#   4. Not found + EDGE_TTS_REQUIRE_NETWORKING=ON    → FATAL_ERROR
+#   5. Not found + EDGE_TTS_REQUIRE_NETWORKING=OFF   → silently skip (stubs compile)
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
+# --- TLS: enable by default on non-Windows --------------------------------
+# The Edge TTS voices endpoint (https://) and WebSocket endpoint (wss://)
+# both require TLS.  ixwebsocket uses the variable name USE_TLS (not
+# IXWEBSOCKET_USE_TLS).  Default ON so production builds have HTTPS;
+# the caller can set USE_TLS=OFF before including this file to opt out.
+if(NOT DEFINED USE_TLS)
+    set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
+endif()
 
-    # --- Disable everything except the library itself -----------------------
+# --- Shared ixwebsocket CMake settings (applied before add_subdirectory) --
+macro(_edge_tts_configure_ixwebsocket_options)
     set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "Disable ixwebsocket install")
     # Disable googletest inside ixwebsocket so it does not conflict with ours.
     set(BUILD_TESTING OFF CACHE BOOL "Disable ixwebsocket test targets" FORCE)
+endmacro()
 
-    # --- TLS: enable by default on non-Windows ------------------------------
-    # The Edge TTS voices endpoint (https://) and WebSocket endpoint (wss://)
-    # both require TLS.  ixwebsocket uses the variable name USE_TLS (not
-    # IXWEBSOCKET_USE_TLS).  Default ON so production builds have HTTPS;
-    # the caller can set USE_TLS=OFF before including this file to opt out.
-    if(NOT DEFINED USE_TLS)
-        if(WIN32)
-            # On Windows, ixwebsocket defaults to mbedTLS; let its own CMake
-            # handle the default rather than forcing a value.
-            set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
-        else()
-            set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
-        endif()
-    endif()
-
-    add_subdirectory(
-        "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket"
-        "${CMAKE_BINARY_DIR}/_deps/ixwebsocket"
-        EXCLUDE_FROM_ALL)
-
-    # --- Suppress warnings on ixwebsocket headers ---------------------------
-    # After add_subdirectory() the target exists; read its INTERFACE include
-    # directories and re-register them as SYSTEM so downstream consumers
-    # compile those headers without our project warnings.
+# --- Suppress warnings on ixwebsocket headers -----------------------------
+macro(_edge_tts_suppress_ixwebsocket_warnings)
     if(TARGET ixwebsocket)
         get_target_property(_ix_includes ixwebsocket INTERFACE_INCLUDE_DIRECTORIES)
         if(_ix_includes)
@@ -73,6 +67,53 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
                 INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_ix_includes}")
         endif()
         unset(_ix_includes)
+    endif()
+endmacro()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
+
+    _edge_tts_configure_ixwebsocket_options()
+
+    add_subdirectory(
+        "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket"
+        "${CMAKE_BINARY_DIR}/_deps/ixwebsocket"
+        EXCLUDE_FROM_ALL)
+
+    _edge_tts_suppress_ixwebsocket_warnings()
+
+    message(STATUS "ixwebsocket: using submodule at submodules/ixwebsocket")
+
+else()
+
+    find_package(ixwebsocket CONFIG QUIET)
+    if(ixwebsocket_FOUND AND TARGET ixwebsocket)
+        message(STATUS "ixwebsocket: using system/installed package")
+        _edge_tts_suppress_ixwebsocket_warnings()
+    elseif(EDGE_TTS_FETCH_DEPS)
+        message(STATUS "ixwebsocket: submodule not present, fetching via FetchContent (tag v11.4.5)")
+        include(FetchContent)
+        _edge_tts_configure_ixwebsocket_options()
+        FetchContent_Declare(
+            ixwebsocket
+            GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+            GIT_TAG        v11.4.5
+            GIT_SHALLOW    TRUE
+        )
+        FetchContent_MakeAvailable(ixwebsocket)
+        _edge_tts_suppress_ixwebsocket_warnings()
+    elseif(EDGE_TTS_REQUIRE_NETWORKING)
+        message(FATAL_ERROR
+            "ixwebsocket not found and EDGE_TTS_REQUIRE_NETWORKING=ON.\n"
+            "Options to fix this:\n"
+            "  1. Initialize the submodule:  git submodule update --init submodules/ixwebsocket\n"
+            "  2. Install system package:    see https://github.com/machinezone/IXWebSocket\n"
+            "  3. Enable auto-download:      cmake -DEDGE_TTS_FETCH_DEPS=ON ...\n"
+            "  4. Build without apps/networking: cmake -DEDGE_TTS_BUILD_APPS=OFF ..."
+        )
+    else()
+        message(STATUS
+            "ixwebsocket: not found and EDGE_TTS_REQUIRE_NETWORKING=OFF — "
+            "stub HttpClient/WebSocketClient will be used (no real networking)")
     endif()
 
 endif()

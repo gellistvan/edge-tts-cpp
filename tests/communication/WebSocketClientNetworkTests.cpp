@@ -94,7 +94,7 @@ TEST(WebSocketClientNetwork, ShortSynthesisReturnsNonEmptyAudio) {
     EdgeTokenProvider         tokens{cfg, clock};
     ConnectionMetadataFactory meta_factory{ids};
 
-    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory, clock};
 
     TtsConfig tts;
     tts.voice = "en-US-EmmaMultilingualNeural";
@@ -129,7 +129,7 @@ TEST(WebSocketClientNetwork, ShortSynthesisResultIsNonEmpty) {
     EdgeTokenProvider         tokens{cfg, clock};
     ConnectionMetadataFactory meta_factory{ids};
 
-    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory, clock};
 
     TtsConfig tts;
     tts.voice = "en-US-EmmaMultilingualNeural";
@@ -156,7 +156,7 @@ TEST(WebSocketClientNetwork, SynthesisReceivesTurnEnd) {
     EdgeTokenProvider         tokens{cfg, clock};
     ConnectionMetadataFactory meta_factory{ids};
 
-    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory, clock};
 
     TtsConfig tts;
     tts.voice = "en-US-EmmaMultilingualNeural";
@@ -183,7 +183,7 @@ TEST(WebSocketClientNetwork, SynthesisWithWordBoundaryMetadata) {
     EdgeTokenProvider         tokens{cfg, clock};
     ConnectionMetadataFactory meta_factory{ids};
 
-    SynthesisSession session{client, protocol, cfg, tokens, meta_factory};
+    SynthesisSession session{client, protocol, cfg, tokens, meta_factory, clock};
 
     TtsConfig tts;
     tts.voice = "en-US-EmmaMultilingualNeural";

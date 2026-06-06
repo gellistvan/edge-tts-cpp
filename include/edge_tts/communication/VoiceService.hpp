@@ -1,5 +1,6 @@
 #pragma once
 
+#include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/common/Result.hpp"
 #include "edge_tts/core/Voice.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
@@ -31,7 +32,8 @@ struct VoiceFilter {
 //
 // Reference: voices.py list_voices() + __list_voices()
 //   - HTTP GET to the voice-list endpoint.
-//   - Headers: User-Agent and Accept from EdgeServiceConfig.
+//   - Headers: build_voice_list_headers() (User-Agent, Accept-Encoding,
+//     Accept-Language, Accept, Cookie/MUID).
 //   - Non-200 status → ErrorCode::service_error.
 //   - 200 body parsed by VoiceJsonParser (delegation: no JSON in communication layer).
 //   - Wire ordering preserved; sorting for CLI display is the caller's concern.
@@ -43,8 +45,9 @@ struct VoiceFilter {
 class VoiceService {
 public:
     VoiceService(const EdgeServiceConfig&               config,
-                 IHttpClient&                            http,
-                 const serialization::VoiceJsonParser&  parser);
+                 IHttpClient&                           http,
+                 const serialization::VoiceJsonParser&  parser,
+                 common::IdGenerator&                   ids);
 
     [[nodiscard]] common::Result<std::vector<core::Voice>>
     list_voices(const VoiceFilter& filter = {});
@@ -53,6 +56,7 @@ private:
     const EdgeServiceConfig&              config_;
     IHttpClient&                          http_;
     const serialization::VoiceJsonParser& parser_;
+    common::IdGenerator&                  ids_;
 };
 
 } // namespace edge_tts::communication
