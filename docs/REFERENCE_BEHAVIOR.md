@@ -445,6 +445,18 @@ use `serialization::TextChunker`.
 
 **C++ implementation:** `serialization::SsmlBuilder` (`SsmlBuilder.hpp` / `SsmlBuilder.cpp`).
 
+**Entry points and escaping contract:**
+
+`SsmlBuilder` exposes two entry points to keep escaping unambiguous:
+
+| Entry point | Input contract | Use case |
+|-------------|---------------|----------|
+| `build(config, raw_text)` | Raw user text — normalized + XML-escaped once inside | Direct callers with unescaped text |
+| `build_from_escaped_text(config, escaped_text)` | Already XML-escaped text — embedded verbatim | `EdgeProtocol::build_ssml_frame`, which receives pre-escaped chunks from `TextChunker` |
+
+Passing raw text to `build_from_escaped_text` produces malformed SSML.
+Passing already-escaped text to `build` produces double-escaped entities (`&amp;amp;`).
+
 **SSML body template:**
 ```xml
 <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>

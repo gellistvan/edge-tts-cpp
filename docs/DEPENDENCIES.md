@@ -5,6 +5,40 @@ source, how they are integrated, and which modules consume them.
 
 ---
 
+## Dependency resolution
+
+All third-party dependencies follow a strict lookup order to support both
+submodule-based development checkouts and source archives / CI environments
+that cannot rely on submodules being populated.
+
+### Lookup order (per dependency)
+
+1. **Submodule present** — `submodules/<name>/CMakeLists.txt` exists →
+   `add_subdirectory` (preferred, deterministic, offline-capable).
+2. **System/package-manager install** — `find_package(... CONFIG QUIET)` →
+   use the installed package (vcpkg, conan, apt, Homebrew, etc.).
+3. **FetchContent auto-download** — `EDGE_TTS_FETCH_DEPS=ON` →
+   `FetchContent_Declare` + `FetchContent_MakeAvailable` pulls the pinned
+   tag from GitHub at configure time.
+4. **Not found** → `message(FATAL_ERROR ...)` with an actionable message.
+
+### CMake options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
+
+### Release / source archives
+
+Source archives (e.g. GitHub tarballs) do not include submodule contents.
+Use one of:
+- `EDGE_TTS_FETCH_DEPS=ON` (default) — CMake downloads pinned dependency versions at configure time.
+- Vendor the dependency sources manually into `submodules/`.
+- Pre-install via a package manager and let `find_package` locate them.
+
+---
+
 ## minigtest
 
 | Property | Value |
@@ -81,6 +115,8 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 | Consumers | `edge_tts::communication` (WebSocketTransport, HTTP voice-list client) |
 | License | BSD 3-Clause (`submodules/ixwebsocket/LICENSE`) |
 | CMake target | `ixwebsocket` |
+| Required when | `EDGE_TTS_REQUIRE_NETWORKING=ON` (default when `EDGE_TTS_BUILD_APPS=ON`) |
+| Optional when | `EDGE_TTS_REQUIRE_NETWORKING=OFF` — stub `FakeHttpClient`/`FakeWebSocketClient` compile without ixwebsocket |
 
 **Why ixwebsocket over alternatives:**
 

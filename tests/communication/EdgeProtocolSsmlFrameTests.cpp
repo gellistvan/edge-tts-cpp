@@ -4,6 +4,7 @@
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/serialization/ProtocolParser.hpp"
+#include "edge_tts/serialization/TextChunker.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <chrono>
@@ -18,6 +19,7 @@ using edge_tts::common::IdGenerator;
 using edge_tts::core::TtsConfig;
 using edge_tts::core::BoundaryType;
 using edge_tts::serialization::ProtocolParser;
+using edge_tts::serialization::TextChunker;
 
 // ---------------------------------------------------------------------------
 // Fixed test clock: 2024-01-15 10:30:45 UTC (Unix ts 1705314645)
@@ -228,29 +230,58 @@ TEST(EdgeProtocolSsmlFrame, BodyContainsInputText) {
 }
 
 // ---------------------------------------------------------------------------
-// XML special characters are escaped once in the body
-// Reference: communicate.py uses escape() before mkssml(), SsmlBuilder does
-// this internally. Passing raw text must not double-escape.
+// Pre-escaped text is embedded verbatim — no second escaping occurs.
+// build_ssml_frame expects XML-escaped input (from TextChunker), not raw text.
 // ---------------------------------------------------------------------------
 
-TEST(EdgeProtocolSsmlFrame, XmlSpecialCharsEscapedOnce) {
+TEST(EdgeProtocolSsmlFrame, PreEscapedCharsEmbeddedVerbatim) {
     FixedClock clock{kFixedTimePoint};
     EdgeProtocol proto{clock};
 
-    const auto result = proto.build_ssml_frame(TtsConfig::defaults(), "a & b < c > d", make_metadata());
+    // Pass pre-escaped text as TextChunker would produce.
+    const auto result = proto.build_ssml_frame(
+        TtsConfig::defaults(), "a &amp; b &lt; c &gt; d", make_metadata());
     EXPECT_TRUE(result.has_value());
 
     ProtocolParser parser;
     const auto parsed = parser.parse(*result);
     EXPECT_TRUE(parsed.has_value());
 
-    // Entities must appear once — &amp; not &amp;amp;
+    // Entities must appear verbatim — no second round of escaping.
     EXPECT_NE(parsed->body.find("&amp;"),     std::string::npos);
     EXPECT_NE(parsed->body.find("&lt;"),      std::string::npos);
     EXPECT_NE(parsed->body.find("&gt;"),      std::string::npos);
-    // Double-escaping must not occur
+    // Double-escaping must not occur.
     EXPECT_EQ(parsed->body.find("&amp;amp;"), std::string::npos);
     EXPECT_EQ(parsed->body.find("&amp;lt;"),  std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Full pipeline: TextChunker("Tom & Jerry") → build_ssml_frame → "&amp;" once
+// Regression test: end-to-end escaping is exactly one pass, not two.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolSsmlFrame, TomAndJerryPipelineNoDoubleEscaping) {
+    // Step 1: TextChunker produces pre-escaped chunks.
+    TextChunker chunker;
+    auto chunks = chunker.chunk("Tom & Jerry");
+    ASSERT_TRUE(chunks.has_value());
+    ASSERT_EQ(chunks->size(), 1u);
+    const std::string& escaped_chunk = (*chunks)[0];
+    // TextChunker must have escaped the ampersand.
+    EXPECT_NE(escaped_chunk.find("&amp;"), std::string::npos);
+    EXPECT_EQ(escaped_chunk.find("& Jerry"), std::string::npos);
+
+    // Step 2: build_ssml_frame embeds the pre-escaped chunk verbatim.
+    FixedClock clock{kFixedTimePoint};
+    EdgeProtocol proto{clock};
+    const auto result = proto.build_ssml_frame(
+        TtsConfig::defaults(), escaped_chunk, make_metadata());
+    ASSERT_TRUE(result.has_value());
+
+    // The final SSML must have "&amp;" exactly once — not "&amp;amp;".
+    EXPECT_NE(result->find("&amp;"),     std::string::npos);
+    EXPECT_EQ(result->find("&amp;amp;"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

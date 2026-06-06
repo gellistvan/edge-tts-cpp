@@ -1,6 +1,13 @@
 # Submodules
 
-Third-party dependencies live here as git submodules.
+Third-party dependencies live here as git submodules.  Submodules are the
+**preferred** dependency source — they are checked out offline, deterministic,
+and do not require network access at configure time.
+
+When a submodule directory is empty (e.g. after downloading a source archive
+without submodule contents), CMake falls back automatically to
+`FetchContent` if `EDGE_TTS_FETCH_DEPS=ON` (the default).  See
+`docs/DEPENDENCIES.md` for the full lookup-order policy.
 
 ## Registered submodules
 
@@ -19,6 +26,9 @@ git submodule update --init --recursive
 git submodule update --init submodules/json
 git submodule update --init submodules/ixwebsocket
 ```
+
+If submodules are not initialized, CMake will use FetchContent as a fallback
+(requires `EDGE_TTS_FETCH_DEPS=ON`, which is the default).
 
 ## Add a new submodule
 

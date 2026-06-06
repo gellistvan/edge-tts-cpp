@@ -23,24 +23,39 @@ namespace edge_tts::serialization {
 //   </speak>
 //
 // Validation policy:
-//   build() validates the TtsConfig and propagates any error before building.
-//   Callers may pre-validate with validate_tts_config() to avoid the cost on
-//   hot paths; build() always re-validates so the SSML is never malformed.
+//   Both entry points validate TtsConfig before building.
 //
-// Text processing:
-//   raw_text is normalized (TextNormalizer) and XML-escaped (xml_escape) exactly
-//   once inside build().  Do not pass already-escaped text — it will be
-//   double-escaped.
+// Text processing — TWO entry points, one escaping contract each:
+//
+//   build(config, raw_text)
+//     raw_text is normalized (TextNormalizer) and XML-escaped (xml_escape)
+//     exactly once.  Pass raw user text here.  Do NOT pass already-escaped
+//     text — it will be double-escaped (&amp; → &amp;amp;).
+//
+//   build_from_escaped_text(config, escaped_text)
+//     escaped_text is embedded verbatim — no normalization, no XML-escaping.
+//     Use when the caller already holds XML-escaped text, e.g. output from
+//     serialization::TextChunker.  Do NOT pass raw user text — XML special
+//     characters will be embedded literally and produce malformed SSML.
 //
 // Scope:
-//   build() produces only the SSML document body.  WebSocket framing and
-//   X-RequestId / X-Timestamp protocol headers are NOT included — those belong
-//   in the communication layer (EdgeProtocol).
+//   Both entry points produce only the SSML document body.  WebSocket framing
+//   and X-RequestId / X-Timestamp protocol headers are NOT included — those
+//   belong in the communication layer (EdgeProtocol).
 class SsmlBuilder {
 public:
+    // Raw text path: normalize + XML-escape + assemble SSML.
+    // Use for user-supplied text that has not yet been escaped.
     [[nodiscard]] common::Result<std::string> build(
         const core::TtsConfig& config,
         std::string_view       raw_text) const;
+
+    // Pre-escaped text path: assemble SSML embedding escaped_text verbatim.
+    // Use when the text was already XML-escaped, e.g. by TextChunker.
+    // Calling this with raw text will produce malformed SSML.
+    [[nodiscard]] common::Result<std::string> build_from_escaped_text(
+        const core::TtsConfig& config,
+        std::string_view       escaped_text) const;
 };
 
 } // namespace edge_tts::serialization

@@ -55,6 +55,20 @@ Rules:
     URL construction → connect → speech.config → SSML → receive loop → close.
     One `IWebSocketClient` connection is opened and closed per text chunk.
 
+**TextChunker / SsmlBuilder escaping contract:**
+
+`serialization::TextChunker::chunk()` returns XML-escaped strings — escaping happens
+once at the chunking step, sized against the escaped byte length (4096-byte limit).
+
+`serialization::SsmlBuilder` provides two entry points:
+- `build(config, raw_text)` — for raw user text: normalizes + XML-escapes + assembles SSML.
+- `build_from_escaped_text(config, escaped_text)` — for pre-escaped text: assembles SSML
+  without any additional escaping.  This is what `EdgeProtocol::build_ssml_frame` uses.
+
+`EdgeProtocol::build_ssml_frame` expects pre-escaped input (from `TextChunker`) and
+calls `build_from_escaped_text` to embed it verbatim.  This ensures XML-escaping
+occurs **exactly once** across the full pipeline and never produces `&amp;amp;`.
+
 ## Public API policy
 
 Headers are grouped by module:

@@ -137,17 +137,32 @@ edge_tts_add_module(
 )
 
 # ---------------------------------------------------------------------------
-# Optional third-party dependencies (wired when submodules are present).
+# Third-party dependency wiring.
+# nlohmann/json is REQUIRED (Dependencies.cmake guarantees the target exists
+# or aborts with FATAL_ERROR).  ixwebsocket is optional when
+# EDGE_TTS_REQUIRE_NETWORKING=OFF (stub code compiles without it).
 # ---------------------------------------------------------------------------
-if(TARGET nlohmann_json::nlohmann_json)
-    target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
-    target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
-endif()
+
+# nlohmann/json: unconditional — serialization sources always need it.
+target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
+
+# ixwebsocket: conditional — present only when real networking is available.
 if(TARGET ixwebsocket)
     target_link_libraries(edge_tts_communication PRIVATE ixwebsocket)
-    # Signal to HttpClient.cpp that ixwebsocket is available.
+    # Signal to HttpClient.cpp / WebSocketClient.cpp that ixwebsocket is available.
     # PRIVATE so the definition does not leak into downstream consumers.
     target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
+endif()
+
+# Guard: apps must not silently build against stub networking when real
+# networking was explicitly required.
+if(EDGE_TTS_BUILD_APPS AND EDGE_TTS_REQUIRE_NETWORKING AND NOT TARGET ixwebsocket)
+    message(FATAL_ERROR
+        "EDGE_TTS_BUILD_APPS=ON and EDGE_TTS_REQUIRE_NETWORKING=ON but ixwebsocket "
+        "target is not available. Apps cannot be built with stub networking.\n"
+        "Fix: initialize the ixwebsocket submodule or set EDGE_TTS_FETCH_DEPS=ON."
+    )
 endif()
 
 # ---------------------------------------------------------------------------

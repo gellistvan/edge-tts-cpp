@@ -421,12 +421,30 @@ Key invariants:
 - `X-RequestId` uses `metadata.request_id` (32-char lowercase hex, no hyphens).
 - `X-Timestamp` has a trailing `Z` — documented as a Microsoft Edge bug in the source.
 - Header order: `X-RequestId`, `Content-Type`, `X-Timestamp`, `Path`.
-- `text_chunk` is passed raw to `serialization::SsmlBuilder::build()`, which normalizes
-  (UTF-8 validation + control-char replacement) and XML-escapes exactly once.
-  Do NOT pre-escape text — it will be double-escaped.
+- `text_chunk` MUST be XML-escaped (output of `serialization::TextChunker`).
+  `SsmlBuilder::build_from_escaped_text` embeds it verbatim — no second escape.
+  Passing raw text will embed literal XML special characters and produce malformed SSML.
 - Config errors from `SsmlBuilder` (invalid rate/volume/pitch/voice) propagate as
   `Result` failures — no silent truncation.
 - No chunking logic — callers are responsible for splitting text before calling.
+
+**XML-escaping contract across the pipeline:**
+
+```
+api::Communicate::run_synthesis()
+  → serialization::TextChunker::chunk()     ← normalize + xml_escape + split
+      → text_chunks (XML-escaped strings)
+  → SynthesisSession::synthesize(tts_config, text_chunks)
+      → EdgeProtocol::build_ssml_frame(config, text_chunk, metadata)
+          → SsmlBuilder::build_from_escaped_text(config, text_chunk)
+              → embeds text_chunk verbatim (no second escape)
+```
+
+`SsmlBuilder` provides two entry points:
+- `build(config, raw_text)` — normalizes + XML-escapes + assembles.
+  Use for user-supplied raw text (e.g. direct `SsmlBuilder` callers).
+- `build_from_escaped_text(config, escaped_text)` — assembles from already-escaped text.
+  Used by `EdgeProtocol::build_ssml_frame` to avoid double-escaping chunked input.
 
 **Speech config frame** (`send_command_request()` in communicate.py):
 ```

@@ -14,8 +14,13 @@
 namespace edge_tts::api {
 
 // Synthesizer function type: runs synthesis for the given TtsConfig and
-// pre-chunked (XML-escaped) text strings; returns all TtsChunk events.
-// Inject a custom function in tests instead of a real SynthesisSession.
+// pre-chunked, XML-escaped text strings (output of serialization::TextChunker);
+// returns all TtsChunk events.
+//
+// CONTRACT: the strings in the span are already XML-escaped.  The synthesizer
+// (and the EdgeProtocol layer below it) must embed them verbatim — no second
+// XML-escaping.  Inject a custom function in tests instead of a real
+// SynthesisSession.
 using SynthesizerFn = std::function<
     common::Result<std::vector<core::TtsChunk>>(
         const core::TtsConfig&,

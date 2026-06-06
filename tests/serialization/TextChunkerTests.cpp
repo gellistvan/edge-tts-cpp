@@ -226,6 +226,47 @@ TEST(TextChunker, XmlEntityNotSplitInMiddle) {
 }
 
 // ---------------------------------------------------------------------------
+// XML entity split boundary regression — chunks never split inside &amp; or &lt;
+// ---------------------------------------------------------------------------
+
+TEST(TextChunker, AmpEntityNotSplitInMiddle) {
+    // "a&b" raw → escaped "a&amp;b" (7 bytes).  With limit=5 the chunker must
+    // not split "a&amp;b" into "a&amp" + ";b" — it must protect the entity.
+    // Expected splits: "a" | "&amp;" | "b" (entity kept intact).
+    const auto r = ref(5).chunk("a&b");
+    EXPECT_TRUE(r.has_value());
+    // No chunk may contain a partial entity like "&amp" (no semicolon) or
+    // start with ";b" (orphaned semicolon).
+    for (const auto& chunk : r.value()) {
+        // A bare & without a closing ; is a broken entity.
+        const auto amp_pos = chunk.find('&');
+        if (amp_pos != std::string::npos) {
+            EXPECT_NE(chunk.find(';', amp_pos), std::string::npos);
+        }
+    }
+    // Verify the chunks together contain exactly "a", "&amp;", "b".
+    ASSERT_EQ(r.value().size(), 3u);
+    EXPECT_EQ(r.value()[0], "a");
+    EXPECT_EQ(r.value()[1], "&amp;");
+    EXPECT_EQ(r.value()[2], "b");
+}
+
+TEST(TextChunker, LtEntityNotSplitInMiddle) {
+    // "a<b" raw → escaped "a&lt;b" (6 bytes).  With limit=4 the entity must
+    // not be split: splits must be "a" | "&lt;" | "b" (5 bytes, then 1 byte).
+    // Actually limit=4: "a&lt;b" → "a" (split at 1 because XML adj) | "&lt;b" (5 > 4) →
+    // "&lt;" | "b".
+    const auto r = ref(4).chunk("a<b");
+    EXPECT_TRUE(r.has_value());
+    for (const auto& chunk : r.value()) {
+        const auto amp_pos = chunk.find('&');
+        if (amp_pos != std::string::npos) {
+            EXPECT_NE(chunk.find(';', amp_pos), std::string::npos);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Control character replacement (via TextNormalizer)
 // ---------------------------------------------------------------------------
 

@@ -54,6 +54,11 @@ public:
 
     // Run a synthesis session for all text_chunks.
     //
+    // CONTRACT: text_chunks must be XML-escaped strings produced by
+    // serialization::TextChunker.  Each chunk is passed directly to
+    // EdgeProtocol::build_ssml_frame, which embeds it verbatim.  Passing raw
+    // (unescaped) text will produce malformed SSML.
+    //
     // Each chunk opens a new WebSocket connection (matching the Python reference
     // which calls __stream() per chunk, each opening its own ws_connect()).
     //

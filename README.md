@@ -98,6 +98,13 @@ ctest --test-dir build --output-on-failure
 | `EDGE_TTS_ENABLE_NETWORK_TESTS` | `OFF` | Enable tests that call the live Edge TTS service |
 | `EDGE_TTS_ENABLE_SANITIZERS` | `OFF` | Enable address and UB sanitizers |
 | `EDGE_TTS_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on compiled sources |
+| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically when submodules are absent |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error (prevents silently building apps against stub networking) |
+
+**Dependency resolution:** submodules are the preferred source.  When a
+submodule directory is empty (e.g. in a source archive), CMake falls back to
+`find_package` (system install) then `FetchContent` (auto-download, requires
+`EDGE_TTS_FETCH_DEPS=ON`).  See `docs/DEPENDENCIES.md` for details.
 
 Common build configurations:
 

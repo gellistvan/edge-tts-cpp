@@ -101,9 +101,11 @@ common::Result<std::string> EdgeProtocol::build_ssml_frame(
     // Reference: communicate.py ssml_headers_plus_data() + send_ssml_request()
     //   ssml_headers_plus_data(connect_id(), date_to_string(), mkssml(...))
     //
-    // SsmlBuilder validates config, normalizes text, and XML-escapes exactly once.
+    // text_chunk arrives pre-escaped from serialization::TextChunker (via
+    // api::Communicate → SynthesisSession).  build_from_escaped_text embeds it
+    // verbatim so escaping happens exactly once across the full pipeline.
     serialization::SsmlBuilder builder;
-    auto ssml_result = builder.build(config, text_chunk);
+    auto ssml_result = builder.build_from_escaped_text(config, text_chunk);
     if (!ssml_result)
         return common::Result<std::string>::fail(std::move(ssml_result.error()));
 

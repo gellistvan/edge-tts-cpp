@@ -59,9 +59,11 @@ public:
     // Notes:
     //   - X-RequestId uses metadata.request_id (32-char hex, no hyphens).
     //   - Timestamp has a trailing 'Z' — documented as a Microsoft Edge bug.
-    //   - text_chunk is passed raw; SsmlBuilder normalizes and XML-escapes it.
-    //   - Do NOT pre-escape text_chunk — it will be double-escaped.
-    //   - Propagates any error from SsmlBuilder (invalid config, bad UTF-8).
+    //   - text_chunk MUST be XML-escaped (e.g. output of serialization::TextChunker).
+    //     SsmlBuilder::build_from_escaped_text embeds it verbatim — no second escape.
+    //   - Do NOT pass raw (unescaped) text — special characters will appear as
+    //     literal XML in the SSML and produce malformed output.
+    //   - Propagates any error from SsmlBuilder (invalid config).
     [[nodiscard]] common::Result<std::string> build_ssml_frame(
         const core::TtsConfig&     config,
         std::string_view           text_chunk,

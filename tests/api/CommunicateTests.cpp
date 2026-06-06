@@ -1,4 +1,7 @@
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/communication/ConnectionMetadata.hpp"
+#include "edge_tts/communication/EdgeProtocol.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -16,8 +19,11 @@
 
 using edge_tts::api::Communicate;
 using edge_tts::api::SynthesizerFn;
+using edge_tts::communication::ConnectionMetadata;
+using edge_tts::communication::EdgeProtocol;
 using edge_tts::common::Error;
 using edge_tts::common::ErrorCode;
+using edge_tts::common::FixedClock;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::BoundaryEventType;
@@ -202,6 +208,36 @@ TEST(Communicate, ChunksAreXmlEscaped) {
     // The chunk must contain &amp; not &
     const std::string& chunk = cap.received_chunks.front();
     EXPECT_NE(chunk.find("&amp;"), std::string::npos);
+}
+
+TEST(Communicate, PreEscapedChunksProduceNoDoubleEscapingInSsml) {
+    // Full pipeline regression: Communicate → TextChunker → EdgeProtocol.
+    // "Tom & Jerry" must appear as "&amp;" exactly once in the final SSML,
+    // never as "&amp;amp;" (which would indicate double-escaping).
+    CapturingSynthesizer cap;
+    Communicate c("Tom & Jerry", valid_config(), cap.make());
+    auto r = c.stream_sync();
+    EXPECT_TRUE(r.has_value());
+    ASSERT_EQ(cap.received_chunks.size(), 1u);
+
+    const std::string& escaped_chunk = cap.received_chunks.front();
+    // The captured chunk must already be XML-escaped by TextChunker.
+    EXPECT_NE(escaped_chunk.find("&amp;"), std::string::npos);
+    EXPECT_EQ(escaped_chunk.find("& Jerry"), std::string::npos);
+
+    // Simulate what SynthesisSession does: pass the pre-escaped chunk to
+    // EdgeProtocol::build_ssml_frame.  The SSML body must NOT double-escape.
+    FixedClock clock{std::chrono::system_clock::time_point{}};
+    EdgeProtocol proto{clock};
+    ConnectionMetadata meta;
+    meta.connection_id = "00000000000000000000000000000000";
+    meta.request_id    = "00000000000000000000000000000000";
+
+    auto ssml_frame = proto.build_ssml_frame(valid_config(), escaped_chunk, meta);
+    ASSERT_TRUE(ssml_frame.has_value());
+    // "&amp;" must appear exactly once — no "&amp;amp;".
+    EXPECT_NE(ssml_frame->find("&amp;"),     std::string::npos);
+    EXPECT_EQ(ssml_frame->find("&amp;amp;"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

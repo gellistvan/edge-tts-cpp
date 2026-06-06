@@ -10,6 +10,13 @@ Verifies:
   5. CMakeLists.txt links ixwebsocket to the communication module.
   6. Public headers in include/edge_tts/ do not include ixwebsocket headers.
   7. DEPENDENCIES.md documents ixwebsocket.
+  8. nlohmann/json is not optional (unconditional links in CMakeLists.txt).
+  9. EDGE_TTS_FETCH_DEPS option is defined.
+ 10. EDGE_TTS_REQUIRE_NETWORKING option is defined.
+ 11. cmake/Dependencies.cmake has the correct json lookup order.
+ 12. cmake/EdgeTtsDependencies.cmake has the correct ixwebsocket lookup order.
+ 13. cmake/Dependencies.cmake has a FATAL_ERROR for json not found.
+ 14. FATAL_ERROR is gated on EDGE_TTS_REQUIRE_NETWORKING for missing ixwebsocket.
 
 Exit code 0 on success, non-zero on failure.
 """
@@ -199,6 +206,190 @@ def test_edge_tts_dependencies_cmake_uses_exclude_from_all() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 8. nlohmann/json is NOT optional — CMakeLists.txt must link it unconditionally
+# ---------------------------------------------------------------------------
+
+def test_json_is_not_optional() -> None:
+    root_cmake = REPO_ROOT / "CMakeLists.txt"
+    content = read(root_cmake)
+
+    # The old conditional guard must NOT wrap the serialization/communication json links.
+    # We look for the unconditional link pattern.
+    has_unconditional_serial = re.search(
+        r'target_link_libraries\s*\(\s*edge_tts_serialization\b[^)]*nlohmann_json',
+        content,
+        re.DOTALL,
+    )
+    has_unconditional_comm = re.search(
+        r'target_link_libraries\s*\(\s*edge_tts_communication\b[^)]*nlohmann_json',
+        content,
+        re.DOTALL,
+    )
+    if not has_unconditional_serial:
+        fail(
+            "CMakeLists.txt must unconditionally link nlohmann_json::nlohmann_json to "
+            "edge_tts_serialization (json is required, not optional)"
+        )
+    if not has_unconditional_comm:
+        fail(
+            "CMakeLists.txt must unconditionally link nlohmann_json::nlohmann_json to "
+            "edge_tts_communication (json is required, not optional)"
+        )
+
+    # Confirm the old `if(TARGET nlohmann_json::nlohmann_json)` guard is gone.
+    if re.search(r'if\s*\(\s*TARGET\s+nlohmann_json::nlohmann_json\s*\)', content):
+        fail(
+            "CMakeLists.txt still has 'if(TARGET nlohmann_json::nlohmann_json)' guard. "
+            "nlohmann/json is now required; remove the conditional."
+        )
+
+    ok("CMakeLists.txt links nlohmann_json unconditionally to serialization and communication")
+
+
+# ---------------------------------------------------------------------------
+# 9. EDGE_TTS_FETCH_DEPS option is defined in cmake/ProjectOptions.cmake
+# ---------------------------------------------------------------------------
+
+def test_fetch_deps_option_exists() -> None:
+    path = REPO_ROOT / "cmake" / "ProjectOptions.cmake"
+    if not path.exists():
+        fail("cmake/ProjectOptions.cmake does not exist")
+    content = read(path)
+    if "EDGE_TTS_FETCH_DEPS" not in content:
+        fail(
+            "cmake/ProjectOptions.cmake does not define EDGE_TTS_FETCH_DEPS option"
+        )
+    ok("cmake/ProjectOptions.cmake defines EDGE_TTS_FETCH_DEPS")
+
+
+# ---------------------------------------------------------------------------
+# 10. EDGE_TTS_REQUIRE_NETWORKING option is defined in cmake/ProjectOptions.cmake
+# ---------------------------------------------------------------------------
+
+def test_require_networking_option_exists() -> None:
+    path = REPO_ROOT / "cmake" / "ProjectOptions.cmake"
+    content = read(path)
+    if "EDGE_TTS_REQUIRE_NETWORKING" not in content:
+        fail(
+            "cmake/ProjectOptions.cmake does not define EDGE_TTS_REQUIRE_NETWORKING option"
+        )
+    ok("cmake/ProjectOptions.cmake defines EDGE_TTS_REQUIRE_NETWORKING")
+
+
+# ---------------------------------------------------------------------------
+# 11. cmake/Dependencies.cmake has the correct json lookup order
+# ---------------------------------------------------------------------------
+
+def test_json_lookup_order() -> None:
+    path = REPO_ROOT / "cmake" / "Dependencies.cmake"
+    content = read(path)
+
+    # Must reference the submodule path
+    if "submodules/json" not in content:
+        fail("cmake/Dependencies.cmake does not reference submodules/json path")
+
+    # Must use find_package for json
+    if not re.search(r'find_package\s*\(\s*nlohmann_json', content):
+        fail("cmake/Dependencies.cmake does not use find_package for nlohmann_json")
+
+    # Must use FetchContent for json
+    if not re.search(r'FetchContent_Declare\s*\(\s*\n?\s*nlohmann_json', content, re.MULTILINE):
+        fail("cmake/Dependencies.cmake does not use FetchContent_Declare for nlohmann_json")
+
+    # Order check: submodule → find_package → FetchContent
+    submodule_pos = content.find("submodules/json")
+    find_package_pos = content.find("find_package(nlohmann_json")
+    fetch_pos = content.find("FetchContent_Declare")
+
+    if not (submodule_pos < find_package_pos < fetch_pos):
+        fail(
+            "cmake/Dependencies.cmake json lookup order is wrong. "
+            "Expected: submodule path → find_package → FetchContent"
+        )
+
+    ok("cmake/Dependencies.cmake has correct json lookup order: submodule → find_package → FetchContent")
+
+
+# ---------------------------------------------------------------------------
+# 12. cmake/EdgeTtsDependencies.cmake has the correct ixwebsocket lookup order
+# ---------------------------------------------------------------------------
+
+def test_ixwebsocket_lookup_order() -> None:
+    path = REPO_ROOT / "cmake" / "EdgeTtsDependencies.cmake"
+    content = read(path)
+
+    # Must reference the submodule path
+    if "submodules/ixwebsocket" not in content:
+        fail("cmake/EdgeTtsDependencies.cmake does not reference submodules/ixwebsocket path")
+
+    # Must use find_package for ixwebsocket
+    if not re.search(r'find_package\s*\(\s*ixwebsocket', content):
+        fail("cmake/EdgeTtsDependencies.cmake does not use find_package for ixwebsocket")
+
+    # Must use FetchContent for ixwebsocket
+    if not re.search(r'FetchContent_Declare\s*\(\s*\n?\s*ixwebsocket', content, re.MULTILINE):
+        fail("cmake/EdgeTtsDependencies.cmake does not use FetchContent_Declare for ixwebsocket")
+
+    # Order check: submodule → find_package → FetchContent
+    submodule_pos = content.find("submodules/ixwebsocket")
+    find_package_pos = content.find("find_package(ixwebsocket")
+    fetch_pos_match = re.search(r'FetchContent_Declare\s*\(\s*\n?\s*ixwebsocket', content, re.MULTILINE)
+    fetch_pos = fetch_pos_match.start() if fetch_pos_match else -1
+
+    if not (submodule_pos < find_package_pos < fetch_pos):
+        fail(
+            "cmake/EdgeTtsDependencies.cmake ixwebsocket lookup order is wrong. "
+            "Expected: submodule path → find_package → FetchContent"
+        )
+
+    ok("cmake/EdgeTtsDependencies.cmake has correct ixwebsocket lookup order: submodule → find_package → FetchContent")
+
+
+# ---------------------------------------------------------------------------
+# 13. cmake/Dependencies.cmake has a FATAL_ERROR for json not found
+# ---------------------------------------------------------------------------
+
+def test_fatal_error_when_json_unavailable() -> None:
+    path = REPO_ROOT / "cmake" / "Dependencies.cmake"
+    content = read(path)
+    if not re.search(r'message\s*\(\s*FATAL_ERROR', content):
+        fail(
+            "cmake/Dependencies.cmake must have a message(FATAL_ERROR ...) "
+            "for when nlohmann/json cannot be found"
+        )
+    ok("cmake/Dependencies.cmake has FATAL_ERROR for missing nlohmann/json")
+
+
+# ---------------------------------------------------------------------------
+# 14. FATAL_ERROR is gated on EDGE_TTS_REQUIRE_NETWORKING for missing ixwebsocket
+# ---------------------------------------------------------------------------
+
+def test_fatal_error_when_networking_required_but_missing() -> None:
+    deps_cmake = REPO_ROOT / "cmake" / "EdgeTtsDependencies.cmake"
+    root_cmake = REPO_ROOT / "CMakeLists.txt"
+
+    deps_content = read(deps_cmake)
+    root_content = read(root_cmake)
+    combined = deps_content + root_content
+
+    # Must have FATAL_ERROR related to REQUIRE_NETWORKING
+    if not re.search(r'EDGE_TTS_REQUIRE_NETWORKING', combined):
+        fail(
+            "Neither cmake/EdgeTtsDependencies.cmake nor CMakeLists.txt references "
+            "EDGE_TTS_REQUIRE_NETWORKING"
+        )
+
+    has_fatal = re.search(r'message\s*\(\s*FATAL_ERROR', combined)
+    if not has_fatal:
+        fail(
+            "No message(FATAL_ERROR ...) gated on EDGE_TTS_REQUIRE_NETWORKING found "
+            "in cmake/EdgeTtsDependencies.cmake or CMakeLists.txt"
+        )
+
+    ok("FATAL_ERROR for missing ixwebsocket is gated on EDGE_TTS_REQUIRE_NETWORKING")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -214,6 +405,13 @@ def main() -> None:
         test_public_headers_dependency_free,
         test_dependencies_md_documents_ixwebsocket,
         test_edge_tts_dependencies_cmake_uses_exclude_from_all,
+        test_json_is_not_optional,
+        test_fetch_deps_option_exists,
+        test_require_networking_option_exists,
+        test_json_lookup_order,
+        test_ixwebsocket_lookup_order,
+        test_fatal_error_when_json_unavailable,
+        test_fatal_error_when_networking_required_but_missing,
     ]
     for t in tests:
         t()
