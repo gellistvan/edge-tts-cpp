@@ -25,6 +25,30 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R edge_tts_core_tests
 ```
 
+## Testing pyramid
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Network integration tests                                      │
+│  EDGE_TTS_ENABLE_NETWORK_TESTS=ON + EDGE_TTS_RUN_NETWORK_TESTS=1│
+│  api_network, communication_network                             │
+├─────────────────────────────────────────────────────────────────┤
+│  Offline integration tests                                      │
+│  api_tests (CommunicateEndToEndTests.cpp)                       │
+│  Full stack: Communicate → SynthesisSession → EdgeProtocol      │
+│  → FakeWebSocketClient → FileWriter (no real network)           │
+├─────────────────────────────────────────────────────────────────┤
+│  Unit tests (all other targets)                                 │
+│  Isolated per-module, fast, no I/O                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Unit tests** cover one module at a time with fakes for their dependencies.
+**Offline integration tests** wire the full `api::Communicate` stack end-to-end
+using `FakeWebSocketClient` — no outbound connections, verifiable in CI.
+**Network integration tests** call the live Edge TTS service and must be opted
+in explicitly (see the Network tests section below).
+
 ## C++ test targets
 
 | CTest target | Source folder | Linked module |
@@ -35,6 +59,7 @@ ctest --test-dir build -R edge_tts_core_tests
 | `edge_tts_communication_tests` | `tests/communication` | `edge_tts::communication` |
 | `edge_tts_media_tests` | `tests/media` | `edge_tts::media` |
 | `edge_tts_subtitle_tests` | `tests/subtitles` | `edge_tts::subtitle` |
+| `edge_tts_api_tests` | `tests/api` | `edge_tts::api`, `edge_tts::cli` |
 | `edge_tts_cli_tests` | `tests/cli` | `edge_tts::cli` |
 
 ## Python-based tests
@@ -81,12 +106,21 @@ the rules the checker enforces.
 
 ## Network tests
 
-Tests that call the live Microsoft Edge TTS service are gated by:
+Network tests have two independent gates that must both be satisfied:
+
+1. **Compile-time gate** (`EDGE_TTS_ENABLE_NETWORK_TESTS=ON`) — builds the
+   network test binaries.  Off by default so environments that must never touch
+   the network never even compile these tests.
+2. **Run-time gate** (`EDGE_TTS_RUN_NETWORK_TESTS=1` env var) — each test
+   body checks this at startup and returns immediately when unset, so the test
+   binary still links and CTest shows a pass rather than a skip.
+
+To run all network tests:
 
 ```bash
 cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
 cmake --build build
-ctest --test-dir build -R network
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build -R network --output-on-failure
 ```
 
 Network test targets:
@@ -95,6 +129,7 @@ Network test targets:
 |---|---|---|
 | `edge_tts_communication_network_tests` | `tests/communication/HttpClientNetworkTests.cpp` | `HttpClient` GET voices endpoint returns HTTP 200 with non-empty JSON; `VoiceService` parses non-empty voice list including `en-US-EmmaMultilingualNeural` |
 | `edge_tts_communication_network_tests` | `tests/communication/WebSocketClientNetworkTests.cpp` | `WebSocketClient` + `SynthesisSession` real synthesis: non-empty audio returned, `turn.end` received, word-boundary metadata received when enabled |
+| `edge_tts_api_network_tests` | `tests/api/CommunicateNetworkTests.cpp` | `api::Communicate` end-to-end: stream_sync() returns non-empty audio, save() writes non-empty MP3, SRT written when word-boundary enabled, bogus proxy causes transport failure |
 
 Do not enable in CI unless the environment has reliable outbound TLS access to
 `speech.platform.bing.com`.
