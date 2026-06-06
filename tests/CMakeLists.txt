@@ -72,6 +72,7 @@ edge_tts_add_module_test(
         communication/SynthesisSessionTests.cpp
         communication/WebSocketClientTests.cpp
         communication/RetryPolicyTests.cpp
+        communication/CommunicateStyleFlowTests.cpp
     LIBRARIES edge_tts::communication
 )
 
@@ -116,6 +117,7 @@ edge_tts_add_module_test(
         api/FileWriterTests.cpp
         api/CommunicateTests.cpp
         api/CommunicateOptionsTests.cpp
+        api/CommunicateProductionWiringTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli
 )
 

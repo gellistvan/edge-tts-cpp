@@ -1,8 +1,8 @@
 # edge-tts-cpp
 
-A modern C++20 skeleton for a Microsoft Edge TTS client inspired by the Python `edge-tts` project.
+A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Python `edge-tts` project.
 
-This repository is currently a buildable project skeleton. Real networking, Edge protocol parsing, voice listing, and `ffmpeg` playback are intentionally stubbed until implemented step by step.
+Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
 
 ## Goals
 
@@ -168,9 +168,7 @@ if (chunks) {
 Both `stream_sync()` and `save()` are single-use — a second call returns
 `ErrorCode::invalid_state`, matching Python's `RuntimeError`.
 
-**Note:** The WebSocket transport is not yet wired; until it is, production
-calls fail with `ErrorCode::network_error`. Inject a `SynthesizerFn` for
-testing without a live service connection.
+Inject a `SynthesizerFn` for testing without a live service connection.
 
 ## Applications
 

@@ -105,10 +105,17 @@ knowledge, and lets transport configuration evolve independently.
 
 | Constructor | Purpose |
 |-------------|---------|
-| `Communicate(text, config = {})` | Production; default options; stub synthesizer |
+| `Communicate(text, config = {})` | Production; default options; real networking stack |
 | `Communicate(text, config, CommunicateOptions)` | Production with explicit proxy/timeouts |
 | `Communicate(text, config, SynthesizerFn)` | Test injection; default options |
 | `Communicate(text, config, CommunicateOptions, SynthesizerFn)` | Test injection with options (seam test) |
+
+The two production constructors own a heap-allocated `ProductionSynthesizer`
+that composes the full networking stack at construction time:
+`SystemClock → IdGenerator → EdgeServiceConfig → EdgeTokenProvider →
+EdgeProtocol → ConnectionMetadataFactory → WebSocketClient → SynthesisSession`.
+No network work is performed in the constructor — synthesis is deferred to
+`stream_sync()` / `save()` call time.
 
 ## C++ usage example
 
@@ -150,9 +157,8 @@ if (chunks) {
 
 **Note:** `stream_sync()` and `save()` are each single-use (reference:
 `Communicate.stream()` raises `RuntimeError` on a second call). Calling either
-a second time returns `ErrorCode::invalid_state`. Until the WebSocket transport
-is wired, the production constructor returns `ErrorCode::network_error`;
-inject a `SynthesizerFn` for testing.
+a second time returns `ErrorCode::invalid_state`. Inject a `SynthesizerFn` for
+unit testing without a live service connection.
 
 ## Core domain type ownership
 
