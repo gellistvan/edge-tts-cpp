@@ -10,6 +10,7 @@
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 
 #include <iostream>
+#include <unistd.h>
 
 int main(int argc, char* argv[]) {
     using namespace edge_tts;
@@ -39,7 +40,10 @@ int main(int argc, char* argv[]) {
         },
         std::cout,
         std::cerr,
-        std::cin
+        std::cin,
+        // Real TTY check: both stdin and stdout must be interactive terminals.
+        // Reference: util.py _run_tts() — sys.stdin.isatty() and sys.stdout.isatty()
+        []{ return ::isatty(STDIN_FILENO) != 0 && ::isatty(STDOUT_FILENO) != 0; }
     };
 
     return dispatcher.dispatch(result);

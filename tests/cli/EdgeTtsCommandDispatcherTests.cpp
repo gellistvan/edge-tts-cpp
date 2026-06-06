@@ -550,3 +550,223 @@ TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorReturnsFailure) {
     EXPECT_EQ(rc, 1);
     EXPECT_FALSE(err.str().empty());
 }
+
+// ---------------------------------------------------------------------------
+// proxy is forwarded into CommunicateOptions
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ProxyIsForwardedToFactory) {
+    CommunicateOptions received_opts;
+    auto factory = [&received_opts](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        received_opts = opts;
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hello");
+    r.arguments.proxy = "http://proxy.test:3128";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(received_opts.proxy, "http://proxy.test:3128");
+}
+
+TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
+    CommunicateOptions received_opts;
+    received_opts.proxy = "should-be-cleared";
+    auto factory = [&received_opts](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        received_opts = opts;
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hello"); // no proxy
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_FALSE(received_opts.proxy.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// SubMaker::feed errors → stderr, exit 1
+//
+// SubMaker locks the boundary type on the first feed().  Mixing WordBoundary
+// and SentenceBoundary in the same session triggers invalid_argument.
+// ---------------------------------------------------------------------------
+
+static BoundaryChunk make_boundary_of_type(BoundaryEventType type,
+                                           std::string       text,
+                                           std::int64_t      offset   = 0,
+                                           std::int64_t      duration = 10'000'000) {
+    BoundaryChunk bc;
+    bc.type           = type;
+    bc.text           = std::move(text);
+    bc.offset_ticks   = offset;
+    bc.duration_ticks = duration;
+    return bc;
+}
+
+TEST(EdgeTtsCommandDispatcher, SubtitleFeedTypeMismatchReturnsError) {
+    // Feed a WordBoundary then a SentenceBoundary — SubMaker rejects the second.
+    std::vector<TtsChunk> chunks{
+        TtsChunk{make_audio("mp3")},
+        TtsChunk{make_boundary_of_type(BoundaryEventType::WordBoundary,    "Hello", 0,          10'000'000)},
+        TtsChunk{make_boundary_of_type(BoundaryEventType::SentenceBoundary,"Hello", 10'000'000, 10'000'000)},
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("hello", {}, "-"));
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, SubtitleFeedErrorPrintsMessageToStderr) {
+    // Verify the error message reaches stderr (stdout content may already have
+    // audio that was streamed before the conflict was detected).
+    std::vector<TtsChunk> chunks{
+        TtsChunk{make_audio("mp3")},
+        TtsChunk{make_boundary_of_type(BoundaryEventType::WordBoundary,    "A", 0,          10'000'000)},
+        TtsChunk{make_boundary_of_type(BoundaryEventType::SentenceBoundary,"A", 10'000'000, 10'000'000)},
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("hello", {}, "-"));
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Interactive TTY warning
+//
+// The warning fires only when:
+//   - tty_check_ is set AND returns true
+//   - --write-media is absent (not even "-")
+//
+// After the warning is printed, the dispatcher reads one line from in_.
+// If getline succeeds → synthesis proceeds normally.
+// If getline fails (EOF) → "Operation canceled." on stderr, return 0.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningPrintedToStderr) {
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in("\n"); // simulate Enter key
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return true; }};
+    int rc = d.dispatch(make_text_result("hello")); // no --write-media
+
+    EXPECT_EQ(rc, 0);
+    // Warning must be on stderr.
+    EXPECT_NE(err.str().find("terminal"), std::string::npos);
+    EXPECT_NE(err.str().find("Enter"),    std::string::npos);
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningAllowsSynthesisAfterEnter) {
+    // Synthesis must still produce audio after the user presses Enter.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("AUDIODATA")}};
+    std::ostringstream out, err;
+    std::istringstream in("\n"); // Enter key
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return true; }};
+    d.dispatch(make_text_result("hello"));
+
+    EXPECT_EQ(out.str(), "AUDIODATA");
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningCancelsOnEof) {
+    // EOF on stdin (e.g. Ctrl-C on real terminal) → "Operation canceled." + exit 0.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in(""); // EOF immediately
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return true; }};
+    int rc = d.dispatch(make_text_result("hello"));
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_NE(err.str().find("canceled"), std::string::npos);
+    // No audio must be written on cancellation.
+    EXPECT_TRUE(out.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenTtyCheckFalse) {
+    // tty_check returns false → no warning, synthesis proceeds immediately.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in; // empty — would block if warning tried to read
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return false; }};
+    int rc = d.dispatch(make_text_result("hello"));
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(err.str().find("terminal"), std::string::npos);
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenWriteMediaIsDash) {
+    // --write-media=- selects stdout explicitly; user knowingly chose stdout.
+    // Python: `not args.write_media` is False when write_media=="-", so no warning.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return true; }};
+    int rc = d.dispatch(make_text_result("hello", "-")); // --write-media=-
+
+    EXPECT_EQ(rc, 0);
+    // Warning must NOT appear when write_media is "-".
+    EXPECT_EQ(err.str().find("terminal"), std::string::npos);
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenWriteMediaIsFile) {
+    // --write-media=PATH → audio goes to file, not stdout → no TTY warning.
+    const fs::path mp = tmp_path("tty_no_warn.mp3");
+    FileGuard gm{mp};
+
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in,
+                                []{ return true; }};
+    int rc = d.dispatch(make_text_result("hello", mp.string()));
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(err.str().find("terminal"), std::string::npos);
+}
+
+TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenCheckFnIsEmpty) {
+    // Default constructor (no tty_check): no warning ever, no hang.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    // Construct WITHOUT tty_check (default = empty function = disabled).
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("hello"));
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(err.str().find("terminal"), std::string::npos);
+}

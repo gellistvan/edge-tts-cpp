@@ -35,9 +35,9 @@ printing and `exit()`.
 | Option | Short | Argument | Default | Python behavior | C++ planned behavior | Status |
 |--------|-------|----------|---------|-----------------|----------------------|--------|
 | `--text` | `-t` | `STRING` | (required\*) | Text to synthesize. Mutually exclusive with `--file` and `--list-voices`. | Identical. | `exact` |
-| `--file` | `-f` | `PATH` | (required\*) | Read text from file; `-` or `/dev/stdin` reads stdin. Opens with UTF-8 encoding. Mutually exclusive with `--text` and `--list-voices`. | Identical. | `partial` (parser done; file I/O in runner) |
+| `--file` | `-f` | `PATH` | (required\*) | Read text from file; `-` or `/dev/stdin` reads stdin. Opens with UTF-8 encoding. Mutually exclusive with `--text` and `--list-voices`. | Identical. | `exact` |
 | `--list-voices` | `-l` | (flag) | (required\*) | Fetch voice list from service, print a tab-aligned table (Name, Gender, ContentCategories, VoicePersonalities), sorted by `ShortName`, then `sys.exit(0)`. Mutually exclusive with `--text` and `--file`. | Identical table format and sort order. | `exact` |
-| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Voice name (short or full form). Normalized and validated at construction time. | Identical validation and normalization via `TtsConfig::validate()`. | `partial` (parser done; validation on TtsConfig construction) |
+| `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Voice name (short or full form). Normalized and validated at construction time. | Identical validation and normalization via `TtsConfig::validate()`. | `exact` |
 | `--rate` | — | `RATE` | `+0%` | Speech rate. Must match `^[+-]\d+%$`. Negative values require `--rate=-50%` syntax (not `--rate -50%`) to avoid argparse misparse. | Identical pattern; same negative-value syntax note in help text. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Speech volume. Must match `^[+-]\d+%$`. Same negative-value syntax caveat as `--rate`. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
@@ -53,14 +53,14 @@ printing and `exit()`.
 
 | # | Behavior | Python source | C++ status |
 |---|----------|---------------|------------|
-| 1 | **Interactive TTY warning.** If both stdin and stdout are TTYs and `--write-media` is not given, print a warning to stderr and wait for Enter before proceeding. `Ctrl-C` prints "Operation canceled." to stderr and exits cleanly. | `util.py:_run_tts()` | `planned` |
-| 2 | **Audio default is stdout.** When `--write-media` is omitted, raw MP3 bytes are written to `stdout` (not a file). | `util.py:_run_tts()` | `planned` |
-| 3 | **Subtitle default is no output.** When `--write-subtitles` is omitted, no SRT is written anywhere. `-` sends it to stderr. | `util.py:_run_tts()` | `planned` |
-| 4 | **File input encoding.** `--file` reads the file with UTF-8 encoding. `-` and `/dev/stdin` are treated as stdin. | `util.py:amain()` | `planned` |
+| 1 | **Interactive TTY warning.** If both stdin and stdout are TTYs and `--write-media` is not given, print a warning to stderr and wait for Enter before proceeding. If stdin reaches EOF (Ctrl-C or closed pipe), print "Operation canceled." to stderr and exit 0. | `util.py:_run_tts()` | `exact` — `EdgeTtsCommandDispatcher::TtyCheckFn` is injectable; production `main.cpp` passes `isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)`. Full SIGINT/KeyboardInterrupt handling is a known deviation (EOF path used instead). |
+| 2 | **Audio default is stdout.** When `--write-media` is omitted, raw MP3 bytes are written to `stdout` (not a file). | `util.py:_run_tts()` | `exact` |
+| 3 | **Subtitle default is no output.** When `--write-subtitles` is omitted, no SRT is written anywhere. `-` sends it to stderr. | `util.py:_run_tts()` | `exact` |
+| 4 | **File input encoding.** `--file` reads the file with UTF-8 encoding. `-` and `/dev/stdin` are treated as stdin. | `util.py:amain()` | `exact` — `InputLoader` handles all three cases |
 | 5 | **No `--format` option.** The audio format is hardcoded to `audio-24khz-48kbitrate-mono-mp3` in the WebSocket `speech.config` message. There is no CLI flag to change it. | `communicate.py`, `constants.py` | `exact` (no format flag) |
 | 6 | **No custom SSML.** The Python project explicitly removed custom SSML support because the service only permits the single `<voice><prosody>` structure that the library already generates. | `README.md` | `exact` (no custom-SSML flag) |
-| 7 | **Exit code 0 on success,** non-zero on error. `--list-voices` calls `sys.exit(0)` explicitly. | `util.py:amain()` | `planned` |
-| 8 | **Negative-value syntax.** `--rate=-50%` works; `--rate -50%` is misinterpreted by argparse as an unknown option. The README documents this limitation explicitly. C++ CLI11 has the same behavior; users must use `=`-form for negative values. | `README.md` | `exact` (same constraint) |
+| 7 | **Exit code 0 on success,** non-zero on error. `--list-voices` calls `sys.exit(0)` explicitly. | `util.py:amain()` | `exact` — exit 0 success, exit 1 runtime error, exit 2 invalid argument |
+| 8 | **Negative-value syntax.** `--rate=-50%` works; `--rate -50%` is misinterpreted by argparse as an unknown option. The README documents this limitation explicitly. C++ parser has the same behavior; users must use `=`-form for negative values. | `README.md` | `exact` (same constraint) |
 | 9 | **Voice list sort order.** Voices are sorted ascending by `ShortName` before display. | `util.py:_print_voices()` | `exact` |
 | 10 | **Voice list columns.** `Name`, `Gender`, `ContentCategories` (comma-joined), `VoicePersonalities` (comma-joined). Formatted as a tab-aligned table using `tabulate`. | `util.py:_print_voices()` | `exact` — `VoiceFormatter` produces tabulate "simple" format: left-aligned columns padded to max width, separated by two spaces, dash separator row |
 
@@ -143,12 +143,12 @@ The following are absent from the Python CLI and will remain absent from C++ to 
 
 ## Exit code reference
 
-| Condition | Python exit code | C++ planned exit code |
-|-----------|------------------|-----------------------|
+| Condition | Python exit code | C++ exit code |
+|-----------|------------------|---------------|
 | Success | 0 | 0 |
 | `--list-voices` completes | 0 (explicit `sys.exit(0)`) | 0 |
 | `--help` or `--version` | 0 | 0 |
-| Invalid argument | 2 (argparse default) | 2 (CLI11 default) |
+| Invalid argument | 2 (argparse default) | 2 |
 | Runtime error (network, no audio) | 1 (unhandled exception) | 1 |
 | Missing deps (`edge-playback`) | 1 (explicit `sys.exit(1)`) | 1 |
-| `Ctrl-C` during TTY warning | 0 (explicit clean return) | 0 |
+| `Ctrl-C` during TTY warning | 0 (explicit clean return) | 0 (EOF on stdin) |
