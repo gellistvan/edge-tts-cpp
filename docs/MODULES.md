@@ -239,6 +239,7 @@ in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 | `HttpTypes.hpp` | `HttpRequest` and `HttpResponse` plain data types. |
 | `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
 | `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
+| `EdgeRequestHeaders.hpp` | `build_websocket_headers(config, ids)` → `vector<pair<string,string>>` (7 headers incl. Cookie/MUID); `build_voice_list_headers(config, ids)` → `map<string,string>` (5 headers incl. Cookie/MUID). Both match Python `DRM.headers_with_muid(WSS_HEADERS)` / `DRM.headers_with_muid(VOICE_HEADERS)` exactly. |
 
 **Allowed dependencies:** `common`, `core`, `serialization`, `subtitle`, `media`.
 

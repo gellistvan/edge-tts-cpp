@@ -13,6 +13,7 @@
 #include "edge_tts/communication/HttpClient.hpp"
 #include "edge_tts/communication/VoiceService.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
@@ -23,6 +24,9 @@ using edge_tts::communication::HttpClientOptions;
 using edge_tts::communication::VoiceService;
 using edge_tts::communication::default_edge_service_config;
 using edge_tts::serialization::VoiceJsonParser;
+using edge_tts::common::IdGenerator;
+
+static IdGenerator k_net_ids{};
 
 // ---------------------------------------------------------------------------
 // GET voices endpoint — status and body
@@ -76,7 +80,7 @@ TEST(HttpClientNetwork, VoiceServiceParsesNonEmptyVoiceList) {
     HttpClient       client;
     VoiceJsonParser  parser;
     auto             cfg = default_edge_service_config();
-    VoiceService     svc{cfg, client, parser};
+    VoiceService svc{cfg, client, parser, k_net_ids};
 
     auto voices = svc.list_voices();
     EXPECT_TRUE(voices.has_value());
@@ -88,7 +92,7 @@ TEST(HttpClientNetwork, VoiceServiceReturnsEnUsVoices) {
     HttpClient      client;
     VoiceJsonParser parser;
     auto            cfg = default_edge_service_config();
-    VoiceService    svc{cfg, client, parser};
+    VoiceService svc{cfg, client, parser, k_net_ids};
 
     edge_tts::communication::VoiceFilter filter;
     filter.locale = "en-US";
@@ -103,7 +107,7 @@ TEST(HttpClientNetwork, VoiceServiceIncludesEmmaVoice) {
     HttpClient      client;
     VoiceJsonParser parser;
     auto            cfg = default_edge_service_config();
-    VoiceService    svc{cfg, client, parser};
+    VoiceService svc{cfg, client, parser, k_net_ids};
 
     edge_tts::communication::VoiceFilter filter;
     filter.short_name = "en-US-EmmaMultilingualNeural";

@@ -51,7 +51,33 @@ The following HTTP headers are sent on the WebSocket upgrade request
 | `Accept-Language` | `en-US,en;q=0.9` |
 | `Cookie` | `muid=<random_16_byte_hex_uppercase>` |
 
-In C++, these are passed as `WebSocketClientOptions::extra_headers` by the `SynthesisSession` caller.
+In C++, these are built by `communication::build_websocket_headers(config, ids)` in
+`EdgeRequestHeaders.hpp/.cpp` and passed as `WebSocketClientOptions::extra_headers` by the
+`SynthesisSession` caller.
+
+#### MUID generation
+
+Python reference: `DRM.generate_muid() = secrets.token_hex(16).upper()` (32 uppercase hex chars)
+followed by `Cookie: f"muid={muid};"`.
+
+C++ implementation: `IdGenerator::random_32_hex()` produces 32 lowercase hex chars; the
+`make_muid_cookie()` helper (local to `EdgeRequestHeaders.cpp`) uppercases them and produces
+the full `"muid=<32 UPPER HEX>;"` string.  One fresh MUID is generated per call to either
+builder — matching Python's per-request cookie generation.
+
+#### Voice-list request headers
+
+The following HTTP headers are sent by `VoiceService::list_voices()`
+(`VOICE_HEADERS` in `constants.py`, with `Cookie` added by `DRM.headers_with_muid()`).
+Built by `communication::build_voice_list_headers(config, ids)`:
+
+| Header | Value |
+|--------|-------|
+| `User-Agent` | `Mozilla/5.0 … Chrome/143.0.0.0 … Edg/143.0.0.0` |
+| `Accept-Encoding` | `gzip, deflate, br, zstd` |
+| `Accept-Language` | `en-US,en;q=0.9` |
+| `Accept` | `*/*` |
+| `Cookie` | `muid=<random_16_byte_hex_uppercase>` |
 
 ### Timeouts
 

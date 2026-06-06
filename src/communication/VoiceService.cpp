@@ -1,4 +1,5 @@
 #include "edge_tts/communication/VoiceService.hpp"
+#include "edge_tts/communication/EdgeRequestHeaders.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/communication/HttpTypes.hpp"
 #include "edge_tts/core/Voice.hpp"
@@ -11,10 +12,12 @@ namespace edge_tts::communication {
 
 VoiceService::VoiceService(const EdgeServiceConfig&              config,
                            IHttpClient&                           http,
-                           const serialization::VoiceJsonParser&  parser)
+                           const serialization::VoiceJsonParser&  parser,
+                           common::IdGenerator&                   ids)
     : config_(config)
     , http_(http)
     , parser_(parser)
+    , ids_(ids)
 {}
 
 common::Result<std::vector<core::Voice>>
@@ -25,16 +28,9 @@ VoiceService::list_voices(const VoiceFilter& filter)
     // Sec-MS-GEC is omitted here; it will be added by a higher layer
     // once EdgeTokenProvider integration is wired in.
     HttpRequest req;
-    req.method = "GET";
-    req.url    = config_.voices_endpoint;
-    req.headers = {
-        // Reference: constants.py BASE_HEADERS
-        {"User-Agent",      config_.user_agent},
-        {"Accept-Encoding", "gzip, deflate, br, zstd"},
-        {"Accept-Language", "en-US,en;q=0.9"},
-        // Reference: constants.py VOICE_HEADERS
-        {"Accept",          "*/*"},
-    };
+    req.method  = "GET";
+    req.url     = config_.voices_endpoint;
+    req.headers = build_voice_list_headers(config_, ids_);
 
     // Send request
     auto resp = http_.send(req);
