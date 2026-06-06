@@ -200,9 +200,12 @@ separate entries (unlike the Python dict which overwrites earlier values).
 
 **XML unescape:** Applied to `Data.text.Text` field before storing in `BoundaryChunk::text`.
 
-**Offset compensation:** NOT applied in the parser. The communication layer adds
-`offset_compensation` before yielding to callers (reference adds it inside
-`__parse_metadata` using `self.state["offset_compensation"]`).
+**Offset compensation:** NOT applied in the parser. `MetadataJsonParser` returns
+raw ticks from the JSON; `SynthesisSession::run_one_chunk` adds the current
+`offset_compensation` to each `BoundaryChunk::offset_ticks` before appending to
+the output — matching `__parse_metadata`'s `current_offset = raw + offset_compensation`.
+Compensation is updated at `turn.end` using
+`cumulative_audio_bytes * 8 * 10_000_000 / 48_000` (64-bit integer arithmetic).
 
 **C++ vs Python difference:** The Python `__parse_metadata` returns on the FIRST
 handled item. The C++ `MetadataJsonParser::parse()` collects ALL boundary chunks

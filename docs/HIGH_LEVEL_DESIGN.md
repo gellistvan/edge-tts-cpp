@@ -54,6 +54,11 @@ Rules:
   - `SynthesisSession` orchestrates the full per-chunk synthesis lifecycle:
     URL construction → connect → speech.config → SSML → receive loop → close.
     One `IWebSocketClient` connection is opened and closed per text chunk.
+    `SynthesisSession` also owns **boundary offset compensation**: it tracks
+    cumulative audio bytes across chunks and adds
+    `cumulative_bytes * 8 * 10_000_000 / 48_000` ticks to each
+    `BoundaryChunk::offset_ticks` so subtitles align correctly across chunk
+    boundaries.  `duration_ticks` is never modified.
 
 **TextChunker / SsmlBuilder escaping contract:**
 

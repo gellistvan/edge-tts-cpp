@@ -661,10 +661,27 @@ Note: `text` (lowercase) contains `Text` (uppercase) — both keys are case-sens
 
 ### Offset compensation
 
-The Python reference adds `self.state["offset_compensation"]` to each offset
-before yielding. The C++ `MetadataJsonParser` does NOT apply offset compensation
-— it returns raw ticks from the JSON. The communication layer applies
-compensation before yielding `BoundaryChunk` to callers.
+**Status: implemented in `communication::SynthesisSession`.**
+
+The Python reference adds `self.state["offset_compensation"]` to each boundary
+offset before yielding, and calls `__compensate_offset()` at `turn.end`.
+The C++ `MetadataJsonParser` does NOT apply offset compensation — it returns raw
+ticks from the JSON.  `SynthesisSession` applies compensation in `run_one_chunk`:
+
+```
+// At the start of each text chunk:
+offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 / 48_000
+
+// For each BoundaryChunk received:
+bc.offset_ticks += offset_compensation    // before yielding
+
+// After turn.end (chunk complete):
+cumulative_audio_bytes += chunk_audio_bytes
+```
+
+Constants: `TICKS_PER_SECOND = 10_000_000`, `MP3_BITRATE_BPS = 48_000`
+(from `constants.py`).  All arithmetic uses 64-bit integers (`int64_t`).
+`duration_ticks` is never modified.
 
 ### XML unescape
 
