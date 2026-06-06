@@ -131,5 +131,6 @@ edge_tts_add_module_test(
         cli/VoiceFormatterTests.cpp
         cli/EdgeTtsCommandDispatcherTests.cpp
         cli/PlaybackCommandDispatcherTests.cpp
+        cli/ListVoicesProductionPathTests.cpp
     LIBRARIES edge_tts::cli
 )

@@ -196,7 +196,7 @@ edge-playback
 |--------|-------|---------|-------------|
 | `--text` | `-t` | (required\*) | Text to synthesize |
 | `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
-| `--list-voices` | `-l` | (required\*) | List available voices and exit |
+| `--list-voices` | `-l` | (required\*) | Fetch voice list from the Edge TTS service and print a tab-aligned table, then exit 0 |
 | `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
 | `--rate` | — | `+0%` | Speech rate (use `--rate=-50%` for negatives) |
 | `--volume` | — | `+0%` | Speech volume |

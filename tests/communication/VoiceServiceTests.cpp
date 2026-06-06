@@ -113,6 +113,50 @@ TEST(VoiceService, SetsAcceptLanguageHeader) {
     EXPECT_EQ(http.last_request()->headers.at("Accept-Language"), "en-US,en;q=0.9");
 }
 
+TEST(VoiceService, SetsAcceptEncodingHeader) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    (void)svc.list_voices();
+    // Reference: BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"
+    EXPECT_EQ(http.last_request()->headers.at("Accept-Encoding"), "gzip, deflate, br, zstd");
+}
+
+TEST(VoiceService, SetsCookieMuidHeader) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    (void)svc.list_voices();
+    // Reference: DRM.headers_with_muid() → Cookie: muid=<32-upper-hex>;
+    const auto& cookie = http.last_request()->headers.at("Cookie");
+    EXPECT_EQ(cookie.substr(0, 5), "muid=");
+    EXPECT_EQ(cookie.back(), ';');
+    // muid= (5) + 32 hex chars + ; (1) = 38
+    EXPECT_EQ(cookie.size(), 38u);
+    // All hex chars must be uppercase
+    for (std::size_t i = 5; i < 37; ++i) {
+        const char c = cookie[i];
+        EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'));
+    }
+}
+
+TEST(VoiceService, FreshMuidPerRequest) {
+    // Reference: drm.py DRM.generate_muid() called on every request.
+    // Two consecutive list_voices() calls must produce different MUID cookies.
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    IdGenerator fresh_ids;
+    VoiceService svc{k_cfg, http, k_parser, fresh_ids};
+
+    (void)svc.list_voices();
+    const std::string first_cookie = http.last_request()->headers.at("Cookie");
+
+    (void)svc.list_voices();
+    const std::string second_cookie = http.last_request()->headers.at("Cookie");
+
+    EXPECT_NE(first_cookie, second_cookie);
+}
+
 // ---------------------------------------------------------------------------
 // Parses successful JSON
 // ---------------------------------------------------------------------------

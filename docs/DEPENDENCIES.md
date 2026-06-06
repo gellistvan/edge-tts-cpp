@@ -186,6 +186,14 @@ joins the receive thread.
 TLS: `tls_opts.caFile = "SYSTEM"` tells ixwebsocket to use the platform CA
 bundle (matching Python's `ssl.create_default_context()` in `communicate.py`).
 
+### Production app usage
+
+`communication::HttpClient` is the HTTP backend used in production by
+`apps/edge-tts/main.cpp` for `--list-voices`.  It is constructed with
+`HttpClientOptions` carrying the proxy and timeout from `CommunicateOptions`
+defaults, and is backed by `ix::HttpClient` from ixwebsocket.
+`FakeHttpClient` is only used in tests and is never compiled into the app.
+
 ### HttpClient integration
 
 `communication::HttpClient` (in `include/edge_tts/communication/HttpClient.hpp` /
