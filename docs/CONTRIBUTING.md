@@ -86,4 +86,17 @@ Third-party libraries live as Git submodules under `submodules/` and are wired i
 
 ## Network tests
 
-Tests that hit the live Microsoft Edge TTS endpoint are gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS`. Do not enable them in CI unless the environment has reliable outbound internet access.
+Network tests require two gates to be satisfied:
+
+1. **Compile-time gate:** build with `-DEDGE_TTS_ENABLE_NETWORK_TESTS=ON`.
+2. **Run-time gate:** set the environment variable `EDGE_TTS_RUN_NETWORK_TESTS=1` when invoking CTest.  Tests skip silently when the variable is absent so the binaries pass in environments without outbound internet access.
+
+```bash
+cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
+cmake --build build
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build -R network --output-on-failure
+```
+
+Do not enable network tests in CI unless the environment has reliable outbound TLS access to `speech.platform.bing.com`.
+
+See `docs/TESTING.md` for the full testing pyramid and per-target descriptions.
