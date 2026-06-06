@@ -1,6 +1,7 @@
 #include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -9,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -64,10 +66,31 @@ static AudioChunk make_audio(std::string_view s) {
     return ac;
 }
 
+using edge_tts::api::CommunicateOptions;
+
 // CommunicateFactory that returns audio chunks.
+// Captures options so tests can inspect what proxy/timeouts were forwarded.
+struct CapturingFactory {
+    std::vector<TtsChunk> chunks;
+    CommunicateOptions    last_options;
+
+    PlaybackCommandDispatcher::CommunicateFactory make() {
+        return [this](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+            last_options = opts;
+            return Communicate(std::move(text), std::move(cfg),
+                [chunks = chunks](const TtsConfig&, std::span<const std::string>)
+                    -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                    return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
+                });
+        };
+    }
+};
+
+// Convenience: build a factory that ignores options (most tests don't need them).
 static PlaybackCommandDispatcher::CommunicateFactory
 make_factory(std::vector<TtsChunk> chunks) {
-    return [chunks = std::move(chunks)](std::string text, TtsConfig cfg) {
+    return [chunks = std::move(chunks)](std::string text, TtsConfig cfg,
+                                        CommunicateOptions /*opts*/) {
         return Communicate(std::move(text), std::move(cfg),
             [chunks](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
@@ -79,7 +102,8 @@ make_factory(std::vector<TtsChunk> chunks) {
 // CommunicateFactory that always fails.
 static PlaybackCommandDispatcher::CommunicateFactory
 make_failing_factory(ErrorCode code, std::string msg) {
-    return [code, msg = std::move(msg)](std::string text, TtsConfig cfg) {
+    return [code, msg = std::move(msg)](std::string text, TtsConfig cfg,
+                                        CommunicateOptions /*opts*/) {
         return Communicate(std::move(text), std::move(cfg),
             [code, msg](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
@@ -90,6 +114,7 @@ make_failing_factory(ErrorCode code, std::string msg) {
 }
 
 // TempFileProvider that returns a known path (and creates the directory).
+// For ".srt" suffix, also returns a known path so SRT cleanup tests work.
 struct KnownTempProvider {
     fs::path dir;
     int      counter{0};
@@ -101,7 +126,17 @@ struct KnownTempProvider {
     ~KnownTempProvider() { fs::remove_all(dir); }
 
     PlaybackCommandDispatcher::TempFileProvider provider() {
-        return [this](std::string_view suffix) -> fs::path {
+        return [this](std::string_view suffix)
+                   -> std::optional<fs::path> {
+            return dir / ("tmp_" + std::to_string(counter++) + std::string(suffix));
+        };
+    }
+
+    // Returns a provider that gives an MP3 path but no SRT path.
+    PlaybackCommandDispatcher::TempFileProvider provider_no_srt() {
+        return [this](std::string_view suffix)
+                   -> std::optional<fs::path> {
+            if (suffix == ".srt") return std::nullopt;
             return dir / ("tmp_" + std::to_string(counter++) + std::string(suffix));
         };
     }
@@ -266,7 +301,8 @@ TEST(PlaybackCommandDispatcher, SynthesisCalledWithCorrectText) {
     KnownTempProvider  tp{"synth_text"};
 
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg,
+                                    CommunicateOptions /*opts*/) {
         received_text = text;
         return Communicate(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
@@ -312,7 +348,9 @@ TEST(PlaybackCommandDispatcher, TempFileCleanedOnSuccess) {
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
 
     fs::path captured_path;
-    auto provider = [&captured_path, &tp](std::string_view suffix) -> fs::path {
+    auto provider = [&captured_path, &tp](std::string_view suffix)
+            -> std::optional<fs::path> {
+        if (suffix == ".srt") return std::nullopt;
         captured_path = tp.dir / ("known" + std::string(suffix));
         return captured_path;
     };
@@ -336,7 +374,9 @@ TEST(PlaybackCommandDispatcher, TempFileCleanedOnPlaybackError) {
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
 
     fs::path captured_path;
-    auto provider = [&captured_path, &tp](std::string_view suffix) -> fs::path {
+    auto provider = [&captured_path, &tp](std::string_view suffix)
+            -> std::optional<fs::path> {
+        if (suffix == ".srt") return std::nullopt;
         captured_path = tp.dir / ("known" + std::string(suffix));
         return captured_path;
     };
@@ -358,7 +398,9 @@ TEST(PlaybackCommandDispatcher, TempFileAbsentOnSynthesisError) {
     KnownTempProvider  tp{"cleanup_synth_err"};
 
     fs::path captured_path;
-    auto provider = [&captured_path, &tp](std::string_view suffix) -> fs::path {
+    auto provider = [&captured_path, &tp](std::string_view suffix)
+            -> std::optional<fs::path> {
+        if (suffix == ".srt") return std::nullopt;
         captured_path = tp.dir / ("known" + std::string(suffix));
         return captured_path;
     };
@@ -381,7 +423,9 @@ TEST(PlaybackCommandDispatcher, TempFileKeptWhenKeepTempTrue) {
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
 
     fs::path captured_path;
-    auto provider = [&captured_path, &tp](std::string_view suffix) -> fs::path {
+    auto provider = [&captured_path, &tp](std::string_view suffix)
+            -> std::optional<fs::path> {
+        if (suffix == ".srt") return std::nullopt;
         captured_path = tp.dir / ("known" + std::string(suffix));
         return captured_path;
     };
@@ -444,10 +488,180 @@ TEST(PlaybackCommandDispatcher, PlaybackReceivesCorrectTempPath) {
 
     std::ostringstream out, err;
     std::istringstream in;
-    PlaybackCommandDispatcher d{make_factory(chunks), conv, tp.provider(),
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, tp.provider_no_srt(),
                                  false, out, err, in};
     d.dispatch(make_play_result("hi"));
 
     // The path given to the player must end with ".mp3".
     EXPECT_EQ(conv.last_played.extension().string(), ".mp3");
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: proxy forwarded to CommunicateOptions
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, ProxyReachesCommunicateOptions) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"proxy_test"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("data")}};
+
+    CapturingFactory cf;
+    cf.chunks = chunks;
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{cf.make(), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    PlaybackParseResult r = make_play_result("hello");
+    r.arguments.proxy = "http://proxy.example.com:8080";
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 0);
+    ASSERT_TRUE(cf.last_options.proxy.has_value());
+    EXPECT_EQ(*cf.last_options.proxy, "http://proxy.example.com:8080");
+}
+
+TEST(PlaybackCommandDispatcher, NoProxyLeavesOptionEmpty) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"no_proxy_test"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("data")}};
+
+    CapturingFactory cf;
+    cf.chunks = chunks;
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{cf.make(), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+    d.dispatch(make_play_result("hello"));
+
+    EXPECT_FALSE(cf.last_options.proxy.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: --mpv explicitly rejected
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, MpvFlagReturnsErrorWithClearMessage) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"mpv_reject"};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    PlaybackCommandDispatcher d{make_factory({}), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    PlaybackParseResult r = make_play_result("hello");
+    r.arguments.use_mpv = true;
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_NE(err.str().find("--mpv"), std::string::npos);
+    EXPECT_NE(err.str().find("ffplay"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: SRT temp file lifecycle
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, SrtTempFileCleanedOnSuccess) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"srt_cleanup_ok"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+
+    fs::path captured_mp3, captured_srt;
+    auto provider = [&](std::string_view suffix) -> std::optional<fs::path> {
+        if (suffix == ".mp3") {
+            captured_mp3 = tp.dir / "test.mp3";
+            return captured_mp3;
+        }
+        if (suffix == ".srt") {
+            captured_srt = tp.dir / "test.srt";
+            return captured_srt;
+        }
+        return std::nullopt;
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, std::move(provider),
+                                 false, out, err, in};
+    EXPECT_EQ(d.dispatch(make_play_result("hi")), 0);
+
+    EXPECT_FALSE(fs::exists(captured_mp3));
+    EXPECT_FALSE(fs::exists(captured_srt));
+}
+
+TEST(PlaybackCommandDispatcher, SrtTempFileKeptWhenKeepTempTrue) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"srt_keep_temp"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+
+    fs::path captured_mp3, captured_srt;
+    auto provider = [&](std::string_view suffix) -> std::optional<fs::path> {
+        if (suffix == ".mp3") {
+            captured_mp3 = tp.dir / "test.mp3";
+            return captured_mp3;
+        }
+        if (suffix == ".srt") {
+            captured_srt = tp.dir / "test.srt";
+            return captured_srt;
+        }
+        return std::nullopt;
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, std::move(provider),
+                                 true /*keep_temp*/, out, err, in};
+    EXPECT_EQ(d.dispatch(make_play_result("hi")), 0);
+
+    // Both files must exist when keep_temp is true.
+    EXPECT_TRUE(fs::exists(captured_mp3));
+    EXPECT_TRUE(fs::exists(captured_srt));
+    fs::remove(captured_mp3);
+    fs::remove(captured_srt);
+}
+
+TEST(PlaybackCommandDispatcher, NoSrtWhenProviderReturnsNullopt) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"no_srt"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+
+    // Provider returns nullopt for ".srt" — synthesis is called without SRT.
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+    EXPECT_EQ(d.dispatch(make_play_result("hi")), 0);
+    EXPECT_TRUE(conv.play_called);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: EDGE_PLAYBACK_MP3_FILE honored via TempFileProvider
+// (The env var is read in main.cpp's lambda; this test verifies the dispatcher
+// respects whatever path the provider returns, including a user-supplied one.)
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, CustomMp3PathFromProviderIsUsed) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"custom_mp3"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+
+    const fs::path custom_path = tp.dir / "custom.mp3";
+    auto provider = [&custom_path](std::string_view suffix)
+            -> std::optional<fs::path> {
+        if (suffix == ".mp3") return custom_path;
+        return std::nullopt;
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, std::move(provider),
+                                 true /*keep_temp to inspect path*/, out, err, in};
+    EXPECT_EQ(d.dispatch(make_play_result("hi")), 0);
+
+    EXPECT_EQ(conv.last_played, custom_path);
+    fs::remove(custom_path);
 }

@@ -79,13 +79,16 @@ is not built.
 
 | Property | Value |
 |----------|-------|
-| Source | POSIX standard library — always present on Linux |
-| Purpose | `media::ProcessRunner` — runs external commands (mpv, ffmpeg, edge-tts) as child processes with no shell involvement |
+| Source | POSIX standard library — always present on Linux and macOS |
+| Purpose | `media::ProcessRunner` — runs external commands (ffplay, ffmpeg) as child processes with no shell involvement |
 | Integration | Included via `<unistd.h>`, `<sys/wait.h>` directly in `src/media/ProcessRunner.cpp`; `std::thread` drains stderr concurrently |
 | Consumers | `edge_tts::media` (`ProcessRunner`) |
 | License | System library; no additional license obligation |
+| Platform | **POSIX only.** `ProcessRunner.cpp` emits `#error` at compile time when `_WIN32` is detected. Build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows-specific `IProcessRunner` implementation to compile on Windows. |
 
 Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prevents shell injection and word-splitting of arguments containing spaces.  `ProcessRunner::run()` uses the same safe pattern via `execvp()`.
+
+`ProcessRunner` is not marked `final` so tests can subclass it and override `make_pipe(int fds[2])` to inject pipe-creation failures without spawning real child processes.
 
 ---
 

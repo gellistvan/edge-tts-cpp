@@ -83,14 +83,14 @@ exit codes) is identical.
 
 | Option | Short | Argument | Default | Python behavior | C++ behavior | Status |
 |--------|-------|----------|---------|-----------------|--------------|--------|
-| `--mpv` | — | (flag) | `false` on Windows, `true` elsewhere | Force mpv playback on Windows. | Accepted and stored; no behavior change (ffplay always used via `FfmpegAudioConverter`). | `partial` |
+| `--mpv` | — | (flag) | `false` on Windows, `true` elsewhere | Force mpv playback on Windows. On non-Windows mpv is always used. | Explicitly rejected: returns exit 1 with a clear message ("only ffplay is available"). | `deviation` (see note 4) |
 | `--text` | `-t` | `STRING` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Passed to `Communicate`. | `exact` |
 | `--file` | `-f` | `PATH` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Read via `InputLoader`; same stdin/file semantics. | `exact` |
 | `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Forwarded verbatim to `edge-tts` subprocess. | Identical. | `exact` |
 | `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
-| `--proxy` | — | `URL` | (none) | Forwarded verbatim. | Parsed into args; `PlaybackCommandDispatcher` copies it into `api::CommunicateOptions::proxy` (same path as `edge-tts`). | `partial` (parsed; PlaybackCommandDispatcher forwarding not yet wired) |
+| `--proxy` | — | `URL` | (none) | Forwarded verbatim to `edge-tts` subprocess which passes it to `aiohttp`. | Parsed into `PlaybackArguments::proxy`; `PlaybackCommandDispatcher` copies it into `api::CommunicateOptions::proxy` (same path as `edge-tts`). | `exact` |
 | `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |
@@ -103,19 +103,27 @@ exit codes) is identical.
 | # | Behavior | Python source | C++ status |
 |---|----------|---------------|------------|
 | 1 | **Library call model.** C++ calls `api::Communicate::save()` directly instead of spawning an `edge-tts` subprocess. Observable behavior is equivalent. | `__main__.py:_run_edge_tts()` | `deviation` (library call, not subprocess) |
-| 2 | **Temp file lifecycle.** Temp `.mp3` is created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard). | `__main__.py:_cleanup()` | `exact` |
+| 2 | **Temp file lifecycle.** Temp `.mp3` (and `.srt` if `EDGE_PLAYBACK_SRT_FILE` is set) are created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard covers both files). | `__main__.py:_cleanup()` | `exact` |
 | 3 | **Playback.** Uses `ffplay -nodisp -autoexit <mp3>` via `FfmpegAudioConverter`. Python uses `mpv`. | `__main__.py:_play_media()` | `deviation` (ffplay instead of mpv) |
-| 4 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `planned` |
-| 5 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
+| 4 | **`--mpv` flag.** Python uses mpv by default on non-Windows; `--mpv` forces it on Windows. C++ build does not implement mpv: passing `--mpv` produces `error: --mpv is not supported; only ffplay is available. Remove --mpv to use ffplay.` and exits 1. | `__main__.py:_play_media()` | `deviation` (explicit rejection, not silent ignore) |
+| 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `planned` (not yet implemented; `ProcessRunner` fails at compile time on Windows) |
+| 6 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
 
 ### `edge-playback` environment variables
 
 | Variable | Effect | C++ status |
 |----------|--------|------------|
-| `EDGE_PLAYBACK_DEBUG` | Print temp file path to stdout before playback. | `exact` |
+| `EDGE_PLAYBACK_DEBUG` | Print temp file paths to stdout before playback. | `exact` |
 | `EDGE_PLAYBACK_KEEP_TEMP` | Keep temp files after playback exits. | `exact` |
 | `EDGE_PLAYBACK_MP3_FILE` | Override the MP3 temp file path. | `exact` |
-| `EDGE_PLAYBACK_SRT_FILE` | Override the SRT temp file path (not yet used). | `planned` |
+| `EDGE_PLAYBACK_SRT_FILE` | Override the SRT temp file path. When set, subtitles are synthesized and written to this path; cleaned up on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. When unset, no SRT is generated. | `exact` |
+
+### Platform support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux / macOS (POSIX) | Supported | `ProcessRunner` uses `fork` / `execvp` / `pipe` / `waitpid`. |
+| Windows | Not supported | `ProcessRunner.cpp` emits `#error` at compile time when `_WIN32` is defined. Build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows-specific `IProcessRunner` implementation. |
 
 ---
 

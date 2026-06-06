@@ -2,8 +2,12 @@
 #include "edge_tts/common/Error.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+#include <cerrno>
 #include <string>
 #include <vector>
+
+// POSIX for ::pipe
+#include <unistd.h>
 
 using edge_tts::common::Error;
 using edge_tts::common::ErrorCode;
@@ -162,4 +166,37 @@ TEST(ProcessRunner, NonExistentExecutableReturnsError) {
         EXPECT_EQ(r->exit_code, 127);
     else
         EXPECT_EQ(r.error().code(), ErrorCode::external_process_failed);
+}
+
+// ---------------------------------------------------------------------------
+// ProcessRunner pipe-failure cleanup
+//
+// Subclass that overrides make_pipe() to inject a failure on the second call.
+// This exercises the "close already-open stdout fds before returning" fix.
+// ---------------------------------------------------------------------------
+
+class FailSecondPipeRunner : public ProcessRunner {
+public:
+    int make_pipe(int fds[2]) override {
+        if (++call_count_ == 2) {
+            errno = EMFILE;
+            return -1;
+        }
+        return ::pipe(fds);
+    }
+    int call_count_{0};
+};
+
+TEST(ProcessRunner, StderrPipeFailureReturnsError) {
+    // The first pipe (stdout) succeeds; the second (stderr) fails.
+    // ProcessRunner must return an error and must not leak the stdout fds.
+    FailSecondPipeRunner runner;
+    auto r = runner.run(ProcessCommand{"/bin/echo", {"hello"}});
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::external_process_failed);
+    // Verify both pipe() calls were attempted.
+    EXPECT_EQ(runner.call_count_, 2);
+    // fd leak detection: if stdout_fds were leaked, a subsequent pipe() would
+    // not get the same low-numbered fds.  We can only verify no crash/hang here;
+    // valgrind / sanitizers would catch leaks in CI.
 }

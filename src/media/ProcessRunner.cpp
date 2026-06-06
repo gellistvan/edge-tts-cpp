@@ -1,6 +1,11 @@
 #include "edge_tts/media/ProcessRunner.hpp"
 #include "edge_tts/common/Error.hpp"
 
+#ifdef _WIN32
+#  error "ProcessRunner requires POSIX (fork/execvp/pipe/waitpid) which is not available on Windows. " \
+         "Build with EDGE_TTS_BUILD_APPS=OFF or provide a Windows-specific implementation."
+#endif
+
 #include <cerrno>
 #include <cstring>
 #include <string>
@@ -74,6 +79,10 @@ struct FdCloser {
 
 } // namespace
 
+int ProcessRunner::make_pipe(int fds[2]) {
+    return ::pipe(fds);
+}
+
 common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
     // Build argv: executable + arguments + nullptr sentinel.
     const std::string exec_str = cmd.executable.string();
@@ -84,17 +93,27 @@ common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
         argv.push_back(arg.c_str());
     argv.push_back(nullptr);
 
-    // Create stdout and stderr pipes.
-    int stdout_fds[2], stderr_fds[2];
-    if (::pipe(stdout_fds) < 0 || ::pipe(stderr_fds) < 0) {
+    // Create stdout pipe.
+    int stdout_fds[2];
+    if (make_pipe(stdout_fds) < 0) {
         return common::Result<ProcessResult>::fail(
             common::Error{common::ErrorCode::external_process_failed,
                           "pipe() failed",
                           std::strerror(errno)});
     }
-
-    // RAII for the parent's read ends (write ends transferred to child).
+    // RAII for the parent's stdout read end; write end transferred to child.
     FdCloser stdout_read{stdout_fds[0]};
+
+    // Create stderr pipe.  If it fails, close the already-open stdout fds.
+    int stderr_fds[2];
+    if (make_pipe(stderr_fds) < 0) {
+        ::close(stdout_fds[1]);  // write end not yet RAII-protected
+        return common::Result<ProcessResult>::fail(
+            common::Error{common::ErrorCode::external_process_failed,
+                          "pipe() failed",
+                          std::strerror(errno)});
+    }
+    // RAII for the parent's stderr read end.
     FdCloser stderr_read{stderr_fds[0]};
 
     const pid_t pid = ::fork();

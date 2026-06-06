@@ -183,7 +183,51 @@ edge-tts --version
 
 The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — matching Python `argparse` and `sys.exit()` behavior.
 
-The skeleton builds two placeholder apps:
+`edge-playback` synthesizes speech to a temp MP3, plays it through `ffplay`, and cleans up. Usage:
+
+```bash
+# Speak text
+edge-playback --text "Hello, world!"
+
+# Speak from a file
+edge-playback --file speech.txt
+
+# Use a proxy
+edge-playback --text "Hello" --proxy http://proxy.example.com:8080
+
+# Keep the temp MP3 file after playback
+EDGE_PLAYBACK_KEEP_TEMP=1 edge-playback --text "Hello"
+
+# Write MP3 to a specific path (also keeps it)
+EDGE_PLAYBACK_MP3_FILE=/tmp/hello.mp3 edge-playback --text "Hello"
+
+# Write SRT subtitles alongside playback
+EDGE_PLAYBACK_SRT_FILE=/tmp/hello.srt edge-playback --text "Hello"
+
+# Show temp file paths (debug)
+EDGE_PLAYBACK_DEBUG=1 edge-playback --text "Hello"
+```
+
+`edge-playback` options (subset of `edge-tts`; `--write-media`, `--write-subtitles`, `--list-voices` are not accepted):
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--text` | `-t` | (required\*) | Text to synthesize and play |
+| `--file` | `-f` | (required\*) | Read text from file (`-` for stdin) |
+| `--voice` | `-v` | `en-US-EmmaMultilingualNeural` | Voice name |
+| `--rate` | — | `+0%` | Speech rate |
+| `--volume` | — | `+0%` | Speech volume |
+| `--pitch` | — | `+0Hz` | Speech pitch |
+| `--proxy` | — | (none) | HTTP proxy forwarded to synthesis |
+| `--help` | `-h` | — | Print help and exit |
+
+\* `--text` and `--file` are mutually exclusive; exactly one must be given.
+
+**Playback backend:** `ffplay` (from FFmpeg) is used on all platforms. The `--mpv` flag is explicitly rejected with a clear error — passing it returns exit 1 with a message explaining the limitation.
+
+**Platform support:** POSIX only (Linux, macOS). Building with `EDGE_TTS_BUILD_APPS=ON` on Windows will fail at compile time with a descriptive error from `ProcessRunner.cpp`.
+
+Two CLI apps are built:
 
 ```text
 edge-tts

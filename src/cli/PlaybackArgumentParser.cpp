@@ -253,7 +253,8 @@ std::string PlaybackArgumentParser::help_text(std::string_view program_name) con
        << "      --volume VOL    Set TTS volume. Default +0%.\n"
        << "      --pitch PITCH   Set TTS pitch. Default +0Hz.\n"
        << "      --proxy URL     Use a proxy for TTS\n"
-       << "      --mpv           Use mpv for playback (default on non-Windows)\n"
+       << "      --mpv           Not supported in this build (only ffplay is available);\n"
+       << "                        passing this flag returns an error\n"
        << "\n"
        << "Note: --text and --file are mutually exclusive; exactly one must be provided.\n"
        << "Note: Use --rate=-50% syntax (not --rate -50%) for negative values.\n";

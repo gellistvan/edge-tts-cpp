@@ -1,4 +1,5 @@
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 
 int main(int argc, char* argv[]) {
@@ -33,30 +35,48 @@ int main(int argc, char* argv[]) {
 
     // Temp file provider.
     // Reference: _create_temp_files() uses NamedTemporaryFile(suffix=".mp3", delete=False)
-    // Honours EDGE_PLAYBACK_MP3_FILE env var override.
-    auto temp_provider = [debug](std::string_view suffix) -> std::filesystem::path {
-        // Check env override first.
+    //   For ".srt", creates a temp file only when use_mpv is true (Python always
+    //   uses mpv on non-Windows).  In C++, we default to no SRT unless the user
+    //   sets EDGE_PLAYBACK_SRT_FILE.
+    // Honours EDGE_PLAYBACK_MP3_FILE and EDGE_PLAYBACK_SRT_FILE env var overrides.
+    auto temp_provider =
+        [debug](std::string_view suffix) -> std::optional<std::filesystem::path> {
         if (suffix == ".mp3") {
             const char* env_mp3 = std::getenv("EDGE_PLAYBACK_MP3_FILE");
             if (env_mp3 && *env_mp3)
                 return std::filesystem::path{env_mp3};
+
+            // Generate a unique name in the OS temp directory.
+            const auto tick =
+                std::chrono::system_clock::now().time_since_epoch().count();
+            auto path = std::filesystem::temp_directory_path() /
+                        ("edge_playback_" + std::to_string(tick) + ".mp3");
+
+            if (debug)
+                std::cout << "Media file: " << path.string() << '\n';
+
+            return path;
         }
 
-        // Generate a unique name in the OS temp directory.
-        const auto tick = std::chrono::system_clock::now().time_since_epoch().count();
-        auto path = std::filesystem::temp_directory_path() /
-                    ("edge_playback_" + std::to_string(tick) + std::string(suffix));
+        if (suffix == ".srt") {
+            const char* env_srt = std::getenv("EDGE_PLAYBACK_SRT_FILE");
+            if (env_srt && *env_srt) {
+                if (debug)
+                    std::cout << "Subtitle file: "
+                              << std::string(env_srt) << '\n';
+                return std::filesystem::path{env_srt};
+            }
+            return std::nullopt;  // no subtitle output by default
+        }
 
-        if (debug)
-            std::cout << "Media file: " << path.string() << '\n';
-
-        return path;
+        return std::nullopt;
     };
 
     // Wire production dependencies — same pattern as edge-tts/main.cpp.
+    // The factory forwards CommunicateOptions (proxy, timeouts) from CLI args.
     cli::PlaybackCommandDispatcher dispatcher{
-        [](std::string text, core::TtsConfig cfg) {
-            return api::Communicate{std::move(text), std::move(cfg)};
+        [](std::string text, core::TtsConfig cfg, api::CommunicateOptions opts) {
+            return api::Communicate{std::move(text), std::move(cfg), std::move(opts)};
         },
         converter,
         temp_provider,

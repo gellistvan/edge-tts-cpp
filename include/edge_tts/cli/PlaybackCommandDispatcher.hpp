@@ -1,6 +1,7 @@
 #pragma once
 
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/media/AudioConverter.hpp"
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <istream>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -33,16 +35,22 @@ namespace edge_tts::cli {
 // real synthesis, a real audio player, or real temp-file creation.
 class PlaybackCommandDispatcher {
 public:
-    // Creates an api::Communicate object for the given text and config.
-    // Inject a fake synthesizer in tests.
+    // Creates an api::Communicate object for the given text, config, and options.
+    // options carries transport settings (proxy, timeouts) from CLI flags and env
+    // vars.  Inject a fake synthesizer in tests.
     using CommunicateFactory = std::function<
-        api::Communicate(std::string text, core::TtsConfig config)>;
+        api::Communicate(std::string text,
+                         core::TtsConfig config,
+                         api::CommunicateOptions options)>;
 
     // Provides a temporary file path with the given suffix.
-    // The dispatcher calls this once per dispatch to obtain the MP3 temp path.
-    // Production default: creates a uniquely-named path in the OS temp dir.
-    // Inject a known path in tests to verify cleanup.
-    using TempFileProvider = std::function<std::filesystem::path(std::string_view suffix)>;
+    // Returns nullopt when the caller should skip generating that file type
+    // (e.g. ".srt" when subtitle output is not requested).
+    // Production default: creates a uniquely-named path in the OS temp dir for
+    // ".mp3" and returns nullopt for ".srt" unless EDGE_PLAYBACK_SRT_FILE is set.
+    // Inject a known path (or nullopt) in tests to control behavior.
+    using TempFileProvider =
+        std::function<std::optional<std::filesystem::path>(std::string_view suffix)>;
 
     // converter    — audio player (FfmpegAudioConverter in production).
     // keep_temp    — when true, temp files are NOT deleted after playback.
