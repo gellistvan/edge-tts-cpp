@@ -119,8 +119,24 @@ edge_tts_add_module_test(
         api/CommunicateTests.cpp
         api/CommunicateOptionsTests.cpp
         api/CommunicateProductionWiringTests.cpp
+        api/CommunicateEndToEndTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli
 )
+
+if(EDGE_TTS_ENABLE_NETWORK_TESTS)
+    edge_tts_add_module_test(
+        NAME api_network
+        SOURCES
+            common/test_main.cpp
+            api/CommunicateNetworkTests.cpp
+        LIBRARIES edge_tts::api
+    )
+    # Network tests require ixwebsocket for real WebSocket/HTTP connections.
+    if(TARGET ixwebsocket)
+        target_compile_definitions(edge_tts_api_network_tests
+            PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
+    endif()
+endif()
 
 edge_tts_add_module_test(
     NAME cli
