@@ -91,6 +91,7 @@ edge_tts_add_module(
         src/communication/EdgeProtocol.cpp
         src/communication/EdgeProtocolIncoming.cpp
         src/communication/FakeWebSocketClient.cpp
+        src/communication/HttpDate.cpp
         src/communication/SynthesisSession.cpp
         src/communication/FakeHttpClient.cpp
         src/communication/HttpClient.cpp

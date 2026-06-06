@@ -78,6 +78,7 @@ static SynthesisSession make_session(FakeWebSocketClient& fake,
         edge_tts::communication::default_edge_service_config(),
         get_token_provider(),
         get_meta_factory(),
+        g_retry_clock,
         policy
     };
 }

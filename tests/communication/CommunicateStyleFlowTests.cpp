@@ -110,7 +110,7 @@ struct SessionFixture {
     {}
 
     SynthesisSession make_session(FakeWebSocketClient& ws) {
-        return SynthesisSession{ws, protocol, svc, token_provider, meta_factory};
+        return SynthesisSession{ws, protocol, svc, token_provider, meta_factory, clock};
     }
 };
 

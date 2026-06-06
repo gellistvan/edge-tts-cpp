@@ -1,7 +1,10 @@
 #include "edge_tts/communication/SynthesisSession.hpp"
 #include "edge_tts/common/Error.hpp"
+#include "edge_tts/communication/HttpDate.hpp"
 #include "edge_tts/communication/IncomingMessage.hpp"
 #include "edge_tts/core/Chunk.hpp"
+
+#include <chrono>
 
 #include <span>
 #include <string>
@@ -16,12 +19,14 @@ SynthesisSession::SynthesisSession(
     EdgeServiceConfig          config,
     EdgeTokenProvider&         token_provider,
     ConnectionMetadataFactory& metadata_factory,
+    const common::IClock&      clock,
     RetryPolicy                retry_policy)
     : websocket_(websocket)
     , protocol_(protocol)
     , config_(std::move(config))
     , token_provider_(token_provider)
     , metadata_factory_(metadata_factory)
+    , clock_(clock)
     , retry_policy_(retry_policy)
 {}
 
@@ -174,9 +179,21 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             if (!conn) {
                 // Reference: `if e.status != 403: raise` — only drm_error retries.
                 if (retry_policy_.should_retry(conn.error(), attempt)) {
-                    // Token rejected; regenerate on next loop iteration.
-                    // chunk_audio_bytes is 0 here (no audio produced on failed
-                    // connect), so no cumulative update needed before retry.
+                    // Reference: drm.py DRM.handle_client_response_error()
+                    // If the 403 response carries a Date header (via error context),
+                    // compute skew = server_time - effective_client_time and correct
+                    // the token provider before retrying.
+                    if (conn.error().has_context()) {
+                        auto server_ts = parse_http_date(conn.error().context());
+                        if (server_ts) {
+                            const double now_sec = std::chrono::duration<double>(
+                                clock_.now().time_since_epoch()).count();
+                            const double skew =
+                                static_cast<double>(*server_ts)
+                                - (now_sec + token_provider_.clock_skew_seconds());
+                            token_provider_.adjust_clock_skew(skew);
+                        }
+                    }
                     continue;
                 }
                 return common::Result<std::vector<core::TtsChunk>>::fail(conn.error());

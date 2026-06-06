@@ -178,12 +178,22 @@ common::Result<void> WebSocketClient::connect(std::string_view url)
     if (!init.success) {
         // HTTP 403 from the upgrade response indicates a DRM token rejection.
         // Reference: communicate.py catches aiohttp.ClientResponseError(status=403)
-        // and retries after adjusting the clock skew.
-        const common::ErrorCode code = (init.http_status == 403)
-            ? common::ErrorCode::drm_error
-            : common::ErrorCode::network_error;
+        // and retries after adjusting the clock skew via the server Date header.
+        if (init.http_status == 403) {
+            // Extract the Date response header to allow clock-skew correction.
+            // The header map uses case-insensitive comparison (CaseInsensitiveLess).
+            std::string date_ctx;
+            const auto it = init.headers.find("Date");
+            if (it != init.headers.end())
+                date_ctx = it->second;
+            return common::Result<void>::fail(
+                common::Error{common::ErrorCode::drm_error,
+                              init.errorStr.empty() ? "WebSocket connect failed"
+                                                    : init.errorStr,
+                              date_ctx});
+        }
         return common::Result<void>::fail(
-            common::Error{code,
+            common::Error{common::ErrorCode::network_error,
                           init.errorStr.empty() ? "WebSocket connect failed"
                                                 : init.errorStr});
     }

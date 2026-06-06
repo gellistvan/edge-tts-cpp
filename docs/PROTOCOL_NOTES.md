@@ -122,15 +122,27 @@ except aiohttp.ClientResponseError as e:
 - All other errors propagate immediately (no retry).
 - The clock skew is adjusted from the server's `Date` response header, then the token is regenerated.
 
-**C++ implementation:** `communication::RetryPolicy` + `EdgeTokenProvider::adjust_clock_skew(double)`.
+**C++ implementation:** `communication::RetryPolicy` + `SynthesisSession` retry path + `EdgeTokenProvider::adjust_clock_skew(double)`.
 
 | Python | C++ |
 |--------|-----|
 | `e.status == 403` | `ErrorCode::drm_error` from `WebSocketClient::connect()` |
+| `DRM.parse_rfc2616_date(date)` | `parse_http_date()` in `communication/HttpDate.hpp` |
 | `DRM.adj_clock_skew_seconds(delta)` | `EdgeTokenProvider::adjust_clock_skew(seconds)` |
 | `max_retries` | `RetryPolicy::max_retries` (default 1) |
 
-**Clock skew ambiguity:** `aiohttp.ClientResponseError` carries the 403 response headers, from which `DRM.handle_client_response_error` parses the `Date` header to compute skew. In the C++ implementation, `ix::WebSocket::connect()` returns `http_status == 403` but does not surface response headers on a failed upgrade. Therefore clock skew correction cannot be performed automatically from the transport layer. The `EdgeTokenProvider::adjust_clock_skew()` API is provided for callers that can obtain the server date by another means (e.g. an HTTP HEAD request or future ixwebsocket exposure of response headers). Without skew correction, a retry within the same 5-minute bucket produces the same token and may fail again.
+**Date header extraction:** `ix::WebSocketInitResult::headers` is a `CaseInsensitiveLess` map that includes all HTTP response headers from the upgrade attempt. On HTTP 403, `WebSocketClient::connect()` reads `init.headers["Date"]` and stores it as the `context()` field of the `drm_error`. `SynthesisSession` then parses this with `parse_http_date()`.
+
+**Clock skew formula** (matching Python `DRM.handle_client_response_error()`):
+```
+skew = server_time - (client_now + existing_skew)
+EdgeTokenProvider::adjust_clock_skew(skew)
+// After adjustment: total_skew = server_time - client_now
+```
+
+**Fallback behavior:** If the 403 response carries no Date header (context is empty) or the date string is malformed, the retry still proceeds — just without skew correction. This matches the Python reference where `parse_rfc2616_date` returns `None` and the adjustment is skipped.
+
+**RFC 2616 date format:** `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (e.g. `"Mon, 15 Jan 2024 08:31:15 GMT"`). Implemented in `communication::parse_http_date()` using Howard Hinnant's Gregorian day-count algorithm. Weekday and timezone fields are accepted but not validated.
 
 ### Close behavior
 

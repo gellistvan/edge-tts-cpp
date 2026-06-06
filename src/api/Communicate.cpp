@@ -77,7 +77,7 @@ ProductionSynthesizer::ProductionSynthesizer(const CommunicateOptions& opts)
     , protocol{clock}
     , metadata_factory{ids}
     , websocket{make_ws_options(opts, service_config, ids)}
-    , session{websocket, protocol, service_config, token_provider, metadata_factory}
+    , session{websocket, protocol, service_config, token_provider, metadata_factory, clock}
 {}
 
 // Build the production SynthesizerFn that drives the real communication stack.

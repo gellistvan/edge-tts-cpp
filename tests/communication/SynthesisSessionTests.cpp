@@ -11,6 +11,7 @@
 #include "edge_tts/core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@ using edge_tts::communication::WebSocketMessage;
 using edge_tts::common::Error;
 using edge_tts::common::ErrorCode;
 using edge_tts::common::FixedClock;
+using edge_tts::common::IClock;
 using edge_tts::common::IdGenerator;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
@@ -68,13 +70,15 @@ static ConnectionMetadataFactory& get_meta_factory() {
     return factory;
 }
 
-static SynthesisSession make_session(FakeWebSocketClient& fake) {
+static SynthesisSession make_session(FakeWebSocketClient& fake,
+                                      const IClock& clock = g_clock) {
     return SynthesisSession{
         fake,
         get_protocol(),
         make_test_config(),
         get_token_provider(),
-        get_meta_factory()
+        get_meta_factory(),
+        clock
     };
 }
 
@@ -722,4 +726,161 @@ TEST(OffsetCompensation, ThreeChunksCumulativeCompensation) {
     EXPECT_EQ(offsets[0], 0);       // chunk 1: compensation = 0
     EXPECT_EQ(offsets[1], comp2);   // chunk 2: compensation = A bytes
     EXPECT_EQ(offsets[2], comp3);   // chunk 3: compensation = (A+B) bytes
+}
+
+// ---------------------------------------------------------------------------
+// 403 DRM retry behavior
+//
+// Reference: communicate.py Communicate.stream():
+//   except aiohttp.ClientResponseError as e:
+//       if e.status != 403: raise
+//       DRM.handle_client_response_error(e)   # parse Date, adjust skew
+//       async for message in self.__stream():  # single retry
+//
+// Rules:
+//   - drm_error (HTTP 403): retry exactly once; adjust clock skew if Date present.
+//   - network_error, service_error, …: do NOT retry.
+//   - Post-connect errors (send/receive): do NOT retry.
+// ---------------------------------------------------------------------------
+
+// Helper: build a minimal valid response for the receive loop.
+static std::vector<WebSocketMessage> minimal_audio_response() {
+    const std::vector<std::byte> payload(32, std::byte{0xAB});
+    return {make_audio_frame(payload), make_turn_end()};
+}
+
+TEST(DrmRetry, RetriesOnceWithSkewAdjustment) {
+    // Setup: FixedClock at Unix epoch (t=0); server reports t=30 via Date header.
+    // Expected clock skew after retry: 30.0 - (0.0 + 0.0) = 30.0 seconds.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    // First connect fails: drm_error with Date header 30 seconds after epoch.
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden",
+              "Thu, 01 Jan 1970 00:00:30 GMT"},
+        1);
+    // Push messages consumed by the successful second connect's receive loop.
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    // Skew = server_ts(30) - (client_now(0) + prior_skew(0)) = 30.0
+    EXPECT_EQ(tp.clock_skew_seconds(), 30.0);
+}
+
+TEST(DrmRetry, RetriesOnceWithoutDateContext) {
+    // drm_error with no Date context: still retries once, skew unchanged.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden"},  // no Date context
+        1);
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    EXPECT_EQ(tp.clock_skew_seconds(), 0.0);  // no adjustment
+}
+
+TEST(DrmRetry, NetworkErrorDoesNotRetry) {
+    // network_error is not retriable — should_retry() returns false.
+    FakeWebSocketClient fake;
+    fake.set_connect_error(Error{ErrorCode::network_error, "connection refused"});
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::network_error);
+    EXPECT_EQ(fake.connect_count(), 1);
+}
+
+TEST(DrmRetry, SendFailureAfterConnectDoesNotRetry) {
+    // Connect succeeds; first send_text fails.
+    // Post-connect errors are never retried (Python only retries the connect).
+    FakeWebSocketClient fake;
+    fake.set_send_error(Error{ErrorCode::network_error, "send failed"});
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::network_error);
+    EXPECT_EQ(fake.connect_count(), 1);
+}
+
+TEST(DrmRetry, DrmErrorDoesNotRetryMoreThanOnce) {
+    // Both connect attempts fail with drm_error.
+    // max_retries=1 means only one retry; second failure propagates.
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{0LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_error(Error{ErrorCode::drm_error, "403 Forbidden"});
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::drm_error);
+    EXPECT_EQ(fake.connect_count(), 2);  // initial + exactly one retry
+}
+
+TEST(DrmRetry, SkewIsComputedRelativeToEffectiveClientTime) {
+    // If a prior skew of +10 s was already applied, and the server says t=30,
+    // the new correction should bring the total skew to (30 - client_now).
+    // With client_now=5 and prior_skew=10:
+    //   effective = 5 + 10 = 15
+    //   delta     = 30 - 15 = 15
+    //   new_total = 10 + 15 = 25 = 30 - 5 = server - client_now  ✓
+    FixedClock  clock{std::chrono::system_clock::time_point{std::chrono::seconds{5LL}}};
+    EdgeTokenProvider tp{make_test_config(), clock};
+    tp.adjust_clock_skew(10.0);  // pre-existing skew
+
+    EdgeProtocol      protocol{clock};
+    ConnectionMetadataFactory mf{get_ids()};
+
+    FakeWebSocketClient fake;
+    fake.set_connect_fail_count(
+        Error{ErrorCode::drm_error, "403 Forbidden",
+              "Thu, 01 Jan 1970 00:00:30 GMT"},  // server_time = 30
+        1);
+    for (auto& m : minimal_audio_response())
+        fake.push_incoming(std::move(m));
+
+    SynthesisSession session{fake, protocol, make_test_config(), tp, mf, clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(fake.connect_count(), 2);
+    // After adjustment: total_skew = 30 - 5 = 25.0
+    EXPECT_EQ(tp.clock_skew_seconds(), 25.0);
 }

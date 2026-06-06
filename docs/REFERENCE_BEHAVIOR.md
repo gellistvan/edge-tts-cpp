@@ -916,9 +916,21 @@ is propagated.
 **Clock skew is global state:** `DRM.clock_skew_seconds` is a class variable
 shared across all `Communicate` and `list_voices` calls in the same process.
 
-**Match exactly:** Yes — single retry on 403, accumulate skew, no further
-retries.  In C++ the clock-skew state should be application-global (or
-injectable for testability).
+**C++ implementation status:** Implemented.
+
+- `WebSocketClient::connect()` maps HTTP 403 → `ErrorCode::drm_error` and stores the
+  `Date` response header (from `ix::WebSocketInitResult::headers`) as `error.context()`.
+- `SynthesisSession` retry path: if `should_retry()` returns true, calls
+  `parse_http_date(error.context())`, computes
+  `skew = server_time - (client_now + existing_skew)`, then calls
+  `token_provider_.adjust_clock_skew(skew)` before retrying with a new ConnectionId
+  and freshly computed `Sec-MS-GEC`.
+- If the Date header is absent or malformed, skew adjustment is skipped (no error raised —
+  divergence from Python's `SkewAdjustmentError`; the retry still proceeds).
+- `parse_http_date()` is in `communication/HttpDate.hpp`; format:
+  `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (reference: `drm.py DRM.parse_rfc2616_date()`).
+- `EdgeTokenProvider::clock_skew_seconds()` is per-instance (injectable for tests),
+  not global process state as in Python.
 
 ---
 

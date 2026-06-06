@@ -117,7 +117,7 @@ TEST(CommunicateProductionWiring, FullCompositionProducesAudioChunks) {
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO_BYTES");
 
-    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory};
+    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     // Inject via the SynthesizerFn seam — same path Communicate uses internally.
     Communicate c("hello world", valid_config(), CommunicateOptions{},
@@ -148,7 +148,7 @@ TEST(CommunicateProductionWiring, FullCompositionAudioBytesCorrect) {
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "MP3PAYLOAD");
 
-    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory};
+    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     Communicate c("test text", valid_config(), CommunicateOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
@@ -184,7 +184,7 @@ TEST(CommunicateProductionWiring, MultiChunkTextProducesAudioPerChunk) {
     push_session(fake_ws, "CHUNK_A");
     push_session(fake_ws, "CHUNK_B");
 
-    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory};
+    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     // 5000 bytes exceeds the 4096-byte limit → at least two chunks.
     std::string long_text(5000, 'x');
@@ -220,7 +220,7 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
-    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory};
+    SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     CommunicateOptions opts;
     opts.proxy = "http://proxy.test:3128";
