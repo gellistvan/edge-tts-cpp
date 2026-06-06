@@ -43,7 +43,7 @@ printing and `exit()`.
 | `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
 | `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `exact` |
 | `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `exact` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Identical; forwarded to HTTP/WebSocket client. | `exact` |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Parsed into `EdgeTtsArguments::proxy`; `EdgeTtsCommandDispatcher` copies it into `api::CommunicateOptions::proxy` and passes the options struct to the `CommunicateFactory`. The proxy reaches `WebSocketClientOptions::proxy` when real networking is wired. | `partial` (dispatcher wired; transport forwarding pending real session) |
 | `--version` | — | (flag) | — | Print `edge-tts {version}` (e.g. `edge-tts 7.2.8`) to stdout and exit 0. | Print `edge-tts-cpp {semver}` to stdout and exit 0. | `deviation` (version string differs) |
 | `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via hand-rolled parser. | `exact` |
 
@@ -90,7 +90,7 @@ exit codes) is identical.
 | `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
-| `--proxy` | — | `URL` | (none) | Forwarded verbatim. | Stored in args (not yet wired to `Communicate`). | `partial` |
+| `--proxy` | — | `URL` | (none) | Forwarded verbatim. | Parsed into args; `PlaybackCommandDispatcher` will copy it into `api::CommunicateOptions::proxy` (same path as `edge-tts`). | `partial` (parsed; dispatcher forwarding pending) |
 | `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |

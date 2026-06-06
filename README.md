@@ -136,18 +136,25 @@ See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guid
 
 ```cpp
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"  // transport options (proxy, timeouts)
 #include "edge_tts/core/TtsConfig.hpp"
 
-// Save audio and optional SRT subtitles (reference: Communicate.save()).
+// Speech config — voice, rate, volume, pitch only (no transport settings).
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+
+// Transport options — proxy and timeouts (no speech settings).
+edge_tts::api::CommunicateOptions opts;
+opts.proxy = "http://proxy.example.com:8080"; // optional
+
+// Save audio and optional SRT subtitles (reference: Communicate.save()).
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
 auto result = c.save("hello.mp3", "hello.srt");
 if (!result) {
     std::cerr << result.error().what() << '\n';
 }
 
-// Or stream chunks for custom processing (reference: Communicate.stream()).
+// Without a proxy — the 2-arg form uses default options.
 edge_tts::api::Communicate c2("Hello again!");
 auto chunks = c2.stream_sync();
 if (chunks) {

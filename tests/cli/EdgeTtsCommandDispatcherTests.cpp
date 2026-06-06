@@ -1,6 +1,7 @@
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -14,6 +15,7 @@
 #include <vector>
 
 using edge_tts::api::Communicate;
+using edge_tts::api::CommunicateOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::cli::EdgeTtsArgumentParser;
 using edge_tts::cli::EdgeTtsArguments;
@@ -96,8 +98,9 @@ static Voice make_voice(std::string short_name,
 // Factory that creates a Communicate with a fixed response.
 static EdgeTtsCommandDispatcher::CommunicateFactory
 make_factory(std::vector<TtsChunk> chunks) {
-    return [chunks = std::move(chunks)](std::string text, TtsConfig cfg) {
-        return Communicate(std::move(text), std::move(cfg),
+    return [chunks = std::move(chunks)](
+               std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
             [chunks](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
@@ -108,8 +111,9 @@ make_factory(std::vector<TtsChunk> chunks) {
 // Factory that injects a synthesis error.
 static EdgeTtsCommandDispatcher::CommunicateFactory
 make_failing_factory(ErrorCode code, std::string msg) {
-    return [code, msg = std::move(msg)](std::string text, TtsConfig cfg) {
-        return Communicate(std::move(text), std::move(cfg),
+    return [code, msg = std::move(msg)](
+               std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
             [code, msg](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
@@ -268,7 +272,7 @@ TEST(EdgeTtsCommandDispatcher, ListVoicesServiceErrorDoesNotPrintToStdout) {
 
 TEST(EdgeTtsCommandDispatcher, TextSynthesisCallsFactory) {
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
         received_text = text;
         return Communicate(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
@@ -302,7 +306,7 @@ TEST(EdgeTtsCommandDispatcher, FileSynthesisLoadsFile) {
     { std::ofstream f(p); f << "from file"; }
 
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
         received_text = text;
         return Communicate(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)

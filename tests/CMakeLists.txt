@@ -115,7 +115,8 @@ edge_tts_add_module_test(
         common/test_main.cpp
         api/FileWriterTests.cpp
         api/CommunicateTests.cpp
-    LIBRARIES edge_tts::api
+        api/CommunicateOptionsTests.cpp
+    LIBRARIES edge_tts::api edge_tts::cli
 )
 
 edge_tts_add_module_test(

@@ -93,10 +93,15 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     config.volume = args.volume;
     config.pitch  = args.pitch;
 
-    // 3. Create Communicate via the injected factory.
-    api::Communicate communicate = communicate_factory_(*text, config);
+    // 3. Build transport options from CLI arguments.
+    //    proxy maps from --proxy; timeouts use CommunicateOptions defaults.
+    api::CommunicateOptions opts;
+    opts.proxy = args.proxy;
 
-    // 4. Determine routing per reference util.py _run_tts():
+    // 4. Create Communicate via the injected factory.
+    api::Communicate communicate = communicate_factory_(*text, config, opts);
+
+    // 5. Determine routing per reference util.py _run_tts():
     //      write_media  absent | "-" → audio → out_ (stdout)
     //      write_media  non-dash     → audio → file
     //      write_subtitles absent    → no SRT
@@ -109,14 +114,14 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     const bool srt_to_stderr =
         args.write_subtitles.has_value() && *args.write_subtitles == "-";
 
-    // 5. Stream all chunks.
+    // 6. Stream all chunks.
     auto chunks = communicate.stream_sync();
     if (!chunks) {
         err_ << "error: " << chunks.error().what() << '\n';
         return 1;
     }
 
-    // 6. Route audio and collect boundaries for SubMaker.
+    // 7. Route audio and collect boundaries for SubMaker.
     subtitles::SubMaker submaker;
     std::vector<std::byte> audio_bytes_for_file;
 
@@ -136,7 +141,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         }
     }
 
-    // 7. Write audio file if requested.
+    // 8. Write audio file if requested.
     if (media_to_file) {
         api::FileWriter fw;
         auto r = fw.write_binary(*args.write_media, audio_bytes_for_file);
@@ -146,7 +151,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         }
     }
 
-    // 8. Route SRT if subtitles were requested.
+    // 9. Route SRT if subtitles were requested.
     //    Reference: if sub_file is not None: sub_file.write(submaker.get_srt())
     if (srt_to_file || srt_to_stderr) {
         auto srt = submaker.to_srt();

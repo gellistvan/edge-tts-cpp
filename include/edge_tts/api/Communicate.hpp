@@ -1,5 +1,6 @@
 #pragma once
 
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/common/Result.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -44,18 +45,32 @@ using SynthesizerFn = std::function<
 // No protocol parsing, no WebSocket logic, no ffmpeg logic here.
 class Communicate final {
 public:
-    // Production constructor: uses default Edge TTS service configuration.
+    // Production constructor: uses default transport options.
     // Real synthesis requires a functional WebSocket transport; until that is
     // wired, stream_sync() and save() return ErrorCode::network_error.
     explicit Communicate(std::string text, core::TtsConfig config = {});
 
+    // Production constructor with explicit transport options (proxy, timeouts).
+    // Speech configuration and transport options are kept separate:
+    //   config  — what to say and how (voice, rate, volume, pitch)
+    //   options — how to reach the service (proxy URL, connection timeouts)
+    Communicate(std::string text, core::TtsConfig config, CommunicateOptions options);
+
     // Test / dependency-injection constructor: synthesizer is called in place
     // of a real SynthesisSession.  Receives the validated TtsConfig and the
     // pre-chunked, XML-escaped text strings produced by TextChunker.
+    // Uses default CommunicateOptions.
     Communicate(std::string text, core::TtsConfig config, SynthesizerFn synthesizer);
 
-    [[nodiscard]] const std::string&     text()   const noexcept;
-    [[nodiscard]] const core::TtsConfig& config() const noexcept;
+    // Test constructor with both explicit options and an injected synthesizer.
+    // Use this to verify that options flow correctly into the synthesis path
+    // (e.g. check that proxy/timeouts are accessible from the synthesizer seam).
+    Communicate(std::string text, core::TtsConfig config,
+                CommunicateOptions options, SynthesizerFn synthesizer);
+
+    [[nodiscard]] const std::string&        text()    const noexcept;
+    [[nodiscard]] const core::TtsConfig&    config()  const noexcept;
+    [[nodiscard]] const CommunicateOptions& options() const noexcept;
 
     // Synthesize and return all TtsChunk events (AudioChunk + BoundaryChunk).
     // Reference: Communicate.stream() — single-use; returns invalid_state on repeat.
@@ -68,10 +83,11 @@ public:
         std::optional<std::filesystem::path> subtitles_path = std::nullopt);
 
 private:
-    std::string     text_;
-    core::TtsConfig config_;
-    SynthesizerFn   synthesizer_;
-    bool            stream_called_{false};
+    std::string        text_;
+    core::TtsConfig    config_;
+    CommunicateOptions options_;
+    SynthesizerFn      synthesizer_;
+    bool               stream_called_{false};
 
     // Shared synthesis pipeline: validate → chunk → synthesize.
     // Called by both stream_sync() and save() after the single-use guard.

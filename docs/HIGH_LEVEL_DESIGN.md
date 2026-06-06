@@ -74,26 +74,62 @@ occurs **exactly once** across the full pipeline and never produces `&amp;amp;`.
 Headers are grouped by module:
 
 ```cpp
-#include "edge_tts/api/Communicate.hpp"   // public TTS facade
+#include "edge_tts/api/Communicate.hpp"        // public TTS facade
+#include "edge_tts/api/CommunicateOptions.hpp" // transport / proxy options
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/subtitles/SrtComposer.hpp"
 ```
 
 Avoid adding new public headers at `include/edge_tts/` root unless they are deliberate umbrella headers. Module-local concepts should stay inside their module folder.
 
+### Speech config vs. transport options
+
+`core::TtsConfig` is **speech-only**: voice, rate, volume, pitch.  It must
+never hold transport settings (proxy URL, timeouts).
+
+`api::CommunicateOptions` is **transport-only**: proxy URL, WebSocket connect/
+read timeouts, HTTP timeout.  It must never hold speech settings.
+
+The separation keeps `TtsConfig` serializable into SSML without any network
+knowledge, and lets transport configuration evolve independently.
+
+| What | Type | Field |
+|------|------|-------|
+| Voice, rate, volume, pitch | `core::TtsConfig` | `voice`, `rate`, `volume`, `pitch` |
+| HTTP/WebSocket proxy | `api::CommunicateOptions` | `proxy` |
+| WS connect timeout | `api::CommunicateOptions` | `ws_connect_timeout` (default 10 s) |
+| WS read timeout | `api::CommunicateOptions` | `ws_read_timeout` (default 60 s) |
+| HTTP timeout | `api::CommunicateOptions` | `http_timeout` (default 30 s) |
+
+### `Communicate` constructor matrix
+
+| Constructor | Purpose |
+|-------------|---------|
+| `Communicate(text, config = {})` | Production; default options; stub synthesizer |
+| `Communicate(text, config, CommunicateOptions)` | Production with explicit proxy/timeouts |
+| `Communicate(text, config, SynthesizerFn)` | Test injection; default options |
+| `Communicate(text, config, CommunicateOptions, SynthesizerFn)` | Test injection with options (seam test) |
+
 ## C++ usage example
 
 ```cpp
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
-// Build configuration (defaults match Python reference edge-tts v7.2.8).
+// Build speech configuration.
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 cfg.rate  = "+0%";
 
-// Synthesize text.
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg));
+// Build transport options (optional — defaults match Python reference).
+edge_tts::api::CommunicateOptions opts;
+opts.proxy = "http://proxy.example.com:8080"; // optional
+opts.ws_connect_timeout = std::chrono::milliseconds{10'000};
+opts.ws_read_timeout    = std::chrono::milliseconds{60'000};
+
+// Synthesize text — speech config and transport options are separate.
+edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
 
 // Save audio and optional SRT subtitles — reference: Communicate.save().
 auto result = c.save("hello.mp3", "hello.srt");

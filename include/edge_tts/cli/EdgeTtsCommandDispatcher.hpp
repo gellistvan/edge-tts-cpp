@@ -1,6 +1,7 @@
 #pragma once
 
 #include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/core/Voice.hpp"
@@ -34,10 +35,12 @@ public:
     using VoiceServiceFn = std::function<
         common::Result<std::vector<core::Voice>>()>;
 
-    // Creates an api::Communicate object for the given text and config.
-    // Inject a fake synthesizer here in tests.
+    // Creates an api::Communicate object for the given text, speech config,
+    // and transport options (proxy, timeouts).  Inject a fake synthesizer
+    // in tests; the factory receives options so --proxy reaches the client.
     using CommunicateFactory = std::function<
-        api::Communicate(std::string text, core::TtsConfig config)>;
+        api::Communicate(std::string text, core::TtsConfig config,
+                         api::CommunicateOptions options)>;
 
     // Inject streams so tests can capture or supply input without touching
     // the real process stdin/stdout/stderr.

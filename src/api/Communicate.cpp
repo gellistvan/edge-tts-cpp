@@ -15,25 +15,45 @@ namespace edge_tts::api {
 // Construction
 // ---------------------------------------------------------------------------
 
+// Shared stub for the production constructors.
+static SynthesizerFn make_production_stub() {
+    return [](const core::TtsConfig&, std::span<const std::string>)
+               -> common::Result<std::vector<core::TtsChunk>>
+    {
+        return common::Result<std::vector<core::TtsChunk>>::fail(
+            common::Error{common::ErrorCode::network_error,
+                          "WebSocket transport not yet implemented"});
+    };
+}
+
 Communicate::Communicate(std::string text, core::TtsConfig config)
     : text_(std::move(text))
     , config_(std::move(config))
-    // Production stub: real synthesis requires a working WebSocket transport.
-    // When the transport is ready, replace this lambda with a real session.
-    , synthesizer_(
-        [](const core::TtsConfig&, std::span<const std::string>)
-            -> common::Result<std::vector<core::TtsChunk>>
-        {
-            return common::Result<std::vector<core::TtsChunk>>::fail(
-                common::Error{common::ErrorCode::network_error,
-                              "WebSocket transport not yet implemented"});
-        })
+    , options_{}
+    , synthesizer_(make_production_stub())
+{}
+
+Communicate::Communicate(std::string text, core::TtsConfig config,
+                         CommunicateOptions options)
+    : text_(std::move(text))
+    , config_(std::move(config))
+    , options_(std::move(options))
+    , synthesizer_(make_production_stub())
 {}
 
 Communicate::Communicate(std::string text, core::TtsConfig config,
                          SynthesizerFn synthesizer)
     : text_(std::move(text))
     , config_(std::move(config))
+    , options_{}
+    , synthesizer_(std::move(synthesizer))
+{}
+
+Communicate::Communicate(std::string text, core::TtsConfig config,
+                         CommunicateOptions options, SynthesizerFn synthesizer)
+    : text_(std::move(text))
+    , config_(std::move(config))
+    , options_(std::move(options))
     , synthesizer_(std::move(synthesizer))
 {}
 
@@ -41,8 +61,9 @@ Communicate::Communicate(std::string text, core::TtsConfig config,
 // Accessors
 // ---------------------------------------------------------------------------
 
-const std::string&     Communicate::text()   const noexcept { return text_; }
-const core::TtsConfig& Communicate::config() const noexcept { return config_; }
+const std::string&        Communicate::text()    const noexcept { return text_; }
+const core::TtsConfig&    Communicate::config()  const noexcept { return config_; }
+const CommunicateOptions& Communicate::options() const noexcept { return options_; }
 
 // ---------------------------------------------------------------------------
 // Internal synthesis pipeline
