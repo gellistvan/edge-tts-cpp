@@ -50,7 +50,6 @@ edge_tts_add_module(
     NAME serialization
     SOURCES
         src/serialization/EdgeProtocol.cpp
-        src/serialization/EdgeToken.cpp
         src/serialization/XmlEscaper.cpp
         src/serialization/TextNormalizer.cpp
         src/serialization/TextChunker.cpp
@@ -107,7 +106,6 @@ edge_tts_add_module(
         src/communication/EdgeTokenProvider.cpp
         src/communication/HttpVoiceService.cpp
         src/communication/VoicesManager.cpp
-        src/communication/WebSocketTransport.cpp
         src/communication/WebSocketClient.cpp
         src/communication/RetryPolicy.cpp
     PUBLIC_DEPS
@@ -266,6 +264,11 @@ if(EDGE_TTS_BUILD_TESTS)
             NAME edge_tts_network_hygiene_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${CMAKE_SOURCE_DIR}/tests/tools/test_network_hygiene.py"
+        )
+        add_test(
+            NAME edge_tts_repository_hygiene_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/tools/test_repository_hygiene.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")
