@@ -203,7 +203,23 @@ is a programmer bug, not a recoverable runtime condition:
 parsing, and service calls where failure is expected and recoverable:
 - Networking failures → `Result<T>` with `ErrorCode::network_error`
 - Protocol parse errors → `Result<T>` with `ErrorCode::protocol_error`
-- File I/O → `Result<T>` with `ErrorCode::io_error`
+- File I/O → `Result<T>` with `ErrorCode::io_error` (context carries the file path)
+- DRM token rejection → `Result<T>` with `ErrorCode::drm_error` (context carries the server `Date` header for clock-skew correction)
+- Service-level refusal → `Result<T>` with `ErrorCode::service_error` (e.g. no audio received, HTTP 4xx/5xx that is not 403)
+
+**Error context fields** — the `Error::context()` string carries machine-readable diagnostic data:
+
+| Error code | Context content | Example |
+|------------|-----------------|---------|
+| `io_error` | Absolute file path | `/tmp/output.mp3` |
+| `drm_error` | Server `Date` HTTP header | `Thu, 01 Jan 1970 00:00:30 GMT` |
+| `service_error` | HTTP status code (as string) | `"403"`, `"503"` |
+| `network_error` | WebSocket URL or close reason | `wss://speech.platform.bing.com/...` |
+| `unsupported` | Feature name / proxy URL (credentials redacted) | `"proxy not supported"` |
+
+**Proxy credential redaction** — the CLI dispatcher calls `redact_url_credentials()` before printing any error context that contains `://`. This ensures that proxy URLs of the form `http://user:pass@host:port` have credentials replaced with `[credentials]` in stderr output. The raw proxy URL is never written to any log or output stream.
+
+**No exceptions across the public API** — `stream_sync()`, `save()`, and all `VoiceService` methods return `Result<T>` for all recoverable failures. The only exceptions are `BadResultAccess` (programmer error: accessing a failed `Result<T>`) and `ConfigurationError` (programmer error: invalid `TtsConfig`).
 
 See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 

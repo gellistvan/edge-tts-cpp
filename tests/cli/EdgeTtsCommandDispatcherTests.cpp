@@ -535,7 +535,7 @@ TEST(EdgeTtsCommandDispatcher, ErrorActionPrintsToStderrAndReturns2) {
 }
 
 // ---------------------------------------------------------------------------
-// write-media file error → stderr, exit 1
+// write-media file error → stderr, exit 1, filename in error message
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorReturnsFailure) {
@@ -549,6 +549,20 @@ TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorReturnsFailure) {
 
     EXPECT_EQ(rc, 1);
     EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorIncludesFilenameInStderr) {
+    // The io_error from FileWriter carries the path in its context; the
+    // dispatcher must forward it so the user knows which file failed.
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("mp3")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("hi", "/no_such_dir/out.mp3"));
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_NE(err.str().find("out.mp3"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -824,4 +838,38 @@ TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenCheckFnIsEmpty) {
 
     EXPECT_EQ(rc, 0);
     EXPECT_EQ(err.str().find("terminal"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Proxy credential redaction
+//
+// When synthesis fails and the error context carries a proxy URL that contains
+// embedded credentials (user:password@host), the dispatcher must not expose the
+// raw credential string in its stderr output.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
+    // Inject an error whose context is a proxy URL with embedded credentials.
+    // The dispatcher must strip "secretpassword" before printing.
+    auto factory = [](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
+                    edge_tts::common::Error{
+                        edge_tts::common::ErrorCode::unsupported,
+                        "proxy connection failed",
+                        "http://user:secretpassword@proxy.internal:3128"});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    ParseResult r = make_text_result("hello");
+    r.arguments.proxy = "http://user:secretpassword@proxy.internal:3128";
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(err.str().find("secretpassword"), std::string::npos);
+    // The proxy host should still appear (not redacted) so the user knows which proxy.
+    EXPECT_NE(err.str().find("proxy.internal"), std::string::npos);
 }

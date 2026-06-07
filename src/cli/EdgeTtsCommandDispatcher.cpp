@@ -2,14 +2,54 @@
 #include "edge_tts/api/FileWriter.hpp"
 #include "edge_tts/cli/InputLoader.hpp"
 #include "edge_tts/cli/VoiceFormatter.hpp"
+#include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/subtitles/SubMaker.hpp"
 
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <string_view>
 #include <variant>
 
 namespace edge_tts::cli {
+
+// Strip user:password credentials from a URL before logging.
+// "http://user:pass@host:8080/path" → "http://[credentials]@host:8080/path"
+// URLs with no credentials are returned unchanged.
+static std::string redact_url_credentials(std::string_view url) {
+    const auto scheme_end = url.find("://");
+    if (scheme_end == std::string_view::npos)
+        return std::string(url);
+
+    const auto authority_start = scheme_end + 3;
+    const auto at_pos = url.find('@', authority_start);
+    if (at_pos == std::string_view::npos)
+        return std::string(url);
+
+    std::string out;
+    out.reserve(url.size());
+    out.append(url.data(), authority_start);
+    out.append("[credentials]");
+    out.append(url.data() + at_pos, url.size() - at_pos);
+    return out;
+}
+
+// Format an error for display: "[code] message (context: redacted_context)".
+// URL credentials in the context field are redacted before printing.
+static std::string format_error(const common::Error& e) {
+    const auto raw = e.what();
+    // If context looks like a URL (contains "://") redact any embedded credentials.
+    if (e.has_context() && e.context().find("://") != std::string_view::npos) {
+        const std::string safe_context = redact_url_credentials(e.context());
+        // Rebuild what() with the redacted context.
+        const std::string prefix = "[" + std::string(to_string(e.code())) + "] "
+                                   + std::string(e.message())
+                                   + " (context: ";
+        return prefix + safe_context + ")";
+    }
+    return raw;
+}
 
 EdgeTtsCommandDispatcher::EdgeTtsCommandDispatcher(
     VoiceServiceFn     voice_service,
@@ -65,7 +105,7 @@ int EdgeTtsCommandDispatcher::dispatch_list_voices() {
     // Reference: _print_voices() — fetch, sort, format, print to stdout.
     auto voices = voice_service_();
     if (!voices) {
-        err_ << "error: " << voices.error().what() << '\n';
+        err_ << "error: " << format_error(voices.error()) << '\n';
         return 1;
     }
 
@@ -83,7 +123,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     InputLoader loader;
     auto text = loader.load(args, in_);
     if (!text) {
-        err_ << "error: " << text.error().what() << '\n';
+        err_ << "error: " << format_error(text.error()) << '\n';
         return 1;
     }
 
@@ -143,7 +183,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     // 6. Stream all chunks.
     auto chunks = communicate.stream_sync();
     if (!chunks) {
-        err_ << "error: " << chunks.error().what() << '\n';
+        err_ << "error: " << format_error(chunks.error()) << '\n';
         return 1;
     }
 
@@ -165,7 +205,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         } else if (core::is_boundary(chunk)) {
             auto feed_r = submaker.feed(std::get<core::BoundaryChunk>(chunk));
             if (!feed_r) {
-                err_ << "error: " << feed_r.error().what() << '\n';
+                err_ << "error: " << format_error(feed_r.error()) << '\n';
                 return 1;
             }
         }
@@ -176,7 +216,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         api::FileWriter fw;
         auto r = fw.write_binary(*args.write_media, audio_bytes_for_file);
         if (!r) {
-            err_ << "error: " << r.error().what() << '\n';
+            err_ << "error: " << format_error(r.error()) << '\n';
             return 1;
         }
     }
@@ -186,7 +226,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     if (srt_to_file || srt_to_stderr) {
         auto srt = submaker.to_srt();
         if (!srt) {
-            err_ << "error: " << srt.error().what() << '\n';
+            err_ << "error: " << format_error(srt.error()) << '\n';
             return 1;
         }
 
@@ -194,7 +234,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
             api::FileWriter fw;
             auto r = fw.write_text_utf8(*args.write_subtitles, *srt);
             if (!r) {
-                err_ << "error: " << r.error().what() << '\n';
+                err_ << "error: " << format_error(r.error()) << '\n';
                 return 1;
             }
         } else {

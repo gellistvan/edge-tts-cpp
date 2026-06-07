@@ -19,6 +19,7 @@ build-coverage/
 build_verify/
 build-static-test/
 build-cfl/
+build-strict/
 build-sani-cfl/
 CLAUDE.md
 build-sani/

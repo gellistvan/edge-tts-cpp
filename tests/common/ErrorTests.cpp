@@ -23,6 +23,7 @@ TEST(ErrorCode, ToStringCoversAllCodes) {
         ErrorCode::unsupported,
         ErrorCode::external_process_failed,
         ErrorCode::service_error,
+        ErrorCode::drm_error,
     };
     for (auto c : codes) {
         EXPECT_FALSE(to_string(c).empty());
@@ -35,9 +36,10 @@ TEST(ErrorCode, ToStringDistinct) {
 }
 
 TEST(ErrorCode, ToStringKnownValue) {
-    EXPECT_EQ(to_string(ErrorCode::network_error), "network_error");
+    EXPECT_EQ(to_string(ErrorCode::network_error),    "network_error");
     EXPECT_EQ(to_string(ErrorCode::invalid_argument), "invalid_argument");
-    EXPECT_EQ(to_string(ErrorCode::service_error), "service_error");
+    EXPECT_EQ(to_string(ErrorCode::service_error),    "service_error");
+    EXPECT_EQ(to_string(ErrorCode::drm_error),        "drm_error");
 }
 
 // ---------------------------------------------------------------------------
@@ -87,4 +89,31 @@ TEST(Error, MoveConstruction) {
     EXPECT_TRUE(dst.code() == ErrorCode::service_error);
     EXPECT_EQ(dst.message(), "no audio");
     EXPECT_EQ(dst.context(), "chunk 3");
+}
+
+// ---------------------------------------------------------------------------
+// Context field carries diagnostic data (filename, HTTP status, etc.)
+// ---------------------------------------------------------------------------
+
+TEST(Error, FilePathPreservedInContext) {
+    // io_error should carry the file path so callers can identify the failing file.
+    Error e{ErrorCode::io_error, "Failed to open file for binary write",
+             "/var/data/output.mp3"};
+    EXPECT_EQ(e.context(), "/var/data/output.mp3");
+    EXPECT_NE(e.what().find("/var/data/output.mp3"), std::string::npos);
+}
+
+TEST(Error, HttpStatusPreservedInContext) {
+    // service_error should carry the HTTP status so callers can distinguish
+    // 403 (DRM) from 429 (rate-limit) from 503 (service unavailable).
+    Error e{ErrorCode::service_error, "Request failed", "403"};
+    EXPECT_EQ(e.context(), "403");
+    EXPECT_NE(e.what().find("403"), std::string::npos);
+}
+
+TEST(Error, DrmErrorCodeDistinctFromServiceError) {
+    // drm_error and service_error must map to different strings so callers
+    // that inspect error codes programmatically can distinguish them.
+    EXPECT_NE(to_string(ErrorCode::drm_error), to_string(ErrorCode::service_error));
+    EXPECT_NE(to_string(ErrorCode::drm_error), to_string(ErrorCode::network_error));
 }

@@ -460,7 +460,26 @@ TEST(SynthesisSession, MalformedIncomingPropagatesError) {
     const auto result = session.synthesize(TtsConfig::defaults(),
                                            std::span<const std::string>{chunks});
     EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::protocol_error);
     EXPECT_TRUE(fake.is_closed());
+}
+
+// ---------------------------------------------------------------------------
+// No audio before turn.end produces service_error
+// Reference: communicate.py raise NoAudioReceived(...)
+// ---------------------------------------------------------------------------
+
+TEST(SynthesisSession, NoAudioBeforeTurnEndProducesServiceError) {
+    FakeWebSocketClient fake;
+    // Push a turn.end without any preceding audio frame.
+    fake.push_incoming(make_turn_end());
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"Hello"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::service_error);
 }
 
 // ---------------------------------------------------------------------------
