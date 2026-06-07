@@ -137,6 +137,34 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
         target_compile_definitions(edge_tts_api_network_tests
             PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
     endif()
+
+    # ---------------------------------------------------------------------------
+    # Dedicated smoke-test target for real-service confidence checks.
+    # Labels: "network" and "integration" so ctest -L network selects them.
+    # ---------------------------------------------------------------------------
+    edge_tts_add_module_test(
+        NAME network_smoke
+        SOURCES
+            common/test_main.cpp
+            network/RealVoiceListTests.cpp
+            network/RealSynthesisSmokeTests.cpp
+        LIBRARIES edge_tts::api edge_tts::communication
+    )
+    if(TARGET ixwebsocket)
+        target_compile_definitions(edge_tts_network_smoke_tests
+            PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
+    endif()
+    set_tests_properties(edge_tts_network_smoke_tests
+        PROPERTIES LABELS "network;integration")
+endif()
+
+# Add network and integration labels to all other network test targets so that
+# "ctest -L network" selects the complete set of real-service tests.
+if(EDGE_TTS_ENABLE_NETWORK_TESTS)
+    set_tests_properties(edge_tts_communication_network_tests
+        PROPERTIES LABELS "network;integration")
+    set_tests_properties(edge_tts_api_network_tests
+        PROPERTIES LABELS "network;integration")
 endif()
 
 edge_tts_add_module_test(

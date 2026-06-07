@@ -32,7 +32,9 @@ ctest --test-dir build -R edge_tts_core_tests
 │  Real-network integration tests                                 │
 │  Gate 1 (compile): EDGE_TTS_ENABLE_NETWORK_TESTS=ON            │
 │  Gate 2 (runtime): EDGE_TTS_RUN_NETWORK_TESTS=1                │
-│  Targets: api_network, communication_network                    │
+│  Targets: api_network, communication_network,                   │
+│           network_smoke (tests/network/)                        │
+│  Labels: network, integration (select with ctest -L network)    │
 │  What: live Edge TTS service — voice listing, synthesis         │
 ├─────────────────────────────────────────────────────────────────┤
 │  Offline integration tests                                      │
@@ -161,30 +163,85 @@ the rules the checker enforces.
 
 ## Network tests
 
+**WARNING: Real-network tests contact Microsoft Edge TTS servers.**  Only enable
+in environments with reliable outbound TLS access to `speech.platform.bing.com`.
+Do not run in shared CI unless you accept the dependency on an external service.
+
 Network tests have two independent gates that must both be satisfied:
 
 1. **Compile-time gate** (`EDGE_TTS_ENABLE_NETWORK_TESTS=ON`) — builds the
    network test binaries.  Off by default so environments that must never touch
    the network never even compile these tests.
 2. **Run-time gate** (`EDGE_TTS_RUN_NETWORK_TESTS=1` env var) — each test
-   body checks this at startup and returns immediately when unset, so the test
-   binary still links and CTest shows a pass rather than a skip.
+   body calls `network_enabled()` as its first line and returns immediately when
+   the variable is absent, so the test binary still links and CTest shows a pass
+   rather than a skip.  Minigtest has no SKIP mechanism; early-return tests
+   show as PASSED, not SKIPPED — this is intentional.
 
-To run all network tests:
+### Running all network tests
 
 ```bash
 cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
 cmake --build build
+
+# Option A — run by CTest label (recommended)
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build -L network --output-on-failure
+
+# Option B — run by name pattern
 EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build -R network --output-on-failure
 ```
 
-Network test targets:
+### Running only the smoke tests
 
-| CTest target | Source file | What it verifies |
-|---|---|---|
-| `edge_tts_communication_network_tests` | `tests/communication/HttpClientNetworkTests.cpp` | `HttpClient` GET voices endpoint returns HTTP 200 with non-empty JSON; `VoiceService` parses non-empty voice list including `en-US-EmmaMultilingualNeural` |
-| `edge_tts_communication_network_tests` | `tests/communication/WebSocketClientNetworkTests.cpp` | `WebSocketClient` + `SynthesisSession` real synthesis: non-empty audio returned, `turn.end` received, word-boundary metadata received when enabled |
-| `edge_tts_api_network_tests` | `tests/api/CommunicateNetworkTests.cpp` | `api::Communicate` end-to-end: stream_sync() returns non-empty audio, save() writes non-empty MP3, SRT written when word-boundary enabled, bogus proxy causes transport failure |
+```bash
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build \
+    -R edge_tts_network_smoke_tests --output-on-failure
+```
+
+### Skip-gate verification
+
+All network test binaries can be run **without** `EDGE_TTS_RUN_NETWORK_TESTS` to
+verify the skip mechanism is working (they must pass immediately with no
+assertions fired):
+
+```bash
+# No env var — should print PASSED for every test (all skip cleanly):
+./build/tests/edge_tts_network_smoke_tests
+./build/tests/edge_tts_communication_network_tests
+./build/tests/edge_tts_api_network_tests
+```
+
+Each network test file includes explicit gate-verification tests
+(`RealVoiceListGate.*` and `RealSynthesisGate.*`) that always run and document
+the skip contract.
+
+### Network test targets and coverage
+
+| CTest target | Source files | Labels | What it verifies |
+|---|---|---|---|
+| `edge_tts_communication_network_tests` | `tests/communication/HttpClientNetworkTests.cpp`, `WebSocketClientNetworkTests.cpp` | `network`, `integration` | `HttpClient` GET voices returns HTTP 200; `VoiceService` parses non-empty list; `SynthesisSession` synthesis: non-empty audio, `turn.end`, word-boundary metadata |
+| `edge_tts_api_network_tests` | `tests/api/CommunicateNetworkTests.cpp` | `network`, `integration` | `api::Communicate` end-to-end: `stream_sync()` returns audio, `save()` writes non-empty MP3, SRT written with word-boundary mode, proxy option forwarded |
+| `edge_tts_network_smoke_tests` | `tests/network/RealVoiceListTests.cpp`, `RealSynthesisSmokeTests.cpp` | `network`, `integration` | **Dedicated smoke tests**: voice-list field completeness (ShortName, Gender, Locale); default voice presence; locale/gender filters; short-phrase synthesis; word-boundary chunks and SRT; alternative voice accepted; temp-file cleanup |
+
+### Dedicated smoke-test files (`tests/network/`)
+
+`tests/network/RealVoiceListTests.cpp` covers:
+- HTTP 200 from the voices endpoint
+- Non-empty voice list
+- Every voice has non-empty `ShortName`, `Gender` (not `unknown`), `Locale`, `Name`, `FriendlyName`
+- `en-US-EmmaMultilingualNeural` (reference default) is present with correct fields
+- Locale filter (`en-US`) returns only matching voices
+- Gender filters return consistent results
+- Multiple locales exist in the full list
+
+`tests/network/RealSynthesisSmokeTests.cpp` covers:
+- `SynthesisSession` + `WebSocketClient` direct synthesis: audio bytes, non-zero size, `turn.end` termination
+- Word-boundary mode: `BoundaryChunk` events, non-empty text, non-negative offsets
+- `api::Communicate` production constructor wires real stack (not a stub)
+- `save()` writes non-empty MP3
+- `save()` with word-boundary writes non-empty SRT
+- `stream_sync()` returns both `AudioChunk` and `BoundaryChunk`
+- Alternative voice (`en-GB-RyanNeural`) accepted by service
 
 Do not enable in CI unless the environment has reliable outbound TLS access to
 `speech.platform.bing.com`.

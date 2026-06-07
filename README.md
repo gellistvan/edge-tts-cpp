@@ -312,6 +312,37 @@ Run everything with:
 ctest --test-dir build --output-on-failure
 ```
 
+### Real-network smoke tests
+
+**WARNING: These tests contact Microsoft Edge TTS servers.  Do not run in CI without reliable outbound TLS access to `speech.platform.bing.com`.**
+
+Two dedicated smoke-test files in `tests/network/` verify that the real Edge service still accepts the generated headers, DRM tokens, and protocol frames:
+
+| File | Covers |
+|------|--------|
+| `tests/network/RealVoiceListTests.cpp` | HTTP 200, voice-list field completeness (ShortName, Gender, Locale), default voice present, locale/gender filters |
+| `tests/network/RealSynthesisSmokeTests.cpp` | Short-phrase synthesis, non-empty audio, `turn.end` termination, word-boundary metadata, MP3/SRT file output, alternative voice accepted |
+
+All network test targets carry CMake labels `network` and `integration`, enabling:
+
+```bash
+# Build (one-time, compile-time gate):
+cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
+cmake --build build
+
+# Run all real-network tests:
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build -L network --output-on-failure
+
+# Run only the dedicated smoke tests:
+EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build \
+    -R edge_tts_network_smoke_tests --output-on-failure
+
+# Verify skip behaviour (no env var — all pass via early return, no network calls):
+./build/tests/edge_tts_network_smoke_tests
+```
+
+When `EDGE_TTS_RUN_NETWORK_TESTS` is unset every network test returns early without firing any assertion (minigtest has no SKIP; early-return tests show as PASSED).  Normal `ctest` never contacts the network.
+
 ### Offline integration coverage
 
 `edge_tts_api_tests` includes deterministic end-to-end integration tests that exercise the complete path — `Communicate → SynthesisSession → EdgeProtocol → FakeWebSocketClient → FileWriter` — with no real network or live service required.  These tests always run in the default `ctest` suite and cover:
