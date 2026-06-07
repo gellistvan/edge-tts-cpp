@@ -1,22 +1,27 @@
 #include "edge_tts/communication/VoiceService.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
 #include "edge_tts/communication/FakeHttpClient.hpp"
 #include "edge_tts/core/Voice.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+#include <chrono>
 #include <string>
 #include <vector>
 
 using edge_tts::communication::VoiceFilter;
 using edge_tts::communication::VoiceService;
+using edge_tts::communication::EdgeTokenProvider;
 using edge_tts::communication::FakeHttpClient;
 using edge_tts::communication::default_edge_service_config;
 using edge_tts::core::VoiceGender;
 using edge_tts::serialization::VoiceJsonParser;
 using edge_tts::common::ErrorCode;
+using edge_tts::common::FixedClock;
 using edge_tts::common::IdGenerator;
 
 // ---------------------------------------------------------------------------
@@ -26,6 +31,13 @@ using edge_tts::common::IdGenerator;
 static const VoiceJsonParser k_parser{};
 static const auto k_cfg = default_edge_service_config();
 static IdGenerator k_ids{};
+
+// Fixed clock at a known UTC timestamp for deterministic token generation.
+// 2024-01-01 00:00:00 UTC (Unix time 1704067200)
+static FixedClock k_clock{
+    std::chrono::system_clock::from_time_t(1704067200)
+};
+static EdgeTokenProvider k_tokens{k_cfg, k_clock};
 
 // Minimal valid JSON for a single voice.
 static std::string one_voice_json(
@@ -63,7 +75,7 @@ static std::string wire_order_json() {
 TEST(VoiceService, SendsGetMethod) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->method, "GET");
 }
@@ -71,17 +83,77 @@ TEST(VoiceService, SendsGetMethod) {
 TEST(VoiceService, SendsToVoicesEndpoint) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
-    EXPECT_EQ(http.last_request()->url, k_cfg.voices_endpoint);
+    // URL must start with the configured voices_endpoint base.
+    EXPECT_EQ(http.last_request()->url.substr(0, k_cfg.voices_endpoint.size()),
+              k_cfg.voices_endpoint);
 }
 
 TEST(VoiceService, UrlContainsTrustedClientToken) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     EXPECT_NE(http.last_request()->url.find(k_cfg.trusted_client_token), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// DRM token appended to URL
+// Reference: voices.py f"{VOICE_LIST}&Sec-MS-GEC={DRM.generate_sec_ms_gec()}&..."
+// ---------------------------------------------------------------------------
+
+TEST(VoiceService, UrlContainsSecMsGecParam) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
+    (void)svc.list_voices();
+    EXPECT_NE(http.last_request()->url.find("Sec-MS-GEC="), std::string::npos);
+}
+
+TEST(VoiceService, UrlContainsSecMsGecVersionParam) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
+    (void)svc.list_voices();
+    EXPECT_NE(http.last_request()->url.find("Sec-MS-GEC-Version="), std::string::npos);
+}
+
+TEST(VoiceService, SecMsGecVersionMatchesConfig) {
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
+    (void)svc.list_voices();
+    EXPECT_NE(http.last_request()->url.find(k_cfg.sec_ms_gec_version), std::string::npos);
+}
+
+TEST(VoiceService, SecMsGecTokenIs64UpperHex) {
+    // The Sec-MS-GEC token is a SHA-256 digest: 64 uppercase hex chars.
+    FakeHttpClient http;
+    http.set_response({200, {}, "[]"});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+    (void)svc.list_voices();
+
+    const std::string& url = http.last_request()->url;
+    const std::string needle = "Sec-MS-GEC=";
+    const auto pos = url.find(needle);
+    EXPECT_NE(pos, std::string::npos);
+    if (pos == std::string::npos) return;
+
+    const auto token_start = pos + needle.size();
+    // Token ends at next '&' or end of string.
+    const auto amp = url.find('&', token_start);
+    const std::string token = (amp == std::string::npos)
+        ? url.substr(token_start)
+        : url.substr(token_start, amp - token_start);
+
+    EXPECT_EQ(token.size(), 64u);
+    for (char c : token) {
+        EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +163,7 @@ TEST(VoiceService, UrlContainsTrustedClientToken) {
 TEST(VoiceService, SetsUserAgentHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->headers.at("User-Agent"), k_cfg.user_agent);
 }
@@ -99,7 +171,7 @@ TEST(VoiceService, SetsUserAgentHeader) {
 TEST(VoiceService, SetsAcceptHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     // Reference: VOICE_HEADERS["Accept"] = "*/*"
     EXPECT_EQ(http.last_request()->headers.at("Accept"), "*/*");
@@ -108,7 +180,7 @@ TEST(VoiceService, SetsAcceptHeader) {
 TEST(VoiceService, SetsAcceptLanguageHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     EXPECT_EQ(http.last_request()->headers.at("Accept-Language"), "en-US,en;q=0.9");
 }
@@ -116,7 +188,7 @@ TEST(VoiceService, SetsAcceptLanguageHeader) {
 TEST(VoiceService, SetsAcceptEncodingHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     // Reference: BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"
     EXPECT_EQ(http.last_request()->headers.at("Accept-Encoding"), "gzip, deflate, br, zstd");
@@ -125,7 +197,7 @@ TEST(VoiceService, SetsAcceptEncodingHeader) {
 TEST(VoiceService, SetsCookieMuidHeader) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
     // Reference: DRM.headers_with_muid() → Cookie: muid=<32-upper-hex>;
     const auto& cookie = http.last_request()->headers.at("Cookie");
@@ -146,7 +218,7 @@ TEST(VoiceService, FreshMuidPerRequest) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
     IdGenerator fresh_ids;
-    VoiceService svc{k_cfg, http, k_parser, fresh_ids};
+    VoiceService svc{k_cfg, http, k_parser, fresh_ids, k_tokens};
 
     (void)svc.list_voices();
     const std::string first_cookie = http.last_request()->headers.at("Cookie");
@@ -164,7 +236,7 @@ TEST(VoiceService, FreshMuidPerRequest) {
 TEST(VoiceService, ParsesSuccessfulJson) {
     FakeHttpClient http;
     http.set_response({200, {}, one_voice_json("en-US-EmmaMultilingualNeural", "en-US")});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
@@ -176,7 +248,7 @@ TEST(VoiceService, ParsesSuccessfulJson) {
 TEST(VoiceService, EmptyArrayReturnsEmptyVector) {
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(r.value().empty());
@@ -187,9 +259,11 @@ TEST(VoiceService, EmptyArrayReturnsEmptyVector) {
 // ---------------------------------------------------------------------------
 
 TEST(VoiceService, Http403ReturnsServiceError) {
+    // Two consecutive 403s: first attempt and retry both fail → service_error.
     FakeHttpClient http;
-    http.set_response({403, {}, "Forbidden"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    http.push_response({403, {}, "Forbidden"});
+    http.push_response({403, {}, "Forbidden"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::service_error);
@@ -198,7 +272,7 @@ TEST(VoiceService, Http403ReturnsServiceError) {
 TEST(VoiceService, Http500ReturnsServiceError) {
     FakeHttpClient http;
     http.set_response({500, {}, "Internal Server Error"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::service_error);
@@ -207,11 +281,54 @@ TEST(VoiceService, Http500ReturnsServiceError) {
 TEST(VoiceService, Non200StatusCodeInErrorContext) {
     FakeHttpClient http;
     http.set_response({503, {}, ""});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     // Context should contain the status code
     EXPECT_NE(r.error().context().find("503"), std::string_view::npos);
+}
+
+// ---------------------------------------------------------------------------
+// 403 retry (reference: voices.py try/except ClientResponseError(status=403))
+// ---------------------------------------------------------------------------
+
+TEST(VoiceService, Http403FollowedBy200Succeeds) {
+    // First request gets 403 (DRM token rejected); retry gets 200 → success.
+    // Reference: voices.py list_voices() retries exactly once on 403.
+    FakeHttpClient http;
+    http.push_response({403, {}, "Forbidden"});                          // first attempt
+    http.push_response({200, {}, one_voice_json("en-US-X", "en-US")});  // retry
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    const auto r = svc.list_voices();
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().size(), 1u);
+    EXPECT_EQ(http.send_count(), 2);
+}
+
+TEST(VoiceService, Http403RetrySendsExactlyTwoRequests) {
+    FakeHttpClient http;
+    http.push_response({403, {}, "Forbidden"});
+    http.push_response({403, {}, "Forbidden"});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    (void)svc.list_voices();
+    EXPECT_EQ(http.send_count(), 2);
+}
+
+TEST(VoiceService, Http500DoesNotRetry) {
+    // 500 is not a DRM error; only 403 triggers a retry.
+    FakeHttpClient http;
+    http.set_response({500, {}, "Server Error"});
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
+    (void)svc.list_voices();
+    EXPECT_EQ(http.send_count(), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +338,7 @@ TEST(VoiceService, Non200StatusCodeInErrorContext) {
 TEST(VoiceService, HttpNetworkErrorPropagates) {
     FakeHttpClient http;
     http.set_error({ErrorCode::network_error, "connection refused"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::network_error);
@@ -230,7 +347,7 @@ TEST(VoiceService, HttpNetworkErrorPropagates) {
 TEST(VoiceService, HttpTimeoutPropagates) {
     FakeHttpClient http;
     http.set_error({ErrorCode::timeout, "read timeout"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::timeout);
@@ -243,7 +360,7 @@ TEST(VoiceService, HttpTimeoutPropagates) {
 TEST(VoiceService, MalformedJsonPropagatesParseError) {
     FakeHttpClient http;
     http.set_response({200, {}, "not valid json {{{"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
@@ -254,7 +371,7 @@ TEST(VoiceService, MissingRequiredFieldPropagatesParseError) {
     FakeHttpClient http;
     http.set_response({200, {},
         R"json([{"Name":"N","ShortName":"en-US-X","Locale":"en-US","SuggestedCodec":"mp3","FriendlyName":"F","Status":"GA"}])json"});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     const auto r = svc.list_voices();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
@@ -267,7 +384,7 @@ TEST(VoiceService, MissingRequiredFieldPropagatesParseError) {
 TEST(VoiceService, FilterByLocale) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.locale = "zh-CN";
@@ -281,7 +398,7 @@ TEST(VoiceService, FilterByLocale) {
 TEST(VoiceService, FilterByLocaleNoMatch) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.locale = "ja-JP";
@@ -303,7 +420,7 @@ TEST(VoiceService, FilterByGenderFemale) {
       {"Name":"N2","ShortName":"en-GB-RyanNeural","Gender":"Male","Locale":"en-GB","SuggestedCodec":"mp3","FriendlyName":"F2","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.gender = VoiceGender::female;
@@ -321,7 +438,7 @@ TEST(VoiceService, FilterByGenderMale) {
       {"Name":"N2","ShortName":"en-GB-RyanNeural","Gender":"Male","Locale":"en-GB","SuggestedCodec":"mp3","FriendlyName":"F2","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.gender = VoiceGender::male;
@@ -339,7 +456,7 @@ TEST(VoiceService, FilterByGenderMale) {
 TEST(VoiceService, FilterByShortName) {
     FakeHttpClient http;
     http.set_response({200, {}, two_voices_json()});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.short_name = "en-US-EmmaMultilingualNeural";
@@ -362,7 +479,7 @@ TEST(VoiceService, FilterByLocaleAndGender) {
       {"Name":"N3","ShortName":"zh-CN-XiaoxiaoNeural","Gender":"Female","Locale":"zh-CN","SuggestedCodec":"mp3","FriendlyName":"F3","Status":"GA","VoiceTag":{"ContentCategories":[],"VoicePersonalities":[]}}
     ])json";
     http.set_response({200, {}, json});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     VoiceFilter filter;
     filter.locale = "en-US";
@@ -385,7 +502,7 @@ TEST(VoiceService, FilterByLocaleAndGender) {
 TEST(VoiceService, WireOrderPreserved) {
     FakeHttpClient http;
     http.set_response({200, {}, wire_order_json()});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());
@@ -402,7 +519,7 @@ TEST(VoiceService, NoImplicitSortingApplied) {
     // The reference sorts only in _print_voices() for CLI display.
     FakeHttpClient http;
     http.set_response({200, {}, wire_order_json()});
-    VoiceService svc{k_cfg, http, k_parser, k_ids};
+    VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
 
     const auto r = svc.list_voices();
     EXPECT_TRUE(r.has_value());

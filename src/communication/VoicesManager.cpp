@@ -1,3 +1,8 @@
+// VoicesManager and HttpVoiceService are both deprecated. Suppress the
+// self-referential deprecation warning throughout this translation unit.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include "edge_tts/communication/VoicesManager.hpp"
 
 #include <algorithm>
@@ -20,3 +25,5 @@ std::vector<core::Voice> VoicesManager::find_by_locale(const std::string& locale
 }
 
 } // namespace edge_tts::communication
+
+#pragma GCC diagnostic pop

@@ -18,6 +18,8 @@
 #include "edge_tts/communication/HttpClient.hpp"
 #include "edge_tts/communication/VoiceService.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 #include "vendor/minigtest/minigtest.hpp"
@@ -27,12 +29,17 @@
 
 using edge_tts::communication::HttpClient;
 using edge_tts::communication::HttpClientOptions;
+using edge_tts::communication::EdgeTokenProvider;
 using edge_tts::communication::VoiceService;
 using edge_tts::communication::default_edge_service_config;
 using edge_tts::serialization::VoiceJsonParser;
 using edge_tts::common::IdGenerator;
+using edge_tts::common::SystemClock;
 
-static IdGenerator k_net_ids{};
+static IdGenerator   k_net_ids{};
+static SystemClock   k_net_clock{};
+static auto          k_net_cfg    = default_edge_service_config();
+static EdgeTokenProvider k_net_tokens{k_net_cfg, k_net_clock};
 
 // Run-time gate: returns true when EDGE_TTS_RUN_NETWORK_TESTS is set.
 static bool network_enabled() {
@@ -94,8 +101,7 @@ TEST(HttpClientNetwork, VoiceServiceParsesNonEmptyVoiceList) {
     if (!network_enabled()) return;
     HttpClient       client;
     VoiceJsonParser  parser;
-    auto             cfg = default_edge_service_config();
-    VoiceService svc{cfg, client, parser, k_net_ids};
+    VoiceService svc{k_net_cfg, client, parser, k_net_ids, k_net_tokens};
 
     auto voices = svc.list_voices();
     EXPECT_TRUE(voices.has_value());
@@ -107,8 +113,7 @@ TEST(HttpClientNetwork, VoiceServiceReturnsEnUsVoices) {
     if (!network_enabled()) return;
     HttpClient      client;
     VoiceJsonParser parser;
-    auto            cfg = default_edge_service_config();
-    VoiceService svc{cfg, client, parser, k_net_ids};
+    VoiceService svc{k_net_cfg, client, parser, k_net_ids, k_net_tokens};
 
     edge_tts::communication::VoiceFilter filter;
     filter.locale = "en-US";
@@ -123,8 +128,7 @@ TEST(HttpClientNetwork, VoiceServiceIncludesEmmaVoice) {
     // Reference: constants.py DEFAULT_VOICE = "en-US-EmmaMultilingualNeural"
     HttpClient      client;
     VoiceJsonParser parser;
-    auto            cfg = default_edge_service_config();
-    VoiceService svc{cfg, client, parser, k_net_ids};
+    VoiceService svc{k_net_cfg, client, parser, k_net_ids, k_net_tokens};
 
     edge_tts::communication::VoiceFilter filter;
     filter.short_name = "en-US-EmmaMultilingualNeural";

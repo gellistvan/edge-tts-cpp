@@ -1,18 +1,25 @@
 #include "edge_tts/communication/EdgeRequestHeaders.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <string>
 
 using edge_tts::communication::build_websocket_headers;
 using edge_tts::communication::build_voice_list_headers;
+using edge_tts::communication::EdgeTokenProvider;
 using edge_tts::communication::default_edge_service_config;
+using edge_tts::common::FixedClock;
 using edge_tts::common::IdGenerator;
 
-static const auto k_cfg = default_edge_service_config();
+static const auto k_cfg    = default_edge_service_config();
+static FixedClock k_clock  {std::chrono::system_clock::from_time_t(1704067200)};
+static EdgeTokenProvider k_tokens{k_cfg, k_clock};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,7 +276,7 @@ TEST(EdgeRequestHeaders, VoiceServiceSendsCookieHeader) {
     edge_tts::serialization::VoiceJsonParser parser;
     IdGenerator ids;
 
-    edge_tts::communication::VoiceService svc{k_cfg, http, parser, ids};
+    edge_tts::communication::VoiceService svc{k_cfg, http, parser, ids, k_tokens};
     (void)svc.list_voices();
 
     ASSERT_TRUE(http.last_request().has_value());
@@ -294,7 +301,7 @@ TEST(EdgeRequestHeaders, VoiceServiceMuidDiffersPerRequest) {
     edge_tts::serialization::VoiceJsonParser parser;
     IdGenerator ids;
 
-    edge_tts::communication::VoiceService svc{k_cfg, http, parser, ids};
+    edge_tts::communication::VoiceService svc{k_cfg, http, parser, ids, k_tokens};
 
     (void)svc.list_voices();
     const std::string cookie1 = http.last_request()->headers.at("Cookie");

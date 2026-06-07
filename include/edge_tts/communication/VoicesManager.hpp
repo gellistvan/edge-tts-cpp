@@ -1,6 +1,11 @@
 #pragma once
 
+// Suppress deprecation warnings from HttpVoiceService used within this legacy wrapper.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "edge_tts/communication/HttpVoiceService.hpp"
+#pragma GCC diagnostic pop
+
 #include "edge_tts/core/Voice.hpp"
 
 #include <string>
@@ -8,7 +13,8 @@
 
 namespace edge_tts::communication {
 
-class VoicesManager final {
+class [[deprecated("Use VoiceService with EdgeTokenProvider injection instead")]]
+VoicesManager final {
 public:
     explicit VoicesManager(HttpVoiceService service = {});
 

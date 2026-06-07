@@ -5,7 +5,13 @@ namespace edge_tts::communication {
 void FakeHttpClient::set_response(HttpResponse response) noexcept
 {
     response_ = std::move(response);
+    while (!response_queue_.empty()) response_queue_.pop();
     error_.reset();
+}
+
+void FakeHttpClient::push_response(HttpResponse response)
+{
+    response_queue_.push(std::move(response));
 }
 
 void FakeHttpClient::set_error(common::Error error) noexcept
@@ -35,6 +41,12 @@ common::Result<HttpResponse> FakeHttpClient::send(const HttpRequest& request)
 
     if (error_.has_value())
         return common::Result<HttpResponse>::fail(*error_);
+
+    if (!response_queue_.empty()) {
+        HttpResponse resp = std::move(response_queue_.front());
+        response_queue_.pop();
+        return common::Result<HttpResponse>::ok(std::move(resp));
+    }
 
     return common::Result<HttpResponse>::ok(response_);
 }

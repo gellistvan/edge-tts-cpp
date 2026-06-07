@@ -29,8 +29,10 @@
 // Reference: reference/edge-tts/src/edge_tts/voices.py list_voices()
 
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
 #include "edge_tts/communication/HttpClient.hpp"
 #include "edge_tts/communication/VoiceService.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/core/Voice.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
@@ -40,11 +42,13 @@
 #include <string>
 #include <vector>
 
+using edge_tts::communication::EdgeTokenProvider;
 using edge_tts::communication::HttpClient;
 using edge_tts::communication::VoiceFilter;
 using edge_tts::communication::VoiceService;
 using edge_tts::communication::default_edge_service_config;
 using edge_tts::common::IdGenerator;
+using edge_tts::common::SystemClock;
 using edge_tts::core::Voice;
 using edge_tts::core::VoiceGender;
 using edge_tts::serialization::VoiceJsonParser;
@@ -59,12 +63,15 @@ static bool network_enabled() {
 }
 
 // Shared fixtures — built once per process.
+static SystemClock      g_clock;
 static IdGenerator      g_ids;
 static HttpClient       g_http;
 static VoiceJsonParser  g_parser;
+static auto             g_cfg     = default_edge_service_config();
+static EdgeTokenProvider g_tokens{g_cfg, g_clock};
 
 static VoiceService make_svc() {
-    return VoiceService{default_edge_service_config(), g_http, g_parser, g_ids};
+    return VoiceService{g_cfg, g_http, g_parser, g_ids, g_tokens};
 }
 
 // ---------------------------------------------------------------------------

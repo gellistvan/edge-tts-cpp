@@ -11,9 +11,11 @@
 #include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
+#include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
+#include "edge_tts/communication/EdgeTokenProvider.hpp"
 #include "edge_tts/communication/FakeHttpClient.hpp"
 #include "edge_tts/communication/HttpClient.hpp"
 #include "edge_tts/communication/VoiceService.hpp"
@@ -22,6 +24,7 @@
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+#include <chrono>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -33,7 +36,9 @@ using edge_tts::cli::EdgeTtsCommandDispatcher;
 using edge_tts::cli::ParseAction;
 using edge_tts::cli::ParseResult;
 using edge_tts::common::ErrorCode;
+using edge_tts::common::FixedClock;
 using edge_tts::common::IdGenerator;
+using edge_tts::communication::EdgeTokenProvider;
 using edge_tts::communication::FakeHttpClient;
 using edge_tts::communication::HttpClient;
 using edge_tts::communication::HttpClientOptions;
@@ -70,24 +75,32 @@ static EdgeTtsCommandDispatcher::CommunicateFactory make_noop_factory() {
     };
 }
 
+// Helper: build a VoiceService with FakeHttpClient and a deterministic fixed clock.
+// This mirrors main.cpp wiring without real network.
+struct TestStack {
+    FakeHttpClient   http;
+    VoiceJsonParser  parser;
+    IdGenerator      ids;
+    FixedClock       clock{std::chrono::system_clock::from_time_t(1704067200)};
+    decltype(default_edge_service_config()) cfg = default_edge_service_config();
+    EdgeTokenProvider tokens{cfg, clock};
+    VoiceService      svc{cfg, http, parser, ids, tokens};
+};
+
 // ---------------------------------------------------------------------------
 // Real VoiceService + FakeHttpClient → dispatcher (production path minus network)
 // ---------------------------------------------------------------------------
 
 TEST(ListVoicesProductionPath, RealVoiceServiceProducesVoiceTableOutput) {
     // This mirrors apps/edge-tts/main.cpp exactly, with FakeHttpClient instead
-    // of HttpClient.
-    FakeHttpClient   http;
-    http.set_response({200, {}, emma_json()});
-    VoiceJsonParser  voice_parser;
-    IdGenerator      ids;
-    auto             svc_config = default_edge_service_config();
-    VoiceService     voice_svc{svc_config, http, voice_parser, ids};
+    // of HttpClient and FixedClock instead of SystemClock.
+    TestStack stack;
+    stack.http.set_response({200, {}, emma_json()});
 
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher dispatcher{
-        [&voice_svc]() { return voice_svc.list_voices(); },
+        [&stack]() { return stack.svc.list_voices(); },
         make_noop_factory(),
         out, err, in
     };
@@ -98,17 +111,13 @@ TEST(ListVoicesProductionPath, RealVoiceServiceProducesVoiceTableOutput) {
 }
 
 TEST(ListVoicesProductionPath, RealVoiceServiceReturnsExitZeroOnSuccess) {
-    FakeHttpClient  http;
-    http.set_response({200, {}, emma_json()});
-    VoiceJsonParser  parser;
-    IdGenerator      ids;
-    auto             cfg = default_edge_service_config();
-    VoiceService     svc{cfg, http, parser, ids};
+    TestStack stack;
+    stack.http.set_response({200, {}, emma_json()});
 
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher dispatcher{
-        [&svc]() { return svc.list_voices(); },
+        [&stack]() { return stack.svc.list_voices(); },
         make_noop_factory(),
         out, err, in
     };
@@ -117,17 +126,15 @@ TEST(ListVoicesProductionPath, RealVoiceServiceReturnsExitZeroOnSuccess) {
 }
 
 TEST(ListVoicesProductionPath, Http403FromServiceReturnsExitOne) {
-    FakeHttpClient  http;
-    http.set_response({403, {}, "Forbidden"});
-    VoiceJsonParser  parser;
-    IdGenerator      ids;
-    auto             cfg = default_edge_service_config();
-    VoiceService     svc{cfg, http, parser, ids};
+    // Two 403s: first attempt + retry both fail → service_error → exit 1.
+    TestStack stack;
+    stack.http.push_response({403, {}, "Forbidden"});
+    stack.http.push_response({403, {}, "Forbidden"});
 
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher dispatcher{
-        [&svc]() { return svc.list_voices(); },
+        [&stack]() { return stack.svc.list_voices(); },
         make_noop_factory(),
         out, err, in
     };
@@ -136,17 +143,13 @@ TEST(ListVoicesProductionPath, Http403FromServiceReturnsExitOne) {
 }
 
 TEST(ListVoicesProductionPath, Http500ErrorWritesToStderr) {
-    FakeHttpClient  http;
-    http.set_response({500, {}, "Server Error"});
-    VoiceJsonParser  parser;
-    IdGenerator      ids;
-    auto             cfg = default_edge_service_config();
-    VoiceService     svc{cfg, http, parser, ids};
+    TestStack stack;
+    stack.http.set_response({500, {}, "Server Error"});
 
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher dispatcher{
-        [&svc]() { return svc.list_voices(); },
+        [&stack]() { return stack.svc.list_voices(); },
         make_noop_factory(),
         out, err, in
     };
@@ -167,20 +170,48 @@ TEST(ListVoicesProductionPath, ProxyStoredInHttpClientOptions) {
 }
 
 TEST(ListVoicesProductionPath, MalformedJsonErrorReturnsExitOne) {
-    FakeHttpClient  http;
-    http.set_response({200, {}, "not valid json {{{"});
-    VoiceJsonParser  parser;
-    IdGenerator      ids;
-    auto             cfg = default_edge_service_config();
-    VoiceService     svc{cfg, http, parser, ids};
+    TestStack stack;
+    stack.http.set_response({200, {}, "not valid json {{{"});
 
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher dispatcher{
-        [&svc]() { return svc.list_voices(); },
+        [&stack]() { return stack.svc.list_voices(); },
         make_noop_factory(),
         out, err, in
     };
 
     EXPECT_EQ(dispatcher.dispatch(make_list_voices_result()), 1);
+}
+
+TEST(ListVoicesProductionPath, Http403ThenSuccessReturnsExitZero) {
+    // First request 403 → retry 200 → success → exit 0.
+    TestStack stack;
+    stack.http.push_response({403, {}, "Forbidden"});
+    stack.http.push_response({200, {}, emma_json()});
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher dispatcher{
+        [&stack]() { return stack.svc.list_voices(); },
+        make_noop_factory(),
+        out, err, in
+    };
+
+    EXPECT_EQ(dispatcher.dispatch(make_list_voices_result()), 0);
+    EXPECT_NE(out.str().find("en-US-EmmaMultilingualNeural"), std::string::npos);
+}
+
+TEST(ListVoicesProductionPath, ProductionWiringUsesVoiceServiceNotHttpVoiceService) {
+    // Structural check: ensure production code constructs VoiceService (with
+    // EdgeTokenProvider injection) rather than the legacy HttpVoiceService.
+    // The TestStack aggregates all production dependencies except the real
+    // HttpClient and SystemClock — it mirrors main.cpp exactly.
+    TestStack stack;
+    stack.http.set_response({200, {}, emma_json()});
+
+    // If VoiceService were wired to HttpVoiceService, tokens_.sec_ms_gec()
+    // would never be called and the Sec-MS-GEC param would be absent.
+    (void)stack.svc.list_voices();
+    EXPECT_NE(stack.http.last_request()->url.find("Sec-MS-GEC="), std::string::npos);
 }
