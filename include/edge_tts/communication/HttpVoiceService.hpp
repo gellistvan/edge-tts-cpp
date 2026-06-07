@@ -1,11 +1,8 @@
 #pragma once
 
-// SCHEDULED FOR REMOVAL.
-//
-// HttpVoiceService is an empty stub that predates VoiceService.  Production
-// code now uses communication::VoiceService (which takes IHttpClient,
-// VoiceJsonParser, and IdGenerator) via apps/edge-tts/main.cpp.
-// HttpVoiceService has no callers and will be deleted in a future cleanup.
+// Legacy type predating VoiceService. Production code uses VoiceService
+// (injected with IHttpClient, VoiceJsonParser, IdGenerator). HttpVoiceService
+// has no production callers and exists only for backward compatibility.
 
 #include "edge_tts/core/Voice.hpp"
 
@@ -13,7 +10,6 @@
 
 namespace edge_tts::communication {
 
-// Scheduled for removal — VoicesManager is the only caller and is itself unused.
 class HttpVoiceService final {
 public:
     [[nodiscard]] std::vector<core::Voice> list_voices() const;

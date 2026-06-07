@@ -356,16 +356,16 @@ See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy and [`doc
 
 ## Dependency policy
 
-Third-party dependencies should live in `submodules/` and be wired from `cmake/Dependencies.cmake`.
+Third-party dependencies live in `submodules/` and are wired from `cmake/Dependencies.cmake`.
 
-Planned dependencies:
+Integrated dependencies:
 
-- `googletest` for tests.
-- `CLI11` for CLI parsing.
-- `nlohmann/json` for voice list and protocol JSON.
-- a lightweight WebSocket/HTTP dependency, likely `ixwebsocket`.
+- `nlohmann/json` (`submodules/json`) — voice-list and protocol JSON parsing.
+- `ixwebsocket` (`submodules/ixwebsocket`) — WebSocket + HTTP client for synthesis and voice listing.
 
-Boost is intentionally not required by this skeleton.
+Not used: `googletest` (replaced by `minigtest`, a self-contained single-header), `CLI11` (replaced by a hand-rolled parser that mirrors Python `argparse` behavior exactly).
+
+Boost is intentionally not required.
 
 ## FFmpeg policy
 

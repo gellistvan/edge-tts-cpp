@@ -56,7 +56,19 @@ def read(path: pathlib.Path) -> str:
 
 
 def _is_network_test_file(path: pathlib.Path) -> bool:
-    return "Network" in path.name and path.name.endswith(".cpp")
+    if not path.name.endswith(".cpp"):
+        return False
+    # Conventional name-based marker
+    if "Network" in path.name:
+        return True
+    # All files living under tests/network/ are network-only regardless of name
+    try:
+        rel = path.relative_to(TESTS_DIR)
+        if rel.parts[0] == "network":
+            return True
+    except ValueError:
+        pass
+    return False
 
 
 def _is_normal_test_file(path: pathlib.Path) -> bool:
@@ -261,23 +273,27 @@ def test_network_gate_files_have_network_in_name() -> None:
             continue
         if rel.parts[0] in ("tools", "vendor"):
             continue
+        # Files already identified as network test files by location (tests/network/)
+        # or name (*Network*.cpp) are compliant — skip them.
+        if _is_network_test_file(cpp):
+            continue
         # Check only code — comments may legitimately reference the env var names.
         code = _strip_comments(read(cpp))
         if (
             "EDGE_TTS_RUN_NETWORK_TESTS" in code
             or "network_enabled()" in code
-        ) and "Network" not in cpp.name:
+        ):
             violations.append(str(cpp.relative_to(REPO_ROOT)))
 
     if violations:
         fail(
             "These test files use EDGE_TTS_RUN_NETWORK_TESTS / network_enabled() "
-            "but are NOT named *Network*.cpp.\n"
+            "but are NOT named *Network*.cpp and are NOT in tests/network/.\n"
             "They will be compiled and run unconditionally, bypassing the gate.\n"
-            "Rename them to *NetworkTests.cpp or move the gated code.\n\n"
+            "Rename them to *NetworkTests.cpp or move them to tests/network/.\n\n"
             "Violations:\n  " + "\n  ".join(violations)
         )
-    ok("All files using EDGE_TTS_RUN_NETWORK_TESTS are named *Network*.cpp")
+    ok("All files using EDGE_TTS_RUN_NETWORK_TESTS are named *Network*.cpp or live in tests/network/")
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +360,11 @@ def test_cmake_gates_network_test_binaries() -> None:
 def test_network_tests_check_runtime_gate() -> None:
     violations: list[str] = []
 
-    for cpp in sorted(TESTS_DIR.rglob("*NetworkTests.cpp")):
+    network_files = sorted(
+        set(TESTS_DIR.rglob("*NetworkTests.cpp")) |
+        set(TESTS_DIR.glob("network/*.cpp"))
+    )
+    for cpp in network_files:
         content = read(cpp)
         for lineno, block in _extract_test_blocks(content):
             # Grab the first 6 non-empty, non-brace-only lines after the opening {

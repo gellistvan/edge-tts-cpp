@@ -136,14 +136,14 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 | License | BSD 3-Clause (`submodules/ixwebsocket/LICENSE`) |
 | CMake target | `ixwebsocket` |
 | Required when | `EDGE_TTS_REQUIRE_NETWORKING=ON` (default when `EDGE_TTS_BUILD_APPS=ON`) |
-| Optional when | `EDGE_TTS_REQUIRE_NETWORKING=OFF` — stub `FakeHttpClient`/`FakeWebSocketClient` compile without ixwebsocket |
+| Optional when | `EDGE_TTS_REQUIRE_NETWORKING=OFF` — `FakeHttpClient`/`FakeWebSocketClient` (test doubles) compile without ixwebsocket |
 
 **Why ixwebsocket over alternatives:**
 
 | Criterion | ixwebsocket | cpr | libcurl |
 |-----------|-------------|-----|---------|
 | Single submodule for both HTTP and WebSocket | ✓ | ✗ (HTTP only) | ✗ (HTTP only) |
-| Already planned in this project | ✓ | ✗ | ✗ |
+| Already integrated in this project | ✓ | ✗ | ✗ |
 | Header/source library; no OS install required | ✓ | ✗ (needs curl) | ✗ (system install) |
 | Aligns with Python reference (aiohttp = HTTP+WS) | ✓ | partial | partial |
 
@@ -259,9 +259,11 @@ cmake -S . -B build -DUSE_TLS=ON -DUSE_MBED_TLS=ON
 
 ---
 
-## Planned / Not Yet Integrated
+## Not Integrated / Not Planned
 
-| Library | Submodule path | Purpose | Status |
-|---------|----------------|---------|--------|
-| CLI11 | `submodules/CLI11` | Command-line argument parsing for `edge-tts` / `edge-playback` | Not yet added |
-| googletest | `submodules/googletest` | Alternative test runner (optional, currently unused) | Conditional in `Dependencies.cmake` |
+The following libraries were considered during the initial design and are **not** used:
+
+| Library | Reason not used |
+|---------|----------------|
+| CLI11 | Hand-rolled argument parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) matches the Python `argparse` behavior exactly; a third-party CLI framework is not needed. |
+| googletest | Replaced by `minigtest` — a self-contained GTest-compatible single-header at `tests/vendor/minigtest/minigtest.hpp`. No external test framework installation is required. |

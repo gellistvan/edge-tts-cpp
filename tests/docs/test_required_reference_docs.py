@@ -5,6 +5,8 @@ Checks:
   1. docs/REFERENCE_BEHAVIOR.md exists.
   2. All required section headings are present.
   3. At least five distinct reference/src/edge_tts/... file paths are mentioned.
+  4. Stale implementation phrases are absent from doc files.
+  5. Key CMake option names are mentioned in DEPENDENCIES.md and TESTING.md.
 
 Exit code 0 on success, non-zero on failure.
 """
@@ -46,6 +48,28 @@ REFERENCE_PATH_PATTERN = re.compile(
     r"reference/(?:edge-tts/)?src/edge_tts/[^\s`\)\"']+"
 )
 
+# ---------------------------------------------------------------------------
+# Stale phrases that must NOT appear in doc files under docs/
+# (phrase, description for error message)
+# ---------------------------------------------------------------------------
+STALE_PHRASES = [
+    ("WebSocket and real networking stubs remain", "stale communication-module status"),
+    ("production synthesis is stubbed", "stale production-stub claim"),
+    ("FakeHttpClient is used by production app", "stale FakeHttpClient production claim"),
+]
+
+# ---------------------------------------------------------------------------
+# Required CMake variable mentions in specific doc files
+# ---------------------------------------------------------------------------
+REQUIRED_IN_DEPS_MD = [
+    "EDGE_TTS_FETCH_DEPS",
+    "EDGE_TTS_REQUIRE_NETWORKING",
+]
+REQUIRED_IN_TESTING_MD = [
+    "EDGE_TTS_ENABLE_NETWORK_TESTS",
+    "EDGE_TTS_RUN_NETWORK_TESTS",
+]
+
 
 def fail(message: str) -> None:
     print(f"FAIL: {message}", file=sys.stderr)
@@ -76,9 +100,36 @@ def main() -> None:
             f"found {len(found_paths)}: {sorted(found_paths)}"
         )
 
+    # 4. Stale-phrase check across all *.md files under docs/
+    docs_dir = REPO_ROOT / "docs"
+    for md_file in sorted(docs_dir.glob("*.md")):
+        file_content = md_file.read_text(encoding="utf-8")
+        for phrase, description in STALE_PHRASES:
+            if phrase in file_content:
+                fail(
+                    f"Stale phrase found in {md_file.name} ({description}):\n"
+                    f"  '{phrase}'"
+                )
+
+    # 5. Required CMake variable mentions
+    deps_md = REPO_ROOT / "docs" / "DEPENDENCIES.md"
+    if deps_md.exists():
+        deps_content = deps_md.read_text(encoding="utf-8")
+        for var in REQUIRED_IN_DEPS_MD:
+            if var not in deps_content:
+                fail(f"DEPENDENCIES.md does not mention CMake option '{var}'")
+
+    testing_md = REPO_ROOT / "docs" / "TESTING.md"
+    if testing_md.exists():
+        testing_content = testing_md.read_text(encoding="utf-8")
+        for var in REQUIRED_IN_TESTING_MD:
+            if var not in testing_content:
+                fail(f"TESTING.md does not mention CMake/env option '{var}'")
+
     print(
         f"OK: REFERENCE_BEHAVIOR.md found, {len(REQUIRED_HEADINGS)} headings present, "
-        f"{len(found_paths)} reference paths mentioned."
+        f"{len(found_paths)} reference paths mentioned. "
+        f"No stale phrases found. Required CMake options documented."
     )
 
 

@@ -5,6 +5,9 @@ Checks:
   1. docs/CLI_COMPATIBILITY.md exists.
   2. Both 'edge-tts' and 'edge-playback' are mentioned.
   3. At least ten option rows (table rows containing '|') are present.
+  4. Stale phrases are absent.
+  5. Proxy support status is explicitly documented.
+  6. Platform (Windows) support status is explicitly documented.
 
 Exit code 0 on success, non-zero on failure.
 """
@@ -17,6 +20,20 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 CLI_COMPAT = REPO_ROOT / "docs" / "CLI_COMPATIBILITY.md"
 
 MIN_OPTION_ROWS = 10
+
+# Stale phrases that must NOT appear in CLI_COMPATIBILITY.md
+STALE_PHRASES = [
+    ("planned C++ `edge-tts-cpp` CLI", "stale 'planned CLI' reference — CLI is implemented"),
+    ("C++ planned behavior", "stale column header — should be 'C++ behavior'"),
+    ("WebSocket transport not yet implemented", "stale transport status"),
+]
+
+# Phrases that MUST appear (proxy status and platform support explicitly documented)
+REQUIRED_PHRASES = [
+    ("unsupported", "proxy or Windows support must be marked 'unsupported'"),
+    ("Windows", "platform support (Windows) must be mentioned"),
+    ("proxy", "proxy support status must be mentioned"),
+]
 
 
 def fail(message: str) -> None:
@@ -48,9 +65,26 @@ def main() -> None:
             f"found {len(option_rows)}"
         )
 
+    # 4. Stale-phrase check
+    for phrase, description in STALE_PHRASES:
+        if phrase in content:
+            fail(
+                f"Stale phrase found in CLI_COMPATIBILITY.md ({description}):\n"
+                f"  '{phrase}'"
+            )
+
+    # 5. Required content check (proxy status, platform support)
+    for phrase, description in REQUIRED_PHRASES:
+        if phrase.lower() not in content.lower():
+            fail(
+                f"Required content missing from CLI_COMPATIBILITY.md ({description}):\n"
+                f"  '{phrase}'"
+            )
+
     print(
         f"OK: CLI_COMPATIBILITY.md found, both commands mentioned, "
-        f"{len(option_rows)} option rows present."
+        f"{len(option_rows)} option rows present. "
+        f"No stale phrases found. Proxy and platform support documented."
     )
 
 

@@ -37,7 +37,7 @@ git submodule update --init submodules/ixwebsocket
 ```
 
 If submodules are not initialized, CMake will use FetchContent as a fallback
-(requires `EDGE_TTS_FETCH_DEPS=ON`, which is the default).
+(requires `EDGE_TTS_FETCH_DEPS=ON`; this is **off by default** — set it explicitly for online builds).
 
 ## Add a new submodule
 
@@ -48,9 +48,3 @@ git submodule add <url> submodules/<name>
 Then wire it in `cmake/EdgeTtsDependencies.cmake` (or `cmake/Dependencies.cmake` for
 simple cases) and document it in `docs/DEPENDENCIES.md`.
 
-## Planned (not yet added)
-
-```bash
-git submodule add https://github.com/CLIUtils/CLI11.git submodules/CLI11
-git submodule add https://github.com/google/googletest.git submodules/googletest
-```

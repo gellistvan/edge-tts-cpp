@@ -5,8 +5,8 @@
 
 namespace edge_tts::cli {
 
-// Parsed command-line options shared by both edge-tts and edge-playback.
-// Populated by parse_args(); not yet implemented.
+// Legacy shared options type; superseded by EdgeTtsArguments and PlaybackArguments.
+// Retained for backward compatibility.
 struct CliOptions {
     std::string              text;
     std::optional<std::string> file;

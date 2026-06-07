@@ -1,7 +1,7 @@
 # CLI Compatibility Matrix
 
 Compatibility reference between the Python `edge-tts` v7.2.8 CLI and the
-planned C++ `edge-tts-cpp` CLI.
+C++ `edge-tts-cpp` CLI.
 
 **Sources inspected:**
 - `reference/edge-tts/src/edge_tts/util.py` — argument parser and TTS runner for `edge-tts`
@@ -13,12 +13,11 @@ planned C++ `edge-tts-cpp` CLI.
 
 | Symbol | Meaning |
 |--------|---------|
-| `exact` | C++ behavior must be identical to Python |
-| `planned` | Intended to implement with identical behavior; not yet done |
+| `exact` | C++ behavior is identical to Python |
 | `partial` | Implemented but missing some behavior |
 | `deviation` | Intentional difference from Python; documented below |
+| `unsupported` | Not implemented; attempting it returns a clear error |
 | `N/A` | Not applicable to this command |
-| `stub` | Placeholder only; no behavior yet |
 
 ---
 
@@ -32,7 +31,7 @@ printing and `exit()`.
 
 ### Option matrix
 
-| Option | Short | Argument | Default | Python behavior | C++ planned behavior | Status |
+| Option | Short | Argument | Default | Python behavior | C++ behavior | Status |
 |--------|-------|----------|---------|-----------------|----------------------|--------|
 | `--text` | `-t` | `STRING` | (required\*) | Text to synthesize. Mutually exclusive with `--file` and `--list-voices`. | Identical. | `exact` |
 | `--file` | `-f` | `PATH` | (required\*) | Read text from file; `-` or `/dev/stdin` reads stdin. Opens with UTF-8 encoding. Mutually exclusive with `--text` and `--list-voices`. | Identical. | `exact` |
@@ -106,7 +105,7 @@ exit codes) is identical.
 | 2 | **Temp file lifecycle.** Temp `.mp3` (and `.srt` if `EDGE_PLAYBACK_SRT_FILE` is set) are created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard covers both files). | `__main__.py:_cleanup()` | `exact` |
 | 3 | **Playback.** Uses `ffplay -nodisp -autoexit <mp3>` via `FfmpegAudioConverter`. Python uses `mpv`. | `__main__.py:_play_media()` | `deviation` (ffplay instead of mpv) |
 | 4 | **`--mpv` flag.** Python uses mpv by default on non-Windows; `--mpv` forces it on Windows. C++ build does not implement mpv: passing `--mpv` produces `error: --mpv is not supported; only ffplay is available. Remove --mpv to use ffplay.` and exits 1. | `__main__.py:_play_media()` | `deviation` (explicit rejection, not silent ignore) |
-| 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `planned` (not yet implemented; `ProcessRunner` fails at compile time on Windows) |
+| 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `unsupported` — `ProcessRunner` emits `#error` at compile time on Windows; build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows `IProcessRunner` implementation |
 | 6 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
 
 ### `edge-playback` environment variables
@@ -134,7 +133,7 @@ exit codes) is identical.
 | 1 | `--version` output | `edge-tts 7.2.8` | `edge-tts-cpp {semver}` | Different project; version tracks C++ release |
 | 2 | Subtitle output format | `tabulate` library for voice list | Custom stream formatting | No Python dependency; must match column layout exactly |
 | 3 | Async runtime | `asyncio.run()` wraps all I/O | Native C++ async or `std::thread` | Language difference; external behavior unchanged |
-| 4 | Sync wrappers | `stream_sync()` / `save_sync()` via `ThreadPoolExecutor` | Not planned initially | Public C++ API will be synchronous-first |
+| 4 | Sync wrappers | `stream_sync()` / `save_sync()` are thin wrappers around async code, executed in a `ThreadPoolExecutor` | `stream_sync()` and `save()` are natively synchronous — no thread pool is used | `deviation` (implementation strategy differs; external behavior is equivalent) |
 
 ---
 
