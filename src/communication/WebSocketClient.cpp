@@ -85,6 +85,18 @@ const WebSocketClientOptions& WebSocketClient::options() const noexcept {
 
 common::Result<void> WebSocketClient::connect(std::string_view url)
 {
+    // Proxy guard — ixwebsocket does not expose a CONNECT-tunnel proxy API for
+    // WebSocket connections.  Reject before touching the network so the caller
+    // gets a clear unsupported error rather than a silent no-op.
+    if (impl_->options.proxy.has_value()) {
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::unsupported,
+                          "WebSocket proxy is not supported by the ixwebsocket "
+                          "networking backend; remove --proxy to proceed without "
+                          "a proxy",
+                          *impl_->options.proxy});
+    }
+
     // Stop any previous connection before reusing this client.
     impl_->stop_and_join();
     {

@@ -23,8 +23,8 @@ namespace edge_tts::communication {
 //
 // extra_headers is set by the caller (e.g. SynthesisSession) before construction
 // so that the same client instance always uses the same upgrade headers.
-// Proxy is stored but currently not forwarded to ixwebsocket (WebSocket CONNECT
-// proxy is not exposed in the synchronous ixwebsocket API).
+// Proxy: if proxy is set, connect() returns ErrorCode::unsupported before
+// attempting the connection — ixwebsocket has no CONNECT-tunnel proxy API.
 struct WebSocketClientOptions {
     std::optional<std::string>                       proxy;
     std::chrono::milliseconds                        connect_timeout{10'000};

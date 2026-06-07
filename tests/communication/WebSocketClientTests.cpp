@@ -117,6 +117,47 @@ TEST(WebSocketClient, IsAIWebSocketClient) {
 }
 
 // ---------------------------------------------------------------------------
+// Proxy: ixwebsocket backend must reject it, not silently ignore it
+// ---------------------------------------------------------------------------
+
+#ifdef EDGE_TTS_HAVE_IXWEBSOCKET
+
+TEST(WebSocketClient, ConnectWithProxyReturnsUnsupported) {
+    // ixwebsocket has no CONNECT-tunnel proxy API.
+    // connect() must return unsupported rather than silently ignoring the proxy.
+    WebSocketClientOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    WebSocketClient client{std::move(opts)};
+    auto r = client.connect("wss://example.com");
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), edge_tts::common::ErrorCode::unsupported);
+}
+
+TEST(WebSocketClient, ConnectWithProxyErrorMessageMentionsProxy) {
+    WebSocketClientOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    WebSocketClient client{std::move(opts)};
+    auto r = client.connect("wss://example.com");
+    ASSERT_FALSE(r.has_value());
+    const std::string msg = r.error().what();
+    const bool mentions_proxy =
+        msg.find("proxy") != std::string::npos ||
+        msg.find("Proxy") != std::string::npos;
+    EXPECT_TRUE(mentions_proxy);
+}
+
+TEST(WebSocketClient, ConnectWithoutProxyDoesNotReturnUnsupportedForProxy) {
+    // Without a proxy the guard must not fire.  connect() will fail on a fake
+    // hostname, but the error code must NOT be unsupported.
+    WebSocketClient client;  // no proxy
+    auto r = client.connect("wss://this-host-does-not-exist.invalid");
+    if (!r.has_value())
+        EXPECT_NE(r.error().code(), edge_tts::common::ErrorCode::unsupported);
+}
+
+#endif  // EDGE_TTS_HAVE_IXWEBSOCKET (proxy tests)
+
+// ---------------------------------------------------------------------------
 // Without ixwebsocket: connect() returns unsupported
 // With ixwebsocket: detailed behaviour is in network tests.
 // ---------------------------------------------------------------------------

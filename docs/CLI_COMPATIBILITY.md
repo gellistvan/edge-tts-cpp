@@ -43,7 +43,7 @@ printing and `exit()`.
 | `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
 | `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `exact` |
 | `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `exact` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Parsed into `EdgeTtsArguments::proxy`; `EdgeTtsCommandDispatcher` copies it into `api::CommunicateOptions::proxy`; production `Communicate` constructors forward it into `WebSocketClientOptions::proxy` for the real networking stack. | `exact` |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Parsed and format-validated (`URL` must be non-empty and contain `://`; invalid format → exit 2). Flows into `api::CommunicateOptions::proxy`. **Runtime**: the current ixwebsocket backend has no client-side proxy API; any non-absent proxy returns `ErrorCode::unsupported` (exit 1) rather than being silently ignored. | `deviation` (proxy not functional; returns explicit error) |
 | `--version` | — | (flag) | — | Print `edge-tts {version}` (e.g. `edge-tts 7.2.8`) to stdout and exit 0. | Print `edge-tts-cpp {semver}` to stdout and exit 0. | `deviation` (version string differs) |
 | `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via hand-rolled parser. | `exact` |
 
@@ -90,7 +90,7 @@ exit codes) is identical.
 | `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
-| `--proxy` | — | `URL` | (none) | Forwarded verbatim to `edge-tts` subprocess which passes it to `aiohttp`. | Parsed into `PlaybackArguments::proxy`; `PlaybackCommandDispatcher` copies it into `api::CommunicateOptions::proxy` (same path as `edge-tts`). | `exact` |
+| `--proxy` | — | `URL` | (none) | Forwarded verbatim to `edge-tts` subprocess which passes it to `aiohttp`. | Format-validated at parse time (non-empty, must contain `://`); flows into `api::CommunicateOptions::proxy`. **Runtime**: same limitation as `edge-tts` — ixwebsocket backend returns `unsupported` (exit 1) rather than silently ignoring the proxy. | `deviation` (proxy not functional; returns explicit error) |
 | `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |

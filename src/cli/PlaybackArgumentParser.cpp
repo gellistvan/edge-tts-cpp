@@ -113,6 +113,17 @@ PlaybackParseResult do_parse(const std::vector<std::string>& tokens,
                     r.message = "--proxy requires an argument";
                     return r;
                 }
+                if (args.proxy->empty()) {
+                    PlaybackParseResult r;
+                    r.message = "--proxy URL must not be empty";
+                    return r;
+                }
+                if (args.proxy->find("://") == std::string::npos) {
+                    PlaybackParseResult r;
+                    r.message = "--proxy URL must include a scheme "
+                                "(example: http://host:port)";
+                    return r;
+                }
             } else if (key == "--write-media" || key == "--write-subtitles" ||
                        key == "--list-voices") {
                 // Reference: edge-playback does not expose these options.

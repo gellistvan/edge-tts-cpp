@@ -215,6 +215,29 @@ TEST(CommunicateOptions, ExistingInjectionConstructorStillWorks) {
     EXPECT_TRUE(ran);
 }
 
+TEST(CommunicateOptions, ProxyRejectionPropagatesFromSynthesizer) {
+    // Prove that when the underlying transport rejects a proxy (returning
+    // unsupported), stream_sync() propagates the error rather than hiding it.
+    // This verifies the API layer does not swallow transport-level proxy errors.
+    CommunicateOptions opts;
+    opts.proxy = "http://proxy.example.com:8080";
+
+    SynthesizerFn syn = [](const TtsConfig&, std::span<const std::string>)
+        -> edge_tts::common::Result<std::vector<TtsChunk>>
+    {
+        return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
+            edge_tts::common::Error{
+                edge_tts::common::ErrorCode::unsupported,
+                "proxy is not supported by this build"});
+    };
+
+    Communicate c("hello", valid_config(), opts, std::move(syn));
+    auto result = c.stream_sync();
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
+}
+
 TEST(CommunicateOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
     TtsConfig cfg = valid_config();
     cfg.voice = "en-AU-NatashaNeural";

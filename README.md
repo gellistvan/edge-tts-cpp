@@ -179,9 +179,10 @@ See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guid
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 
-// Transport options — proxy and timeouts (no speech settings).
+// Transport options — timeouts (no speech settings).
+// NOTE: proxy is not supported by the ixwebsocket backend.
+// Setting opts.proxy will cause stream_sync()/save() to return unsupported.
 edge_tts::api::CommunicateOptions opts;
-opts.proxy = "http://proxy.example.com:8080"; // optional
 
 // Save audio and optional SRT subtitles (reference: Communicate.save()).
 edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
@@ -228,9 +229,6 @@ edge-playback --text "Hello, world!"
 # Speak from a file
 edge-playback --file speech.txt
 
-# Use a proxy
-edge-playback --text "Hello" --proxy http://proxy.example.com:8080
-
 # Keep the temp MP3 file after playback
 EDGE_PLAYBACK_KEEP_TEMP=1 edge-playback --text "Hello"
 
@@ -254,7 +252,7 @@ EDGE_PLAYBACK_DEBUG=1 edge-playback --text "Hello"
 | `--rate` | — | `+0%` | Speech rate |
 | `--volume` | — | `+0%` | Speech volume |
 | `--pitch` | — | `+0Hz` | Speech pitch |
-| `--proxy` | — | (none) | HTTP proxy forwarded to synthesis |
+| `--proxy` | — | (none) | HTTP proxy URL (validated at parse time; **unsupported** at runtime — returns exit 1) |
 | `--help` | `-h` | — | Print help and exit |
 
 \* `--text` and `--file` are mutually exclusive; exactly one must be given.
@@ -283,7 +281,7 @@ edge-playback
 | `--pitch` | — | `+0Hz` | Speech pitch |
 | `--write-media` | — | (stdout) | Write MP3 to file |
 | `--write-subtitles` | — | (none) | Write SRT to file (`-` for stderr) |
-| `--proxy` | — | (none) | HTTP proxy for TTS and voice list |
+| `--proxy` | — | (none) | HTTP proxy URL (validated at parse time; **unsupported** at runtime — returns exit 1) |
 | `--version` | — | — | Print version and exit |
 | `--help` | `-h` | — | Print help and exit |
 

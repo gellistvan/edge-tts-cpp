@@ -601,6 +601,61 @@ TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
 }
 
 // ---------------------------------------------------------------------------
+// Proxy: runtime unsupported → exit 1, error message on stderr
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ProxyUnsupportedYieldsExitCode1AndErrorOnStderr) {
+    // When the synthesizer returns unsupported (proxy rejected by the transport
+    // layer), the dispatcher must propagate it: exit code 1, message on stderr.
+    auto factory = [](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>>
+            {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
+                    edge_tts::common::Error{
+                        edge_tts::common::ErrorCode::unsupported,
+                        "proxy is not supported by the ixwebsocket networking backend"});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    ParseResult r = make_text_result("hello");
+    r.arguments.proxy = "http://proxy.test:3128";
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    int code = d.dispatch(r);
+    EXPECT_EQ(code, 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, ProxyIsNotSilentlyIgnored) {
+    // A transport error from the synthesizer must NOT be swallowed.
+    // The dispatcher must return non-zero when the proxy causes a failure.
+    bool synthesizer_ran = false;
+    auto factory = [&synthesizer_ran](std::string text, TtsConfig cfg,
+                                     CommunicateOptions opts) {
+        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+            [&synthesizer_ran](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>>
+            {
+                synthesizer_ran = true;
+                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
+                    edge_tts::common::Error{
+                        edge_tts::common::ErrorCode::unsupported,
+                        "proxy not supported"});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    ParseResult r = make_text_result("hello");
+    r.arguments.proxy = "http://proxy.test:3128";
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    int code = d.dispatch(r);
+    EXPECT_TRUE(synthesizer_ran);
+    EXPECT_NE(code, 0);
+}
+
+// ---------------------------------------------------------------------------
 // SubMaker::feed errors → stderr, exit 1
 //
 // SubMaker locks the boundary type on the first feed().  Mixing WordBoundary

@@ -35,10 +35,9 @@ struct HttpClientOptions {
 //   all other transport failures         → network_error
 //
 // Note on proxy support:
-//   ixwebsocket's synchronous HTTP client does not expose per-request proxy
-//   configuration.  The proxy field is stored but currently unused in the
-//   ixwebsocket backend.  This will be addressed when the WebSocket layer is
-//   implemented (ixwebsocket WebSocket supports CONNECT-tunnel proxy).
+//   ixwebsocket's synchronous HTTP client has no per-request proxy API.
+//   If HttpClientOptions::proxy is set, send() returns ErrorCode::unsupported
+//   before touching the network.  Pass an absent proxy to proceed without one.
 class HttpClient final : public IHttpClient {
 public:
     explicit HttpClient(HttpClientOptions options = {});

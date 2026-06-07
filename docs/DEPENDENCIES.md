@@ -195,7 +195,7 @@ the public interface.
 `WebSocketClientOptions` controls:
 - `connect_timeout` — maps to `ix::WebSocket::setHandshakeTimeout()` (default 10 s, reference `sock_connect=10`)
 - `read_timeout` — used as the `wait_for` deadline in the blocking `receive()` call (default 60 s, reference `sock_read=60`)
-- `proxy` — stored for callers; ixwebsocket's synchronous API does not expose WebSocket CONNECT-tunnel proxy, so this is not yet forwarded
+- `proxy` — if set, `connect()` returns `ErrorCode::unsupported` before touching the network (ixwebsocket has no CONNECT-tunnel proxy API)
 - `extra_headers` — forwarded to `ix::WebSocket::setExtraHeaders()` for the upgrade request (reference: `WSS_HEADERS` in `constants.py`)
 
 After a successful `connect()`, an internal thread runs `ws.run()` and pumps
@@ -233,10 +233,11 @@ Error mapping from `ix::HttpErrorCode`:
 Non-2xx HTTP status codes are returned as successful `Result<HttpResponse>` values
 so that callers (e.g. `VoiceService`) can inspect and act on them.
 
-`HttpClientOptions.proxy` is stored but currently not forwarded to
-`ix::HttpClient` because ixwebsocket's synchronous HTTP client does not expose
-per-request proxy configuration.  This will be addressed when WebSocket transport
-is wired in (ixwebsocket WebSocket supports `CONNECT`-tunnel proxy).
+**Proxy**: ixwebsocket's synchronous HTTP client (`ix::HttpClient`) has no
+per-request proxy API.  If `HttpClientOptions::proxy` is set, `send()` returns
+`ErrorCode::unsupported` before making any network call.  This is an explicit
+rejection, not a silent no-op — callers receive a clear error and can surface it
+to the user (CLI exit 1).
 
 ### TLS
 

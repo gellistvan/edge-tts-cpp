@@ -101,7 +101,7 @@ knowledge, and lets transport configuration evolve independently.
 | What | Type | Field |
 |------|------|-------|
 | Voice, rate, volume, pitch | `core::TtsConfig` | `voice`, `rate`, `volume`, `pitch` |
-| HTTP/WebSocket proxy | `api::CommunicateOptions` | `proxy` |
+| HTTP/WebSocket proxy | `api::CommunicateOptions` | `proxy` (**parsed and validated; currently rejected at runtime** — ixwebsocket has no client-side proxy API; returns `unsupported`) |
 | WS connect timeout | `api::CommunicateOptions` | `ws_connect_timeout` (default 10 s) |
 | WS read timeout | `api::CommunicateOptions` | `ws_read_timeout` (default 60 s) |
 | HTTP timeout | `api::CommunicateOptions` | `http_timeout` (default 30 s) |
@@ -136,7 +136,9 @@ cfg.rate  = "+0%";
 
 // Build transport options (optional — defaults match Python reference).
 edge_tts::api::CommunicateOptions opts;
-opts.proxy = "http://proxy.example.com:8080"; // optional
+// opts.proxy = "http://proxy.example.com:8080";
+// NOTE: the ixwebsocket backend does not support client-side proxy.
+// Setting proxy returns ErrorCode::unsupported from stream_sync()/save().
 opts.ws_connect_timeout = std::chrono::milliseconds{10'000};
 opts.ws_read_timeout    = std::chrono::milliseconds{60'000};
 

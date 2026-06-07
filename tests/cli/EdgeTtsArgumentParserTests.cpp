@@ -291,6 +291,52 @@ TEST(EdgeTtsArgumentParser, ProxyEqualsForm) {
     EXPECT_EQ(*r.arguments.proxy, "http://p:3128");
 }
 
+TEST(EdgeTtsArgumentParser, ProxyEmptyStringIsParseError) {
+    // Empty proxy URL is obviously invalid — caught at parse time, exit 2.
+    auto r = parse({"--text", "hi", "--proxy", ""});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, ProxyMissingSchemeIsParseError) {
+    // A proxy URL without "://" has no scheme — caught at parse time, exit 2.
+    auto r = parse({"--text", "hi", "--proxy", "proxy.example.com:8080"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, ProxyBareHostnameIsParseError) {
+    auto r = parse({"--text", "hi", "--proxy", "proxyhost"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, ProxyWithHttpSchemeIsAccepted) {
+    // A well-formed proxy URL passes parse-time validation.
+    // Runtime rejection (unsupported) is a separate concern tested in
+    // communication and CLI dispatcher tests.
+    auto r = parse({"--text", "hi", "--proxy", "http://proxy.example.com:8080"});
+    EXPECT_EQ(r.action, ParseAction::synthesize);
+    ASSERT_TRUE(r.arguments.proxy.has_value());
+    EXPECT_EQ(*r.arguments.proxy, "http://proxy.example.com:8080");
+}
+
+TEST(EdgeTtsArgumentParser, ProxyWithHttpsSchemeIsAccepted) {
+    auto r = parse({"--text", "hi", "--proxy", "https://proxy.example.com:443"});
+    EXPECT_EQ(r.action, ParseAction::synthesize);
+    ASSERT_TRUE(r.arguments.proxy.has_value());
+}
+
+TEST(EdgeTtsArgumentParser, ProxyParseErrorMessageIsDescriptive) {
+    auto r = parse({"--text", "hi", "--proxy", "badvalue"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    // The message must mention "proxy" and "scheme" so the user knows what to fix.
+    EXPECT_TRUE(r.message.find("proxy") != std::string::npos ||
+                r.message.find("--proxy") != std::string::npos);
+    EXPECT_TRUE(r.message.find("scheme") != std::string::npos ||
+                r.message.find("://") != std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // Unknown / unsupported options
 // ---------------------------------------------------------------------------

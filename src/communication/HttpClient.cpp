@@ -31,6 +31,17 @@ const HttpClientOptions& HttpClient::options() const noexcept {
 // ---------------------------------------------------------------------------
 
 common::Result<HttpResponse> HttpClient::send(const HttpRequest& request) {
+    // Proxy guard — ixwebsocket's HTTP backend has no client-side proxy API.
+    // Reject early so the caller gets a clear error instead of a silent no-op.
+    if (options_.proxy.has_value()) {
+        return common::Result<HttpResponse>::fail(
+            common::Error{common::ErrorCode::unsupported,
+                          "HTTP proxy is not supported by the ixwebsocket "
+                          "networking backend; remove --proxy to proceed without "
+                          "a proxy",
+                          *options_.proxy});
+    }
+
     ix::HttpClient client;
 
     // --- TLS: use system CA bundle by default ------------------------------

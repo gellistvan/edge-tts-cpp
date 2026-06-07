@@ -72,6 +72,52 @@ TEST(HttpClient, UsableAsIHttpClientReference) {
 // Invalid URL: transport-level error (no network required)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Proxy: ixwebsocket backend must reject it, not silently ignore it
+// ---------------------------------------------------------------------------
+
+#ifdef EDGE_TTS_HAVE_IXWEBSOCKET
+
+TEST(HttpClient, ProxySetCausesUnsupportedError) {
+    // The ixwebsocket HTTP backend has no proxy API.
+    // send() must return unsupported rather than silently ignoring the proxy.
+    HttpClientOptions opts;
+    opts.proxy = "http://proxy.example.com:8080";
+    HttpClient client{opts};
+    auto r = client.send(make_get("https://example.com"));
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::unsupported);
+}
+
+TEST(HttpClient, ProxyErrorMessageMentionsProxy) {
+    HttpClientOptions opts;
+    opts.proxy = "http://proxy.example.com:8080";
+    HttpClient client{opts};
+    auto r = client.send(make_get("https://example.com"));
+    ASSERT_FALSE(r.has_value());
+    const std::string msg = r.error().what();
+    const bool mentions_proxy =
+        msg.find("proxy") != std::string::npos ||
+        msg.find("Proxy") != std::string::npos;
+    EXPECT_TRUE(mentions_proxy);
+}
+
+TEST(HttpClient, NoProxySendsRequest) {
+    // Without a proxy, send() reaches ixwebsocket (which will fail on a
+    // fake hostname, but the failure is transport-level, not unsupported).
+    HttpClient client;  // no proxy
+    auto r = client.send(make_get("https://this-host-does-not-exist.invalid"));
+    // Must NOT be unsupported — that would mean the proxy guard fired incorrectly.
+    if (!r.has_value())
+        EXPECT_NE(r.error().code(), ErrorCode::unsupported);
+}
+
+#endif  // EDGE_TTS_HAVE_IXWEBSOCKET (proxy tests)
+
+// ---------------------------------------------------------------------------
+// Invalid URL: transport-level error (no network required)
+// ---------------------------------------------------------------------------
+
 #ifdef EDGE_TTS_HAVE_IXWEBSOCKET
 
 TEST(HttpClient, EmptyUrlReturnsError) {

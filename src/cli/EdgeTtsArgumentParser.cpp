@@ -154,6 +154,19 @@ ParseResult do_parse(const std::vector<std::string>& tokens, const EdgeTtsArgume
                     r.message = "--proxy requires an argument";
                     return r;
                 }
+                // Basic format validation — catches obviously invalid values at
+                // parse time so the exit code is 2 rather than a runtime 1.
+                if (args.proxy->empty()) {
+                    ParseResult r;
+                    r.message = "--proxy URL must not be empty";
+                    return r;
+                }
+                if (args.proxy->find("://") == std::string::npos) {
+                    ParseResult r;
+                    r.message = "--proxy URL must include a scheme "
+                                "(example: http://host:port)";
+                    return r;
+                }
             } else {
                 ParseResult r;
                 r.message = "unrecognized option: " + std::string(key);
