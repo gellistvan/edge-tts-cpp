@@ -98,14 +98,29 @@ is not built.
 |----------|-------|
 | Source | POSIX standard library — always present on Linux and macOS |
 | Purpose | `media::ProcessRunner` — runs external commands (ffplay, ffmpeg) as child processes with no shell involvement |
-| Integration | Included via `<unistd.h>`, `<sys/wait.h>` directly in `src/media/ProcessRunner.cpp`; `std::thread` drains stderr concurrently |
-| Consumers | `edge_tts::media` (`ProcessRunner`) |
+| Integration | Included via `<unistd.h>`, `<sys/wait.h>` in `src/media/ProcessRunner.cpp`; only compiled on non-Windows (CMake `if(NOT WIN32)`); `std::thread` drains stderr concurrently |
+| Consumers | `edge_tts::media` (`ProcessRunner`), `edge-playback` app |
 | License | System library; no additional license obligation |
-| Platform | **POSIX only.** `ProcessRunner.cpp` emits `#error` at compile time when `_WIN32` is detected. Build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows-specific `IProcessRunner` implementation to compile on Windows. |
+| Platform | **POSIX only.** `ProcessRunner.cpp` is excluded from the Windows build by CMake and emits `#error` as a compile-time safety net. `FakeProcessRunner.cpp` (no POSIX deps) is always compiled and available on all platforms for testing. |
+
+**CMake options for platform support:**
+
+| Scenario | CMake flags |
+|----------|------------|
+| Linux/macOS — full build | defaults (both apps enabled) |
+| Windows — library + edge-tts only | `-DEDGE_TTS_BUILD_PLAYBACK_APP=OFF` (default on Windows) |
+| Windows — explicitly disable playback | `-DEDGE_TTS_BUILD_PLAYBACK_APP=OFF` |
+| Windows — request playback (unsupported) | `EDGE_TTS_BUILD_PLAYBACK_APP=ON` → **configure FATAL_ERROR** naming the platform |
+
+Setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows triggers a fatal CMake error that names the platform (`${CMAKE_SYSTEM_NAME}`) and explains the POSIX requirement. The core library (`common`, `core`, `serialization`, `communication`, `api`, `cli`) and the `edge-tts` CLI build cleanly on Windows without any POSIX dependency.
 
 Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prevents shell injection and word-splitting of arguments containing spaces.  `ProcessRunner::run()` uses the same safe pattern via `execvp()`.
 
 `ProcessRunner` is not marked `final` so tests can subclass it and override `make_pipe(int fds[2])` to inject pipe-creation failures without spawning real child processes.
+
+**Descriptor cleanup on error paths:**
+
+If the stdout pipe succeeds but the stderr pipe fails, the stdout write-end is closed manually before returning and the read-end is closed by its RAII `FdCloser`. This prevents file-descriptor leaks on the pipe-failure path. The `FailSecondPipeRunner` test fixture in `tests/media/ProcessRunnerTests.cpp` verifies this behavior by overriding `make_pipe()` to fail on the second call.
 
 ---
 

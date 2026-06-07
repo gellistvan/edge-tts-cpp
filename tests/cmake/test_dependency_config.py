@@ -834,6 +834,73 @@ def test_release_archive_smoke() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 24. EDGE_TTS_BUILD_PLAYBACK_APP option is defined in cmake/ProjectOptions.cmake
+# ---------------------------------------------------------------------------
+
+def test_build_playback_app_option_exists() -> None:
+    path = REPO_ROOT / "cmake" / "ProjectOptions.cmake"
+    content = read(path)
+    if "EDGE_TTS_BUILD_PLAYBACK_APP" not in content:
+        fail(
+            "cmake/ProjectOptions.cmake does not define EDGE_TTS_BUILD_PLAYBACK_APP option. "
+            "This option controls whether the edge-playback CLI app is built and must "
+            "default OFF on Windows."
+        )
+    ok("cmake/ProjectOptions.cmake defines EDGE_TTS_BUILD_PLAYBACK_APP")
+
+
+def test_build_playback_app_defaults_off_on_windows() -> None:
+    path = REPO_ROOT / "cmake" / "ProjectOptions.cmake"
+    content = read(path)
+    # Must have a WIN32 check that sets it to OFF.
+    if not re.search(r'WIN32', content):
+        fail(
+            "cmake/ProjectOptions.cmake does not check WIN32 when setting "
+            "EDGE_TTS_BUILD_PLAYBACK_APP — the option must default OFF on Windows."
+        )
+    ok("cmake/ProjectOptions.cmake guards EDGE_TTS_BUILD_PLAYBACK_APP default with WIN32 check")
+
+
+def test_build_playback_app_fatal_error_on_windows() -> None:
+    root_cmake = REPO_ROOT / "CMakeLists.txt"
+    content = read(root_cmake)
+    # Must have a FATAL_ERROR that fires when EDGE_TTS_BUILD_PLAYBACK_APP=ON on Windows.
+    if "EDGE_TTS_BUILD_PLAYBACK_APP" not in content:
+        fail(
+            "CMakeLists.txt does not reference EDGE_TTS_BUILD_PLAYBACK_APP. "
+            "The root CMakeLists.txt must gate edge-playback on this option and "
+            "emit FATAL_ERROR when it is ON on Windows."
+        )
+    if not re.search(r'WIN32', content):
+        fail(
+            "CMakeLists.txt does not check WIN32 for EDGE_TTS_BUILD_PLAYBACK_APP guard."
+        )
+    ok("CMakeLists.txt has WIN32 guard for EDGE_TTS_BUILD_PLAYBACK_APP")
+
+
+# ---------------------------------------------------------------------------
+# 25. ProcessRunner.cpp is conditionally compiled (not on WIN32)
+# ---------------------------------------------------------------------------
+
+def test_process_runner_conditionally_compiled() -> None:
+    root_cmake = REPO_ROOT / "CMakeLists.txt"
+    content = read(root_cmake)
+    # Must have a conditional that excludes ProcessRunner.cpp on Windows.
+    if "ProcessRunner.cpp" not in content:
+        fail(
+            "CMakeLists.txt does not reference ProcessRunner.cpp — "
+            "the media module must include it conditionally (non-WIN32 only)."
+        )
+    # The conditional must guard it with NOT WIN32 or similar.
+    if not re.search(r'NOT\s+WIN32', content):
+        fail(
+            "CMakeLists.txt does not use 'NOT WIN32' to guard ProcessRunner.cpp. "
+            "ProcessRunner.cpp must only be compiled on POSIX platforms."
+        )
+    ok("CMakeLists.txt compiles ProcessRunner.cpp conditionally (NOT WIN32)")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -866,6 +933,11 @@ def main() -> None:
         test_configure_fails_when_ixwebsocket_missing_and_networking_required,
         test_configure_succeeds_without_ixwebsocket_when_networking_not_required,
         test_release_archive_smoke,
+        # Platform support tests
+        test_build_playback_app_option_exists,
+        test_build_playback_app_defaults_off_on_windows,
+        test_build_playback_app_fatal_error_on_windows,
+        test_process_runner_conditionally_compiled,
     ]
     for t in tests:
         t()

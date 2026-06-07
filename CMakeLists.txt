@@ -80,9 +80,15 @@ edge_tts_add_module(
         src/media/AudioConverter.cpp
         src/media/ExecutableDiscovery.cpp
         src/media/FfmpegAudioConverter.cpp
-        src/media/ProcessRunner.cpp
+        src/media/FakeProcessRunner.cpp
     PUBLIC_DEPS edge_tts::common
 )
+
+# ProcessRunner.cpp uses POSIX APIs (fork/execvp/pipe/waitpid).
+# Only compile it on platforms where those are available.
+if(NOT WIN32)
+    target_sources(edge_tts_media PRIVATE src/media/ProcessRunner.cpp)
+endif()
 
 edge_tts_add_module(
     NAME communication
@@ -159,10 +165,11 @@ endif()
 
 # Guard: apps must not silently build against stub networking when real
 # networking was explicitly required.
-if(EDGE_TTS_BUILD_APPS AND EDGE_TTS_REQUIRE_NETWORKING AND NOT TARGET ixwebsocket)
+if((EDGE_TTS_BUILD_APPS OR EDGE_TTS_BUILD_PLAYBACK_APP) AND EDGE_TTS_REQUIRE_NETWORKING AND NOT TARGET ixwebsocket)
     message(FATAL_ERROR
-        "EDGE_TTS_BUILD_APPS=ON and EDGE_TTS_REQUIRE_NETWORKING=ON but ixwebsocket "
-        "target is not available. Apps cannot be built with stub networking.\n"
+        "EDGE_TTS_BUILD_APPS=ON or EDGE_TTS_BUILD_PLAYBACK_APP=ON and "
+        "EDGE_TTS_REQUIRE_NETWORKING=ON but ixwebsocket target is not available. "
+        "Apps cannot be built with stub networking.\n"
         "Fix: initialize the ixwebsocket submodule or set EDGE_TTS_FETCH_DEPS=ON."
     )
 endif()
@@ -188,10 +195,29 @@ target_link_libraries(edge_tts
 # ---------------------------------------------------------------------------
 # CLI applications
 # ---------------------------------------------------------------------------
+
+# edge-tts: cross-platform (no POSIX process execution required).
 if(EDGE_TTS_BUILD_APPS)
     add_executable(edge-tts apps/edge-tts/main.cpp)
     target_link_libraries(edge-tts PRIVATE edge_tts::cli edge_tts_compile_options)
+endif()
 
+# edge-playback: POSIX only (requires ProcessRunner → fork/execvp/pipe/waitpid).
+# Defaults ON on Linux/macOS, OFF on Windows.
+# Setting EDGE_TTS_BUILD_PLAYBACK_APP=ON on Windows is a fatal configure error.
+if(EDGE_TTS_BUILD_PLAYBACK_APP)
+    if(WIN32)
+        message(FATAL_ERROR
+            "EDGE_TTS_BUILD_PLAYBACK_APP=ON is not supported on Windows. "
+            "ProcessRunner requires POSIX APIs (fork/execvp/pipe/waitpid) which "
+            "are not available on Windows (platform: ${CMAKE_SYSTEM_NAME}).\n"
+            "Options:\n"
+            "  - Set EDGE_TTS_BUILD_PLAYBACK_APP=OFF to build the core library "
+            "and edge-tts CLI without playback.\n"
+            "  - Provide a Windows-specific IProcessRunner implementation and "
+            "set EDGE_TTS_BUILD_PLAYBACK_APP=ON once it compiles."
+        )
+    endif()
     add_executable(edge-playback apps/edge-playback/main.cpp)
     target_link_libraries(edge-playback PRIVATE edge_tts::cli edge_tts_compile_options)
 endif()

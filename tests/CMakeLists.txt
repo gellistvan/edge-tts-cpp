@@ -107,9 +107,15 @@ edge_tts_add_module_test(
         common/test_main.cpp
         media/ExecutableDiscoveryTests.cpp
         media/FfmpegAudioConverterTests.cpp
-        media/ProcessRunnerTests.cpp
     LIBRARIES edge_tts::media
 )
+
+# ProcessRunnerTests.cpp uses POSIX APIs (::pipe, real ProcessRunner with
+# fork/execvp) and can only be compiled on POSIX platforms.
+# FakeProcessRunner behavior is covered by FfmpegAudioConverterTests.cpp on all platforms.
+if(NOT WIN32)
+    target_sources(edge_tts_media_tests PRIVATE media/ProcessRunnerTests.cpp)
+endif()
 
 edge_tts_add_module_test(
     NAME api

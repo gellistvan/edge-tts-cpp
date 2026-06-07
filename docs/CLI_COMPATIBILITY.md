@@ -105,7 +105,7 @@ exit codes) is identical.
 | 2 | **Temp file lifecycle.** Temp `.mp3` (and `.srt` if `EDGE_PLAYBACK_SRT_FILE` is set) are created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard covers both files). | `__main__.py:_cleanup()` | `exact` |
 | 3 | **Playback.** Uses `ffplay -nodisp -autoexit <mp3>` via `FfmpegAudioConverter`. Python uses `mpv`. | `__main__.py:_play_media()` | `deviation` (ffplay instead of mpv) |
 | 4 | **`--mpv` flag.** Python uses mpv by default on non-Windows; `--mpv` forces it on Windows. C++ build does not implement mpv: passing `--mpv` produces `error: --mpv is not supported; only ffplay is available. Remove --mpv to use ffplay.` and exits 1. | `__main__.py:_play_media()` | `deviation` (explicit rejection, not silent ignore) |
-| 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `unsupported` — `ProcessRunner` emits `#error` at compile time on Windows; build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows `IProcessRunner` implementation |
+| 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `unsupported` — `ProcessRunner.cpp` is excluded from the Windows build by CMake; setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows causes a configure-time `FATAL_ERROR` naming the platform. The core library and `edge-tts` CLI build cleanly on Windows. |
 | 6 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
 
 ### `edge-playback` environment variables
@@ -121,8 +121,8 @@ exit codes) is identical.
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| Linux / macOS (POSIX) | Supported | `ProcessRunner` uses `fork` / `execvp` / `pipe` / `waitpid`. |
-| Windows | Not supported | `ProcessRunner.cpp` emits `#error` at compile time when `_WIN32` is defined. Build with `-DEDGE_TTS_BUILD_APPS=OFF` or provide a Windows-specific `IProcessRunner` implementation. |
+| Linux / macOS (POSIX) | Supported | `ProcessRunner` uses `fork` / `execvp` / `pipe` / `waitpid`. `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `ON`. |
+| Windows | `unsupported` | `ProcessRunner.cpp` is excluded from the Windows build. Setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows is a configure-time `FATAL_ERROR` that names the platform. Build the core library and `edge-tts` CLI with `-DEDGE_TTS_BUILD_PLAYBACK_APP=OFF` (default on Windows) or provide a Windows-specific `IProcessRunner` implementation. |
 
 ---
 

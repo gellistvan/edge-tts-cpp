@@ -540,6 +540,31 @@ TEST(PlaybackCommandDispatcher, NoProxyLeavesOptionEmpty) {
 }
 
 // ---------------------------------------------------------------------------
+// Dispatcher: missing player returns clear error naming the player
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, MissingPlayerErrorNamesPlayerInStderr) {
+    // When ffplay is not found on PATH, FfmpegAudioConverter returns
+    // "ffplay not found on PATH". Verify that message reaches stderr and names
+    // the player so the user knows exactly what to install.
+    FakeAudioConverter conv;
+    conv.play_result = edge_tts::common::Result<void>::fail(
+        Error{ErrorCode::external_process_failed, "ffplay not found on PATH"});
+    KnownTempProvider tp{"missing_player"};
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{make_factory(chunks), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    int rc = d.dispatch(make_play_result("hello"));
+    EXPECT_EQ(rc, 1);
+    // Error message must name the missing executable so the user knows what to install.
+    EXPECT_NE(err.str().find("ffplay"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher: --mpv explicitly rejected
 // ---------------------------------------------------------------------------
 

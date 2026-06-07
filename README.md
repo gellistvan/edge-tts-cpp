@@ -123,7 +123,8 @@ for the complete lookup-order policy.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `EDGE_TTS_BUILD_APPS` | `ON` | Build the `edge-tts` and `edge-playback` CLI apps |
+| `EDGE_TTS_BUILD_APPS` | `ON` | Build the `edge-tts` CLI app |
+| `EDGE_TTS_BUILD_PLAYBACK_APP` | `ON` on Linux/macOS, `OFF` on Windows | Build the `edge-playback` CLI app (POSIX only; `ON` on Windows is a configure-time error) |
 | `EDGE_TTS_BUILD_TESTS` | `ON` | Build per-module test suites |
 | `EDGE_TTS_BUILD_EXAMPLES` | `OFF` | Build example programs |
 | `EDGE_TTS_WARNINGS_AS_ERRORS` | `OFF` | Promote compiler warnings to errors |
@@ -131,7 +132,17 @@ for the complete lookup-order policy.
 | `EDGE_TTS_ENABLE_SANITIZERS` | `OFF` | Enable address and UB sanitizers |
 | `EDGE_TTS_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on compiled sources |
 | `EDGE_TTS_FETCH_DEPS` | `OFF` | Allow FetchContent to download missing dependencies. Set `ON` for the `developer` preset or any online CI. |
-| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when any app is enabled, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
+
+### Platform support
+
+| Platform | Core library | `edge-tts` CLI | `edge-playback` CLI |
+|----------|-------------|----------------|---------------------|
+| Linux | Supported | Supported | Supported (default ON) |
+| macOS | Supported | Supported | Supported (default ON) |
+| Windows | Supported | Supported | **Not supported** — `ProcessRunner` requires POSIX (`fork`/`execvp`/`pipe`/`waitpid`). `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `OFF` on Windows; setting it `ON` is a configure-time fatal error. |
+
+The core library (`common`, `core`, `serialization`, `communication`, `api`) and the `edge-tts` CLI have no POSIX process dependencies and build cleanly on Windows. Only `edge-playback` requires POSIX via `ProcessRunner`.
 
 Common manual configurations:
 

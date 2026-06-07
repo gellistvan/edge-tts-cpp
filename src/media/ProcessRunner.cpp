@@ -1,9 +1,12 @@
 #include "edge_tts/media/ProcessRunner.hpp"
 #include "edge_tts/common/Error.hpp"
 
+// ProcessRunner uses POSIX-only system calls and is only compiled on POSIX
+// platforms. FakeProcessRunner (cross-platform) lives in FakeProcessRunner.cpp.
+// CMakeLists.txt guards this file with if(NOT WIN32).
 #ifdef _WIN32
-#  error "ProcessRunner requires POSIX (fork/execvp/pipe/waitpid) which is not available on Windows. " \
-         "Build with EDGE_TTS_BUILD_APPS=OFF or provide a Windows-specific implementation."
+#  error "ProcessRunner.cpp requires POSIX (fork/execvp/pipe/waitpid). " \
+         "Set EDGE_TTS_BUILD_PLAYBACK_APP=OFF to build without playback on Windows."
 #endif
 
 #include <cerrno>
@@ -17,41 +20,6 @@
 #include <unistd.h>
 
 namespace edge_tts::media {
-
-// ---------------------------------------------------------------------------
-// FakeProcessRunner
-// ---------------------------------------------------------------------------
-
-void FakeProcessRunner::set_result(ProcessResult result) noexcept {
-    result_ = std::move(result);
-    error_.reset();
-}
-
-void FakeProcessRunner::set_error(common::Error error) noexcept {
-    error_ = std::move(error);
-}
-
-void FakeProcessRunner::clear_error() noexcept {
-    error_.reset();
-}
-
-const std::optional<ProcessCommand>& FakeProcessRunner::last_command() const noexcept {
-    return last_command_;
-}
-
-int FakeProcessRunner::run_count() const noexcept {
-    return run_count_;
-}
-
-common::Result<ProcessResult> FakeProcessRunner::run(const ProcessCommand& cmd) {
-    ++run_count_;
-    last_command_ = cmd;
-
-    if (error_.has_value())
-        return common::Result<ProcessResult>::fail(*error_);
-
-    return common::Result<ProcessResult>::ok(result_);
-}
 
 // ---------------------------------------------------------------------------
 // ProcessRunner — fork + execvp, no shell
