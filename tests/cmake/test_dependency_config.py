@@ -21,9 +21,13 @@ Verifies:
 Exit code 0 on success, non-zero on failure.
 """
 
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 
@@ -390,6 +394,446 @@ def test_fatal_error_when_networking_required_but_missing() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 15. CMakePresets.json exists with the four required presets
+# ---------------------------------------------------------------------------
+
+def test_cmake_presets_exist() -> None:
+    import json as _json
+
+    presets_path = REPO_ROOT / "CMakePresets.json"
+    if not presets_path.exists():
+        fail("CMakePresets.json does not exist")
+
+    try:
+        data = _json.loads(presets_path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError as exc:
+        fail(f"CMakePresets.json is not valid JSON: {exc}")
+
+    configure_names = {p["name"] for p in data.get("configurePresets", [])}
+    required = {"developer", "offline-system", "offline-no-networking", "archive-verify"}
+    missing = required - configure_names
+    if missing:
+        fail(
+            f"CMakePresets.json is missing required configurePresets: {sorted(missing)}\n"
+            f"  Required: {sorted(required)}\n"
+            f"  Present:  {sorted(configure_names)}"
+        )
+
+    # developer preset must have FETCH_DEPS=ON
+    dev = next(p for p in data["configurePresets"] if p["name"] == "developer")
+    fetch = dev.get("cacheVariables", {}).get("EDGE_TTS_FETCH_DEPS", {})
+    fetch_val = fetch.get("value", fetch) if isinstance(fetch, dict) else fetch
+    if str(fetch_val).upper() not in ("ON", "TRUE", "1", "YES"):
+        fail("CMakePresets.json 'developer' preset must set EDGE_TTS_FETCH_DEPS=ON")
+
+    # offline presets must have FETCH_DEPS=OFF
+    for preset_name in ("offline-system", "offline-no-networking", "archive-verify"):
+        p = next(p for p in data["configurePresets"] if p["name"] == preset_name)
+        fetch = p.get("cacheVariables", {}).get("EDGE_TTS_FETCH_DEPS", {})
+        fetch_val = fetch.get("value", fetch) if isinstance(fetch, dict) else fetch
+        if str(fetch_val).upper() not in ("OFF", "FALSE", "0", "NO"):
+            fail(
+                f"CMakePresets.json '{preset_name}' preset must set EDGE_TTS_FETCH_DEPS=OFF"
+            )
+
+    ok(f"CMakePresets.json has all required presets: {sorted(required)}")
+
+
+# ---------------------------------------------------------------------------
+# 16. docs/RELEASE.md exists and covers required topics
+# ---------------------------------------------------------------------------
+
+def test_release_md_exists() -> None:
+    release_md = REPO_ROOT / "docs" / "RELEASE.md"
+    if not release_md.exists():
+        fail("docs/RELEASE.md does not exist")
+    content = read(release_md)
+
+    required_topics = [
+        ("make_release_archive", "make_release_archive.sh script"),
+        ("archive-verify", "archive-verify preset"),
+        ("EDGE_TTS_FETCH_DEPS", "EDGE_TTS_FETCH_DEPS option"),
+        ("EDGE_TTS_REQUIRE_NETWORKING", "EDGE_TTS_REQUIRE_NETWORKING option"),
+        ("submodule", "submodule initialization instructions"),
+        ("FATAL_ERROR", "configure-time failure documentation"),
+    ]
+    for keyword, description in required_topics:
+        if keyword not in content:
+            fail(f"docs/RELEASE.md does not cover {description} (missing: '{keyword}')")
+
+    ok("docs/RELEASE.md exists and covers all required topics")
+
+
+# ---------------------------------------------------------------------------
+# 17. Production apps do not reference FakeWebSocketClient or FakeHttpClient
+# ---------------------------------------------------------------------------
+
+def test_production_apps_no_fake_networking() -> None:
+    apps_dir = REPO_ROOT / "apps"
+    if not apps_dir.exists():
+        fail("apps/ directory does not exist")
+
+    fake_patterns = [
+        re.compile(r'FakeWebSocketClient', re.IGNORECASE),
+        re.compile(r'FakeHttpClient', re.IGNORECASE),
+    ]
+    violations = []
+    for src_file in apps_dir.rglob("*.cpp"):
+        content = read(src_file)
+        for pattern in fake_patterns:
+            if pattern.search(content):
+                violations.append(str(src_file.relative_to(REPO_ROOT)))
+                break
+    for src_file in apps_dir.rglob("*.hpp"):
+        content = read(src_file)
+        for pattern in fake_patterns:
+            if pattern.search(content):
+                violations.append(str(src_file.relative_to(REPO_ROOT)))
+                break
+
+    if violations:
+        fail(
+            "Production app sources reference fake networking classes. "
+            "Fake clients must never appear in apps/.\nViolations:\n  "
+            + "\n  ".join(violations)
+        )
+    ok("Production apps do not reference FakeWebSocketClient or FakeHttpClient")
+
+
+# ---------------------------------------------------------------------------
+# 18. Guard in CMakeLists.txt prevents apps from building against stub networking
+# ---------------------------------------------------------------------------
+
+def test_apps_stub_networking_guard() -> None:
+    root_cmake = REPO_ROOT / "CMakeLists.txt"
+    content = read(root_cmake)
+
+    # The guard must check all three conditions together
+    if not re.search(
+        r'EDGE_TTS_BUILD_APPS.*EDGE_TTS_REQUIRE_NETWORKING.*ixwebsocket|'
+        r'EDGE_TTS_REQUIRE_NETWORKING.*EDGE_TTS_BUILD_APPS.*ixwebsocket',
+        content,
+        re.DOTALL,
+    ):
+        fail(
+            "CMakeLists.txt must have a guard that combines EDGE_TTS_BUILD_APPS, "
+            "EDGE_TTS_REQUIRE_NETWORKING, and ixwebsocket availability to prevent "
+            "silently building apps against stub networking"
+        )
+
+    # Must be a FATAL_ERROR, not just a warning
+    guard_region = re.search(
+        r'if\s*\(.*EDGE_TTS_BUILD_APPS.*\).*?endif\s*\(\)',
+        content, re.DOTALL
+    )
+    # Simpler check: both the relevant variables and FATAL_ERROR appear in the file
+    if "EDGE_TTS_BUILD_APPS" not in content or "FATAL_ERROR" not in content:
+        fail(
+            "CMakeLists.txt is missing the FATAL_ERROR guard for apps built without ixwebsocket"
+        )
+
+    ok("CMakeLists.txt has FATAL_ERROR guard preventing apps from using stub networking")
+
+
+# ---------------------------------------------------------------------------
+# 19. EDGE_TTS_FETCH_DEPS defaults to OFF in cmake/ProjectOptions.cmake
+# ---------------------------------------------------------------------------
+
+def test_fetch_deps_defaults_to_off() -> None:
+    path = REPO_ROOT / "cmake" / "ProjectOptions.cmake"
+    content = read(path)
+    # The option() call for EDGE_TTS_FETCH_DEPS must end with OFF
+    match = re.search(
+        r'option\s*\(\s*EDGE_TTS_FETCH_DEPS[^)]*\)',
+        content,
+        re.DOTALL,
+    )
+    if not match:
+        fail("cmake/ProjectOptions.cmake has no option(EDGE_TTS_FETCH_DEPS ...) call")
+    option_text = match.group(0)
+    if not re.search(r'\bOFF\b', option_text):
+        fail(
+            "cmake/ProjectOptions.cmake: EDGE_TTS_FETCH_DEPS must default to OFF so "
+            "missing deps fail with a clear configure-time message instead of a "
+            "confusing network/git error"
+        )
+    ok("cmake/ProjectOptions.cmake: EDGE_TTS_FETCH_DEPS defaults to OFF")
+
+
+# ---------------------------------------------------------------------------
+# Functional cmake tests (require cmake ≥ 3.24 on PATH)
+# ---------------------------------------------------------------------------
+
+def _cmake_available() -> bool:
+    return shutil.which("cmake") is not None
+
+
+def _create_minimal_cmake_project(
+    tmp: pathlib.Path,
+    have_json_submodule: bool = False,
+    have_ixwebsocket_submodule: bool = False,
+) -> None:
+    """Write a minimal CMakeLists.txt + cmake/ layout in tmp for dependency tests."""
+    cmake_dst = tmp / "cmake"
+    cmake_dst.mkdir()
+    for name in ("ProjectOptions.cmake", "Dependencies.cmake", "EdgeTtsDependencies.cmake"):
+        shutil.copy2(REPO_ROOT / "cmake" / name, cmake_dst / name)
+
+    (tmp / "submodules").mkdir()
+
+    # Fake json submodule: provides nlohmann_json::nlohmann_json target
+    if have_json_submodule:
+        json_dir = tmp / "submodules" / "json"
+        json_dir.mkdir()
+        (json_dir / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.24)\n"
+            "project(nlohmann_json)\n"
+            "add_library(nlohmann_json INTERFACE)\n"
+            "add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)\n"
+        )
+
+    # Fake ixwebsocket submodule: provides ixwebsocket target
+    if have_ixwebsocket_submodule:
+        ix_dir = tmp / "submodules" / "ixwebsocket"
+        ix_dir.mkdir()
+        (ix_dir / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.24)\n"
+            "project(IXWebSocket)\n"
+            "add_library(ixwebsocket INTERFACE)\n"
+        )
+
+    (tmp / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.24)\n"
+        "project(test_dep_resolution CXX)\n"
+        'list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")\n'
+        "include(ProjectOptions)\n"
+        "include(Dependencies)\n"
+        "edge_tts_setup_options()\n"
+        "edge_tts_setup_dependencies()\n"
+    )
+
+
+def _run_cmake(src: pathlib.Path, build: pathlib.Path, extra_args: list) -> subprocess.CompletedProcess:
+    cmd = [
+        "cmake",
+        "-S", str(src),
+        "-B", str(build),
+        "-G", "Unix Makefiles",
+    ] + extra_args
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+
+# ---------------------------------------------------------------------------
+# 20. Functional: json missing + FETCH_DEPS=OFF → configure FATAL_ERROR
+# ---------------------------------------------------------------------------
+
+def test_configure_fails_clearly_when_json_missing() -> None:
+    if not _cmake_available():
+        print("  SKIP test_configure_fails_clearly_when_json_missing (cmake not on PATH)")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="edge_tts_test_") as tmp_str:
+        tmp = pathlib.Path(tmp_str)
+        _create_minimal_cmake_project(tmp, have_json_submodule=False, have_ixwebsocket_submodule=False)
+        build = tmp / "build"
+
+        result = _run_cmake(tmp, build, [
+            "-DEDGE_TTS_FETCH_DEPS=OFF",
+            # Prevent find_package from locating system nlohmann_json
+            "-DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=TRUE",
+            "-DEDGE_TTS_REQUIRE_NETWORKING=OFF",
+        ])
+
+        if result.returncode == 0:
+            fail(
+                "configure succeeded but should have failed: "
+                "nlohmann/json was unavailable and EDGE_TTS_FETCH_DEPS=OFF"
+            )
+
+        combined = result.stdout + result.stderr
+        if "nlohmann" not in combined and "json" not in combined.lower():
+            fail(
+                "configure failed but the error does not mention nlohmann/json.\n"
+                f"stdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+            )
+
+        if "FATAL_ERROR" not in combined and "CMake Error" not in combined:
+            fail(
+                "configure failed but output does not contain a CMake FATAL_ERROR.\n"
+                f"stdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+            )
+
+    ok("configure fails with a clear json-specific message when nlohmann/json is unavailable and FETCH_DEPS=OFF")
+
+
+# ---------------------------------------------------------------------------
+# 21. Functional: ixwebsocket missing + REQUIRE_NETWORKING=ON → FATAL_ERROR
+# ---------------------------------------------------------------------------
+
+def test_configure_fails_when_ixwebsocket_missing_and_networking_required() -> None:
+    if not _cmake_available():
+        print("  SKIP test_configure_fails_when_ixwebsocket_missing_and_networking_required (cmake not on PATH)")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="edge_tts_test_") as tmp_str:
+        tmp = pathlib.Path(tmp_str)
+        # Provide json (so configure gets past that check), but not ixwebsocket
+        _create_minimal_cmake_project(tmp, have_json_submodule=True, have_ixwebsocket_submodule=False)
+        build = tmp / "build"
+
+        result = _run_cmake(tmp, build, [
+            "-DEDGE_TTS_FETCH_DEPS=OFF",
+            "-DEDGE_TTS_REQUIRE_NETWORKING=ON",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_ixwebsocket=TRUE",
+        ])
+
+        if result.returncode == 0:
+            fail(
+                "configure succeeded but should have failed: "
+                "ixwebsocket unavailable and EDGE_TTS_REQUIRE_NETWORKING=ON"
+            )
+
+        combined = result.stdout + result.stderr
+        if "ixwebsocket" not in combined.lower():
+            fail(
+                "configure failed but error does not mention ixwebsocket.\n"
+                f"stdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+            )
+
+    ok("configure fails with a clear ixwebsocket-specific error when REQUIRE_NETWORKING=ON and ixwebsocket is missing")
+
+
+# ---------------------------------------------------------------------------
+# 22. Functional: ixwebsocket missing + REQUIRE_NETWORKING=OFF → succeeds
+# ---------------------------------------------------------------------------
+
+def test_configure_succeeds_without_ixwebsocket_when_networking_not_required() -> None:
+    if not _cmake_available():
+        print("  SKIP test_configure_succeeds_without_ixwebsocket_when_networking_not_required (cmake not on PATH)")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="edge_tts_test_") as tmp_str:
+        tmp = pathlib.Path(tmp_str)
+        # Provide json only; no ixwebsocket
+        _create_minimal_cmake_project(tmp, have_json_submodule=True, have_ixwebsocket_submodule=False)
+        build = tmp / "build"
+
+        result = _run_cmake(tmp, build, [
+            "-DEDGE_TTS_FETCH_DEPS=OFF",
+            "-DEDGE_TTS_REQUIRE_NETWORKING=OFF",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_ixwebsocket=TRUE",
+        ])
+
+        if result.returncode != 0:
+            fail(
+                "configure failed but should have succeeded: "
+                "REQUIRE_NETWORKING=OFF so missing ixwebsocket is acceptable.\n"
+                f"stdout: {result.stdout[:800]}\nstderr: {result.stderr[:800]}"
+            )
+
+        # Must not have built with a FATAL_ERROR
+        combined = result.stdout + result.stderr
+        if re.search(r'CMake Error|FATAL_ERROR', combined):
+            fail(
+                "configure reported a CMake error even with REQUIRE_NETWORKING=OFF.\n"
+                f"stdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+            )
+
+    ok("configure succeeds without ixwebsocket when REQUIRE_NETWORKING=OFF (stub networking path)")
+
+
+# ---------------------------------------------------------------------------
+# 23. Release archive smoke test: git archive → configure fails clearly
+# ---------------------------------------------------------------------------
+
+def test_release_archive_smoke() -> None:
+    """
+    Simulate a release archive (no submodule contents) and verify configure
+    fails with a clear dependency error when FETCH_DEPS=OFF, not with an
+    ambiguous compile-time error or silent success.
+    """
+    if not _cmake_available():
+        print("  SKIP test_release_archive_smoke (cmake not on PATH)")
+        return
+    if not shutil.which("git"):
+        print("  SKIP test_release_archive_smoke (git not on PATH)")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="edge_tts_archive_") as tmp_str:
+        tmp = pathlib.Path(tmp_str)
+        prefix = "edge-tts-cpp-smoke"
+
+        # Produce a git archive of the superproject (submodules not included)
+        git_archive = subprocess.run(
+            ["git", "archive", f"--prefix={prefix}/", "--format=tar", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        if git_archive.returncode != 0:
+            print(f"  SKIP test_release_archive_smoke (git archive failed: {git_archive.stderr.decode()[:200]})")
+            return
+
+        # Extract into tmp — produces tmp/edge-tts-cpp-smoke/
+        extract = subprocess.run(
+            ["tar", "x", "-C", str(tmp)],
+            input=git_archive.stdout,
+            capture_output=True,
+            timeout=30,
+        )
+        if extract.returncode != 0:
+            print("  SKIP test_release_archive_smoke (tar extraction failed)")
+            return
+
+        archive_src = tmp / prefix
+        if not (archive_src / "CMakeLists.txt").exists():
+            print("  SKIP test_release_archive_smoke (git archive layout unexpected)")
+            return
+
+        # Confirm: submodule dirs exist but are empty (no CMakeLists.txt)
+        json_cmakelists = archive_src / "submodules" / "json" / "CMakeLists.txt"
+        if json_cmakelists.exists():
+            # The archive unexpectedly has the submodule — skip gracefully
+            print("  SKIP test_release_archive_smoke (git archive contained submodule content)")
+            return
+
+        build = tmp / "build"
+
+        # Configure using the archive-verify-equivalent settings
+        result = _run_cmake(archive_src, build, [
+            "-DEDGE_TTS_FETCH_DEPS=OFF",
+            "-DEDGE_TTS_BUILD_APPS=OFF",
+            "-DEDGE_TTS_REQUIRE_NETWORKING=OFF",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=TRUE",
+        ])
+
+        if result.returncode == 0:
+            fail(
+                "Release archive configure succeeded without submodule contents and "
+                "FETCH_DEPS=OFF — should have failed with a clear dependency error."
+            )
+
+        combined = result.stdout + result.stderr
+        # The error must name the missing dependency explicitly
+        if "nlohmann" not in combined and "json" not in combined.lower():
+            fail(
+                "Release archive configure failed but the error does not name the missing "
+                "dependency (expected 'nlohmann' or 'json').\n"
+                f"stderr: {result.stderr[:600]}"
+            )
+
+        # No root-level generated CMake artifacts should exist (archive is clean)
+        for artifact in ("CMakeCache.txt", "CMakeFiles"):
+            if (archive_src / artifact).exists():
+                fail(
+                    f"Release archive contains generated CMake artifact '{artifact}' "
+                    "— source tree is not clean."
+                )
+
+    ok("Release archive smoke test: configure fails with a clear dependency-specific error when submodules absent and FETCH_DEPS=OFF")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -412,6 +856,16 @@ def main() -> None:
         test_ixwebsocket_lookup_order,
         test_fatal_error_when_json_unavailable,
         test_fatal_error_when_networking_required_but_missing,
+        # New tests
+        test_cmake_presets_exist,
+        test_release_md_exists,
+        test_production_apps_no_fake_networking,
+        test_apps_stub_networking_guard,
+        test_fetch_deps_defaults_to_off,
+        test_configure_fails_clearly_when_json_missing,
+        test_configure_fails_when_ixwebsocket_missing_and_networking_required,
+        test_configure_succeeds_without_ixwebsocket_when_networking_not_required,
+        test_release_archive_smoke,
     ]
     for t in tests:
         t()

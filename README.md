@@ -81,11 +81,43 @@ option-by-option compatibility matrix.
 
 ## Build
 
+### Recommended: use a CMake preset
+
+Four presets cover the common scenarios. Pick the one that matches your environment:
+
+```bash
+# Online developer build — auto-downloads missing deps via FetchContent
+cmake --preset developer
+cmake --build build
+ctest --preset developer
+
+# Offline with system packages — nlohmann-json3-dev and ixwebsocket must be installed
+cmake --preset offline-system
+cmake --build build
+
+# Offline, no networking deps — only nlohmann-json needed, no CLI apps
+cmake --preset offline-no-networking
+cmake --build build
+
+# Verify a release archive — configure must succeed without any download
+cmake --preset archive-verify
+cmake --build build-archive-verify
+```
+
+### Manual configure
+
 ```bash
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+**Dependency resolution:** submodules are the preferred source.  When a
+submodule directory is empty (e.g. in a source archive), CMake falls back to
+`find_package` (system install), then — only if `EDGE_TTS_FETCH_DEPS=ON` — to
+`FetchContent`.  When all three sources fail, CMake aborts with a clear
+configure-time error naming the missing package.  See `docs/DEPENDENCIES.md`
+for the complete lookup-order policy.
 
 ### Build options
 
@@ -98,28 +130,18 @@ ctest --test-dir build --output-on-failure
 | `EDGE_TTS_ENABLE_NETWORK_TESTS` | `OFF` | Enable tests that call the live Edge TTS service |
 | `EDGE_TTS_ENABLE_SANITIZERS` | `OFF` | Enable address and UB sanitizers |
 | `EDGE_TTS_ENABLE_CLANG_TIDY` | `OFF` | Run clang-tidy on compiled sources |
-| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically when submodules are absent |
-| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error (prevents silently building apps against stub networking) |
+| `EDGE_TTS_FETCH_DEPS` | `OFF` | Allow FetchContent to download missing dependencies. Set `ON` for the `developer` preset or any online CI. |
+| `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
 
-**Dependency resolution:** submodules are the preferred source.  When a
-submodule directory is empty (e.g. in a source archive), CMake falls back to
-`find_package` (system install) then `FetchContent` (auto-download, requires
-`EDGE_TTS_FETCH_DEPS=ON`).  See `docs/DEPENDENCIES.md` for details.
-
-Common build configurations:
+Common manual configurations:
 
 ```bash
-# Default (apps + tests)
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-
-# Strict developer build (warnings as errors)
-cmake -S . -B build -DEDGE_TTS_WARNINGS_AS_ERRORS=ON
+# Strict developer build (warnings as errors, auto-download deps)
+cmake -S . -B build -DEDGE_TTS_FETCH_DEPS=ON -DEDGE_TTS_WARNINGS_AS_ERRORS=ON
 cmake --build build && ctest --test-dir build --output-on-failure
 
-# Library + tests only (no apps)
-cmake -S . -B build -DEDGE_TTS_BUILD_APPS=OFF
+# Library + tests only (no apps, no ixwebsocket needed)
+cmake -S . -B build -DEDGE_TTS_BUILD_APPS=OFF -DEDGE_TTS_REQUIRE_NETWORKING=OFF
 cmake --build build
 
 # Build a single module
@@ -129,6 +151,20 @@ cmake --build build --target edge_tts_core
 cmake --build build --target edge_tts_core_tests
 ./build/tests/edge_tts_core_tests
 ```
+
+### Building from a source archive
+
+GitHub automatic "Source code" archives do **not** include submodule contents
+(`submodules/json/` and `submodules/ixwebsocket/` are empty).  Use one of:
+
+- **Official release archive** (`edge-tts-cpp-<VERSION>.tar.gz`): includes
+  populated submodules — configure succeeds offline.
+- **System packages**: `sudo apt install nlohmann-json3-dev` and then use the
+  `offline-system` or `offline-no-networking` preset.
+- **FetchContent**: add `-DEDGE_TTS_FETCH_DEPS=ON` to any cmake invocation;
+  requires internet access at configure time.
+
+See [`docs/RELEASE.md`](docs/RELEASE.md) for the complete source archive policy.
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
 

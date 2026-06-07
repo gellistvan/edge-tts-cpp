@@ -8,10 +8,11 @@ function(edge_tts_setup_options)
 
     # EDGE_TTS_FETCH_DEPS — when ON, CMake may use FetchContent to download
     # dependencies that are neither present as submodules nor installed system-wide.
-    # Useful for source archives / CI environments without network-accessible
-    # submodules.  Default ON so clean checkouts work out of the box.
+    # Default OFF so a missing dependency fails at configure time with a clear,
+    # actionable message rather than a confusing git/network error.
+    # Set ON for the "developer" preset or any environment with reliable internet.
     option(EDGE_TTS_FETCH_DEPS
-        "Allow FetchContent to download missing dependencies automatically" ON)
+        "Allow FetchContent to download missing dependencies automatically" OFF)
 
     # EDGE_TTS_REQUIRE_NETWORKING — when ON, configuring without ixwebsocket is a
     # fatal error.  Default: ON when EDGE_TTS_BUILD_APPS=ON (apps need real

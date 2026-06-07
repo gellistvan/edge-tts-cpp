@@ -26,16 +26,33 @@ that cannot rely on submodules being populated.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `EDGE_TTS_FETCH_DEPS` | `ON` | Allow FetchContent to download missing dependencies automatically |
+| `EDGE_TTS_FETCH_DEPS` | `OFF` | Allow FetchContent to download missing dependencies automatically. Default `OFF` so a missing dependency fails at configure time with a clear, actionable message rather than a confusing git/network error. Set `ON` for online developer builds or CI. |
 | `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when `EDGE_TTS_BUILD_APPS=ON`, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
+
+### Failure behavior
+
+When a dependency cannot be found via any of the three sources above, CMake
+aborts at **configure time** with a `FATAL_ERROR` message that names the missing
+package and lists concrete remediation steps.  No ambiguous compile-time error
+is ever produced for a missing dependency.
 
 ### Release / source archives
 
-Source archives (e.g. GitHub tarballs) do not include submodule contents.
-Use one of:
-- `EDGE_TTS_FETCH_DEPS=ON` (default) — CMake downloads pinned dependency versions at configure time.
-- Vendor the dependency sources manually into `submodules/`.
-- Pre-install via a package manager and let `find_package` locate them.
+GitHub automatic "Source code" archives do not include submodule contents —
+`submodules/json/` and `submodules/ixwebsocket/` are empty directories.
+
+Options for building from such an archive:
+
+1. **Official release tarball** (`edge-tts-cpp-<VERSION>.tar.gz`): created with
+   `tools/make_release_archive.sh`, which populates submodule directories before
+   packing.  Configure succeeds offline without any additional steps.
+2. **System package manager**: `sudo apt install nlohmann-json3-dev` (and install
+   ixwebsocket if CLI apps are needed).  Use `EDGE_TTS_FETCH_DEPS=OFF`.
+3. **FetchContent**: `cmake -DEDGE_TTS_FETCH_DEPS=ON ...`.  Requires internet
+   access at configure time; downloads the pinned tag for each missing dep.
+
+See [`docs/RELEASE.md`](RELEASE.md) for the complete source archive policy and
+the release checklist.
 
 ---
 

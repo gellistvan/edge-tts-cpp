@@ -1,0 +1,80 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "developer",
+      "displayName": "Developer (online, auto-download missing deps)",
+      "description": "Full build: apps, tests, and FetchContent fallback for any submodule that is not populated. Requires internet access when submodules are absent.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "EDGE_TTS_BUILD_APPS":           { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_BUILD_TESTS":          { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_FETCH_DEPS":           { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_REQUIRE_NETWORKING":   { "type": "BOOL", "value": "ON" }
+      }
+    },
+    {
+      "name": "offline-system",
+      "displayName": "Offline (system packages, full build)",
+      "description": "Build apps and tests using system-installed nlohmann-json and ixwebsocket packages. No FetchContent. Fails at configure time if either package is absent.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "EDGE_TTS_BUILD_APPS":           { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_BUILD_TESTS":          { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_FETCH_DEPS":           { "type": "BOOL", "value": "OFF" },
+        "EDGE_TTS_REQUIRE_NETWORKING":   { "type": "BOOL", "value": "ON" }
+      }
+    },
+    {
+      "name": "offline-no-networking",
+      "displayName": "Offline (no networking, libraries and tests only)",
+      "description": "Builds all libraries and tests without ixwebsocket. Suitable for offline environments or systems where only nlohmann-json is available. CLI apps are not built.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "EDGE_TTS_BUILD_APPS":           { "type": "BOOL", "value": "OFF" },
+        "EDGE_TTS_BUILD_TESTS":          { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_FETCH_DEPS":           { "type": "BOOL", "value": "OFF" },
+        "EDGE_TTS_REQUIRE_NETWORKING":   { "type": "BOOL", "value": "OFF" }
+      }
+    },
+    {
+      "name": "archive-verify",
+      "displayName": "Release archive verification",
+      "description": "Verifies that a source archive (or clean checkout) configures correctly without downloading anything. Configure fails with a clear message if required dependencies are absent. Uses a separate build dir so it does not clobber a normal build.",
+      "binaryDir": "${sourceDir}/build-archive-verify",
+      "cacheVariables": {
+        "EDGE_TTS_BUILD_APPS":           { "type": "BOOL", "value": "OFF" },
+        "EDGE_TTS_BUILD_TESTS":          { "type": "BOOL", "value": "ON" },
+        "EDGE_TTS_FETCH_DEPS":           { "type": "BOOL", "value": "OFF" },
+        "EDGE_TTS_REQUIRE_NETWORKING":   { "type": "BOOL", "value": "OFF" }
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "developer",             "configurePreset": "developer" },
+    { "name": "offline-system",        "configurePreset": "offline-system" },
+    { "name": "offline-no-networking", "configurePreset": "offline-no-networking" },
+    { "name": "archive-verify",        "configurePreset": "archive-verify" }
+  ],
+
+  "testPresets": [
+    {
+      "name": "developer",
+      "configurePreset": "developer",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "offline-system",
+      "configurePreset": "offline-system",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "offline-no-networking",
+      "configurePreset": "offline-no-networking",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
