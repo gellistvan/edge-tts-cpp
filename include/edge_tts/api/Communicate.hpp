@@ -46,14 +46,18 @@ using SynthesizerFn = std::function<
 class Communicate final {
 public:
     // Production constructor: uses default transport options.
-    // Real synthesis requires a functional WebSocket transport; until that is
-    // wired, stream_sync() and save() return ErrorCode::network_error.
+    // Constructs the full networking stack (SystemClock, IdGenerator,
+    // EdgeServiceConfig, EdgeTokenProvider, EdgeProtocol,
+    // ConnectionMetadataFactory, WebSocketClient, SynthesisSession) eagerly,
+    // but performs NO network I/O at construction time.  Network work is
+    // deferred to the first call to stream_sync() or save().
     explicit Communicate(std::string text, core::TtsConfig config = {});
 
     // Production constructor with explicit transport options (proxy, timeouts).
     // Speech configuration and transport options are kept separate:
     //   config  — what to say and how (voice, rate, volume, pitch)
     //   options — how to reach the service (proxy URL, connection timeouts)
+    // Same lazy-networking guarantee as the 2-arg constructor above.
     Communicate(std::string text, core::TtsConfig config, CommunicateOptions options);
 
     // Test / dependency-injection constructor: synthesizer is called in place

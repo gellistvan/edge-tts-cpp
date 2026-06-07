@@ -252,7 +252,7 @@ in `api`, above `communication`.
 ## `edge_tts::api`
 
 **CMake target:** `edge_tts_api` / `edge_tts::api`
-**Test target:** *(no separate test target — tested via `communication_tests` and integration)*
+**Test target:** `edge_tts_api_tests` (offline integration — uses `FakeWebSocketClient` seam; real-network tests gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`)
 **Headers:** `include/edge_tts/api/`
 **Sources:** `src/api/`
 
@@ -261,7 +261,7 @@ the CLI layer should depend on for synthesis.
 
 | File | Description |
 |------|-------------|
-| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Behavior is a stub pending Task 9.x. |
+| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `stream_sync()` or `save()` is called. |
 
 **Rationale for a separate module:** `Communicate` needs `SynthesisSession` from
 `communication`, `SubMaker` from `subtitle`, and `media` for audio saving.
@@ -285,8 +285,9 @@ avoids a fat `communication` module that also owns public API semantics.
 **Sources:** `src/cli/`
 
 CLI argument parsing and application-level plumbing shared between the
-`edge-tts` and `edge-playback` executables.  Will use CLI11 for argument
-parsing once the dependency is wired.
+`edge-tts` and `edge-playback` executables.  Uses a hand-rolled token
+parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) that mirrors the
+Python `argparse` option surface exactly.
 
 **Allowed dependencies:** `edge_tts::api` (transitively provides everything).
 
