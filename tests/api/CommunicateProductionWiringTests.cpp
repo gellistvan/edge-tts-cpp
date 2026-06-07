@@ -238,57 +238,44 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression: production constructor must not return the old stub error
+// Structural offline tests for the production 2-arg and 3-arg constructors.
 //
-// The production Communicate(text, config) now wires the real networking stack.
-// If someone reintroduces the stub lambda, these tests catch it.
+// These tests verify the structural behavior of the production constructors
+// WITHOUT calling stream_sync() or save().  Calling either of those on a
+// production-constructed Communicate would attempt a real network connection,
+// making the test environment-dependent.
 //
-// Strategy: call stream_sync() and verify the outcome is NOT the old hardcoded
-// stub.  There are two valid outcomes depending on the environment:
-//
-//   (a) network available  → synthesis succeeds (result has value)        — not a stub
-//   (b) no network in CI   → synthesis fails with transport error code     — not a stub
-//
-// Both outcomes prove the stub was removed.  The tests accept both and reject
-// only the old "WebSocket transport not yet implemented" stub behavior.
+// The actual "production constructor synthesizes correctly via the real stack"
+// verification lives in tests/api/CommunicateNetworkTests.cpp, gated behind
+// EDGE_TTS_ENABLE_NETWORK_TESTS=ON and EDGE_TTS_RUN_NETWORK_TESTS=1.
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateProductionWiring, ProductionConstructorErrorIsNotStubMessage) {
-    Communicate c("hello", valid_config());
-    auto result = c.stream_sync();
-    // Either success (live network) or transport failure (no network) is fine.
-    // The old stub always failed with a specific message — reject that only.
-    if (!result.has_value()) {
-        EXPECT_NE(result.error().message(),
-                  "WebSocket transport not yet implemented");
-    }
-    // If result.has_value() → synthesis succeeded, which is even better evidence
-    // that the stub is gone.  No assertion needed in that branch.
+TEST(CommunicateProductionWiring, ProductionConstructorStoresTextAndConfig) {
+    // Constructing with the 2-arg form must not crash or throw, and must
+    // preserve the text and config that were passed in.
+    Communicate c("hello world", valid_config());
+    EXPECT_EQ(c.text(), "hello world");
+    EXPECT_EQ(c.config().voice, TtsConfig::defaults().voice);
 }
 
-TEST(CommunicateProductionWiring, ProductionConstructorWithOptionsErrorIsNotStub) {
+TEST(CommunicateProductionWiring, ProductionConstructorWithOptionsStoresOptions) {
+    // The 3-arg form (text, config, options) must store options correctly.
+    // Verifies CommunicateOptions is preserved without making network calls.
     CommunicateOptions opts;
-    opts.proxy = "http://proxy.test:8080";
+    opts.proxy = "http://proxy.test:3128";
     Communicate c("hello", valid_config(), opts);
-    auto result = c.stream_sync();
-    // With a bogus proxy this will fail, but not with the old stub message.
-    if (!result.has_value()) {
-        EXPECT_NE(result.error().message(),
-                  "WebSocket transport not yet implemented");
-    }
+    EXPECT_EQ(c.options().proxy, opts.proxy);
+    EXPECT_EQ(c.text(), "hello");
 }
 
-TEST(CommunicateProductionWiring, ProductionConstructorErrorCodeIsTransportCode) {
+TEST(CommunicateProductionWiring, ProductionConstructorDefaultOptionsAreEmpty) {
     Communicate c("hello", valid_config());
-    auto result = c.stream_sync();
-    // If the call fails, the error must be a transport error, not the old stub codes.
-    if (!result.has_value()) {
-        // Transport errors are network_error or unsupported, never the old
-        // invalid_state or protocol_error codes from a stub placeholder.
-        const auto code = result.error().code();
-        const bool is_transport_error =
-            (code == ErrorCode::network_error) ||
-            (code == ErrorCode::unsupported);
-        EXPECT_TRUE(is_transport_error);
-    }
+    EXPECT_FALSE(c.options().proxy.has_value());
+}
+
+TEST(CommunicateProductionWiring, ProductionConstructorPreservesVoice) {
+    TtsConfig cfg = TtsConfig::defaults();
+    cfg.voice = "en-GB-RyanNeural";
+    Communicate c("test", cfg);
+    EXPECT_EQ(c.config().voice, "en-GB-RyanNeural");
 }

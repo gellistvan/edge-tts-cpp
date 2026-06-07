@@ -1,9 +1,14 @@
 // Network tests for HttpClient — opt-in only.
 //
-// Enable with:
+// Two independent gates must both be satisfied:
+//
+//   # 1. Compile-time gate — build the binary:
 //   cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
 //   cmake --build build --target edge_tts_communication_network_tests
-//   ctest --test-dir build -R edge_tts_communication_network_tests
+//
+//   # 2. Run-time gate — opt in to actual network calls:
+//   EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build
+//       -R edge_tts_communication_network_tests --output-on-failure
 //
 // Do not enable in CI unless the environment has reliable outbound TLS access to
 //   https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list
@@ -17,6 +22,7 @@
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+#include <cstdlib>
 #include <string>
 
 using edge_tts::communication::HttpClient;
@@ -28,11 +34,18 @@ using edge_tts::common::IdGenerator;
 
 static IdGenerator k_net_ids{};
 
+// Run-time gate: returns true when EDGE_TTS_RUN_NETWORK_TESTS is set.
+static bool network_enabled() {
+    const char* v = std::getenv("EDGE_TTS_RUN_NETWORK_TESTS");
+    return v != nullptr && v[0] != '\0';
+}
+
 // ---------------------------------------------------------------------------
 // GET voices endpoint — status and body
 // ---------------------------------------------------------------------------
 
 TEST(HttpClientNetwork, VoicesEndpointReturns200) {
+    if (!network_enabled()) return;
     HttpClient client;
     auto cfg = default_edge_service_config();
 
@@ -53,6 +66,7 @@ TEST(HttpClientNetwork, VoicesEndpointReturns200) {
 }
 
 TEST(HttpClientNetwork, VoicesEndpointBodyNonEmpty) {
+    if (!network_enabled()) return;
     HttpClient client;
     auto cfg = default_edge_service_config();
 
@@ -77,6 +91,7 @@ TEST(HttpClientNetwork, VoicesEndpointBodyNonEmpty) {
 // ---------------------------------------------------------------------------
 
 TEST(HttpClientNetwork, VoiceServiceParsesNonEmptyVoiceList) {
+    if (!network_enabled()) return;
     HttpClient       client;
     VoiceJsonParser  parser;
     auto             cfg = default_edge_service_config();
@@ -89,6 +104,7 @@ TEST(HttpClientNetwork, VoiceServiceParsesNonEmptyVoiceList) {
 }
 
 TEST(HttpClientNetwork, VoiceServiceReturnsEnUsVoices) {
+    if (!network_enabled()) return;
     HttpClient      client;
     VoiceJsonParser parser;
     auto            cfg = default_edge_service_config();
@@ -103,6 +119,7 @@ TEST(HttpClientNetwork, VoiceServiceReturnsEnUsVoices) {
 }
 
 TEST(HttpClientNetwork, VoiceServiceIncludesEmmaVoice) {
+    if (!network_enabled()) return;
     // Reference: constants.py DEFAULT_VOICE = "en-US-EmmaMultilingualNeural"
     HttpClient      client;
     VoiceJsonParser parser;

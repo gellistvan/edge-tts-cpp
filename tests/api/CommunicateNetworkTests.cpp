@@ -10,7 +10,7 @@
 //   cmake --build build
 //
 //   # 2. Set the run-time gate to opt in to actual network calls:
-//   EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build \
+//   EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build
 //       -R edge_tts_api_network_tests --output-on-failure
 //
 // Both gates must be satisfied for the tests to execute.  The compile-time gate
@@ -102,7 +102,7 @@ TEST(CommunicateNetwork, SaveWritesMp3File) {
     ASSERT_TRUE(c.save(mp3.path).has_value());
 
     EXPECT_TRUE(fs::exists(mp3.path));
-    EXPECT_GT(fs::file_size(mp3.path), 0u);
+    EXPECT_TRUE(fs::file_size(mp3.path) > 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +121,9 @@ TEST(CommunicateNetwork, SaveWithWordBoundaryWritesSrtFile) {
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
     EXPECT_TRUE(fs::exists(mp3.path));
-    EXPECT_GT(fs::file_size(mp3.path), 0u);
+    EXPECT_TRUE(fs::file_size(mp3.path) > 0u);
     EXPECT_TRUE(fs::exists(srt.path));
-    EXPECT_GT(fs::file_size(srt.path), 0u);
+    EXPECT_TRUE(fs::file_size(srt.path) > 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -170,4 +170,54 @@ TEST(CommunicateNetwork, BogusProxyYieldsNetworkError) {
         EXPECT_NE(result.error().code(), edge_tts::common::ErrorCode::invalid_state);
     }
     // If somehow the local port is open and traffic passes, accept the result.
+}
+
+// ---------------------------------------------------------------------------
+// Production constructor wiring — requires real network.
+//
+// These tests prove that the 2-arg and 3-arg production constructors wire the
+// real networking stack and can produce audio when the service is reachable.
+// The offline structural equivalents live in CommunicateProductionWiringTests.cpp.
+// ---------------------------------------------------------------------------
+
+TEST(CommunicateNetwork, ProductionConstructorCanSynthesizeWithRealStack) {
+    // Proves the 2-arg production constructor wires a real SynthesisSession
+    // (not a stub), by verifying synthesis completes with non-empty audio.
+    if (!network_enabled()) return;
+
+    Communicate c("Hi.", TtsConfig::defaults());
+    auto result = c.stream_sync();
+
+    ASSERT_TRUE(result.has_value());
+    bool has_audio = false;
+    for (const auto& chunk : *result) {
+        if (std::holds_alternative<AudioChunk>(chunk)) {
+            if (!std::get<AudioChunk>(chunk).data.empty())
+                has_audio = true;
+        }
+    }
+    EXPECT_TRUE(has_audio);
+}
+
+TEST(CommunicateNetwork, ProductionConstructorWithOptionsForwardsProxy) {
+    // Proves the 3-arg production constructor forwards CommunicateOptions to
+    // the transport layer.  A bogus proxy must cause a transport-level failure,
+    // not an invalid_state or stub error.
+    if (!network_enabled()) return;
+
+    CommunicateOptions opts;
+    opts.proxy = "http://127.0.0.1:1";
+    Communicate c("Hi.", TtsConfig::defaults(), opts);
+    auto result = c.stream_sync();
+
+    // The call must fail with a transport error, proving the proxy was forwarded.
+    // If it somehow succeeds (port 1 was open), that is also acceptable evidence.
+    if (!result.has_value()) {
+        const auto code = result.error().code();
+        const bool is_transport_code =
+            code == edge_tts::common::ErrorCode::network_error ||
+            code == edge_tts::common::ErrorCode::timeout       ||
+            code == edge_tts::common::ErrorCode::unsupported;
+        EXPECT_TRUE(is_transport_code);
+    }
 }

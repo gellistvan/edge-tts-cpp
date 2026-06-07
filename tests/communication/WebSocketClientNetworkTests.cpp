@@ -1,9 +1,14 @@
 // Network tests for WebSocketClient — opt-in only.
 //
-// Enable with:
+// Two independent gates must both be satisfied:
+//
+//   # 1. Compile-time gate — build the binary:
 //   cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON
 //   cmake --build build --target edge_tts_communication_network_tests
-//   ctest --test-dir build -R edge_tts_communication_network_tests
+//
+//   # 2. Run-time gate — opt in to actual network calls:
+//   EDGE_TTS_RUN_NETWORK_TESTS=1 ctest --test-dir build
+//       -R edge_tts_communication_network_tests --output-on-failure
 //
 // Do not enable in CI unless the environment has reliable outbound TLS access to
 //   wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
@@ -27,6 +32,7 @@
 #include "edge_tts/core/Chunk.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
+#include <cstdlib>
 #include <string>
 #include <variant>
 #include <vector>
@@ -43,6 +49,12 @@ using edge_tts::common::IdGenerator;
 using edge_tts::core::TtsConfig;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::AudioChunk;
+
+// Run-time gate: returns true when EDGE_TTS_RUN_NETWORK_TESTS is set.
+static bool network_enabled() {
+    const char* v = std::getenv("EDGE_TTS_RUN_NETWORK_TESTS");
+    return v != nullptr && v[0] != '\0';
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,6 +93,7 @@ static WebSocketClientOptions make_edge_tts_options()
 // ---------------------------------------------------------------------------
 
 TEST(WebSocketClientNetwork, ShortSynthesisReturnsNonEmptyAudio) {
+    if (!network_enabled()) return;
     // Reference: communicate.py Communicate.stream() with a short text.
     // One chunk → one WebSocket connection → audio frames → turn.end → close.
 
@@ -119,6 +132,7 @@ TEST(WebSocketClientNetwork, ShortSynthesisReturnsNonEmptyAudio) {
 }
 
 TEST(WebSocketClientNetwork, ShortSynthesisResultIsNonEmpty) {
+    if (!network_enabled()) return;
     auto cfg = default_edge_service_config();
 
     WebSocketClient client{make_edge_tts_options()};
@@ -143,6 +157,7 @@ TEST(WebSocketClientNetwork, ShortSynthesisResultIsNonEmpty) {
 }
 
 TEST(WebSocketClientNetwork, SynthesisReceivesTurnEnd) {
+    if (!network_enabled()) return;
     // Verifies the session correctly terminates on turn.end and returns ok
     // (turn.end is the break condition in the receive loop — if it is never
     // received the session would block until read_timeout).
@@ -170,6 +185,7 @@ TEST(WebSocketClientNetwork, SynthesisReceivesTurnEnd) {
 }
 
 TEST(WebSocketClientNetwork, SynthesisWithWordBoundaryMetadata) {
+    if (!network_enabled()) return;
     // The word boundary metadata path exercises the audio.metadata text frame
     // branch of the receive loop in addition to the binary audio frames.
     // Reference: communicate.py — TtsConfig with WordBoundary boundary type.

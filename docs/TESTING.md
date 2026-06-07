@@ -29,25 +29,60 @@ ctest --test-dir build -R edge_tts_core_tests
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Network integration tests                                      │
-│  EDGE_TTS_ENABLE_NETWORK_TESTS=ON + EDGE_TTS_RUN_NETWORK_TESTS=1│
-│  api_network, communication_network                             │
+│  Real-network integration tests                                 │
+│  Gate 1 (compile): EDGE_TTS_ENABLE_NETWORK_TESTS=ON            │
+│  Gate 2 (runtime): EDGE_TTS_RUN_NETWORK_TESTS=1                │
+│  Targets: api_network, communication_network                    │
+│  What: live Edge TTS service — voice listing, synthesis         │
 ├─────────────────────────────────────────────────────────────────┤
 │  Offline integration tests                                      │
-│  api_tests (CommunicateEndToEndTests.cpp)                       │
+│  Always compiled; always run in default ctest                   │
+│  api_tests (CommunicateEndToEndTests.cpp,                       │
+│             CommunicateProductionWiringTests.cpp)               │
 │  Full stack: Communicate → SynthesisSession → EdgeProtocol      │
-│  → FakeWebSocketClient → FileWriter (no real network)           │
+│  → FakeWebSocketClient → FileWriter (deterministic, no network) │
 ├─────────────────────────────────────────────────────────────────┤
 │  Unit tests (all other targets)                                 │
-│  Isolated per-module, fast, no I/O                              │
+│  Isolated per-module, fast, no I/O, no network                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Unit tests** cover one module at a time with fakes for their dependencies.
+No outbound connections, no file I/O beyond temp files.
+
 **Offline integration tests** wire the full `api::Communicate` stack end-to-end
-using `FakeWebSocketClient` — no outbound connections, verifiable in CI.
-**Network integration tests** call the live Edge TTS service and must be opted
-in explicitly (see the Network tests section below).
+using `FakeWebSocketClient` — deterministic, no outbound connections, always run in CI.
+All `Communicate` objects in normal tests are constructed with the `SynthesizerFn`
+injection constructor; the production 2/3-arg constructors (which create a real
+`WebSocketClient`) are tested only via structural assertions that do not call
+`stream_sync()` or `save()`.
+
+**Real-network integration tests** call the live Edge TTS service and must be opted
+in explicitly via **two independent gates** (see the Network tests section below).
+The default `ctest` invocation never runs these tests, is deterministic, and requires
+no internet access.
+
+### Network test isolation rules
+
+These rules are enforced by `tests/tools/test_network_hygiene.py` (run as
+`edge_tts_network_hygiene_tests` in the default `ctest` suite):
+
+1. **No production Communicate in normal tests.** A normal test file must not
+   call `stream_sync()` or `save()` on a `Communicate` object that was constructed
+   without a `SynthesizerFn` injection argument.  The production 2-arg and 3-arg
+   constructors wire a real `WebSocketClient` and would attempt TLS connections.
+
+2. **Network files are named `*Network*.cpp`.** Only files containing
+   `Network` in their name may reference `EDGE_TTS_RUN_NETWORK_TESTS` or
+   `network_enabled()` in code (comments are exempt).
+
+3. **Network binaries are compile-gated.** Every `*NetworkTests.cpp` source in
+   `tests/CMakeLists.txt` must appear inside an
+   `if(EDGE_TTS_ENABLE_NETWORK_TESTS)` block.
+
+4. **Each network test checks the runtime gate.** Every `TEST(...)` body in a
+   `*NetworkTests.cpp` file must call `network_enabled()` within its first 6
+   executable lines and return immediately when false.
 
 ## C++ test targets
 
