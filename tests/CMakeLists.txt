@@ -120,6 +120,7 @@ edge_tts_add_module_test(
         api/CommunicateOptionsTests.cpp
         api/CommunicateProductionWiringTests.cpp
         api/CommunicateEndToEndTests.cpp
+        api/OfflineIntegrationTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli
 )
 

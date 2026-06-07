@@ -268,7 +268,24 @@ a minimal GTest-compatible single-header runner located at
 | `edge_tts_media_tests` | `tests/media` | `edge_tts::media` |
 | `edge_tts_subtitles_tests` | `tests/subtitles` | `edge_tts::subtitles` |
 
-Each module test target should prefer behavior-level tests over implementation-detail tests. Cross-module integration tests may be added later as a separate target once real transport is implemented.
+Each module test target should prefer behavior-level tests over implementation-detail tests.
+
+### Offline integration coverage
+
+`edge_tts_api_tests` contains cross-module offline integration tests that exercise the complete path from user text to audio chunks and subtitles without any real network access.  The three source files in `tests/api/` form a three-layer coverage strategy:
+
+```
+CommunicateEndToEndTests.cpp        — happy-path: MP3, SRT, XML escape, UTF-8, long text
+CommunicateProductionWiringTests.cpp — construction wiring: lazy init, no placeholder
+OfflineIntegrationTests.cpp         — protocol layer: frame structure, error propagation
+```
+
+`OfflineIntegrationTests.cpp` exercises the full path `Communicate → SynthesisSession → EdgeProtocol → FakeWebSocketClient → FileWriter` and proves:
+
+1. **Frame structure**: the client sends `speech.config` (with `Path:speech.config` and `Content-Type:application/json`) then `ssml` (with `Path:ssml` and a 32-char hex `X-RequestId`) for every chunk.
+2. **Escaping correctness**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;` / `&lt;` / `&gt;` — never double-escaped, never raw.
+3. **Multi-chunk offset compensation**: a 5000-byte input splits into two chunks; boundaries from chunk 2 have their `offset_ticks` shifted by `N_audio_bytes * 8 * 10_000_000 / 48_000` (Python reference formula), verified both via `stream_sync()` chunk values and via the SRT timestamp in `save()` output.
+4. **Error propagation**: an unknown `Path` header returns `protocol_error`; a transport drop injected via `set_receive_error` returns `network_error`; `turn.end` with no preceding audio returns `service_error` with a message mentioning "audio".
 
 ## Current implementation status
 

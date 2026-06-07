@@ -38,7 +38,8 @@ ctest --test-dir build -R edge_tts_core_tests
 │  Offline integration tests                                      │
 │  Always compiled; always run in default ctest                   │
 │  api_tests (CommunicateEndToEndTests.cpp,                       │
-│             CommunicateProductionWiringTests.cpp)               │
+│             CommunicateProductionWiringTests.cpp,               │
+│             OfflineIntegrationTests.cpp)                        │
 │  Full stack: Communicate → SynthesisSession → EdgeProtocol      │
 │  → FakeWebSocketClient → FileWriter (deterministic, no network) │
 ├─────────────────────────────────────────────────────────────────┤
@@ -56,6 +57,25 @@ All `Communicate` objects in normal tests are constructed with the `SynthesizerF
 injection constructor; the production 2/3-arg constructors (which create a real
 `WebSocketClient`) are tested only via structural assertions that do not call
 `stream_sync()` or `save()`.
+
+The three offline integration source files cover complementary areas:
+
+| Source | Focus |
+|--------|-------|
+| `CommunicateEndToEndTests.cpp` | Happy-path output: MP3 bytes, SRT content, XML escaping, UTF-8, long text, one-shot guarantee |
+| `CommunicateProductionWiringTests.cpp` | Production constructor wiring: lazy construction, no placeholder error, save() through fake transport, XML/UTF-8 regressions |
+| `OfflineIntegrationTests.cpp` | Frame-level protocol verification: sent frame structure, exact escaping, offset compensation, error propagation, no-audio error |
+
+`OfflineIntegrationTests.cpp` specifically verifies:
+- `sent_messages()[0]` has `Path:speech.config` and `Content-Type:application/json`
+- `sent_messages()[1]` has `Path:ssml`, `X-RequestId:` (32-char hex), and `<speak>` tags
+- Multi-chunk input sends 4 frames (2×speech.config + 2×ssml) and connects twice
+- "Tom & Jerry `<test>`" is escaped exactly once (`&amp;`, `&lt;`, `&gt;`) — not double-escaped
+- Japanese and Arabic text pass through the encoding pipeline verbatim
+- Chunk-2 boundary offsets are shifted by `N*8*10_000_000/48_000` ticks matching the Python reference
+- Unknown Path header from the fake server → `ErrorCode::protocol_error`
+- `set_receive_error` injection → `ErrorCode::network_error`
+- turn.end without audio → `ErrorCode::service_error` with message containing "audio"
 
 **Real-network integration tests** call the live Edge TTS service and must be opted
 in explicitly via **two independent gates** (see the Network tests section below).

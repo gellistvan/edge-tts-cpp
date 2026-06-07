@@ -312,6 +312,17 @@ Run everything with:
 ctest --test-dir build --output-on-failure
 ```
 
+### Offline integration coverage
+
+`edge_tts_api_tests` includes deterministic end-to-end integration tests that exercise the complete path — `Communicate → SynthesisSession → EdgeProtocol → FakeWebSocketClient → FileWriter` — with no real network or live service required.  These tests always run in the default `ctest` suite and cover:
+
+- **Frame structure**: verifies that `speech.config` and `ssml` frames have the correct `Path:` headers, `Content-Type`, and a 32-char hex `X-RequestId`.
+- **Escaping**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;`/`&lt;`/`&gt;` — exactly once, never double-escaped.
+- **Multi-chunk offset compensation**: long text split into two chunks; boundaries from chunk 2 are shifted by the audio duration of chunk 1, verified via both `stream_sync()` chunk values and `save()` SRT timestamps.
+- **Error propagation**: unknown `Path` header → `protocol_error`; transport drop → `network_error`; no audio before `turn.end` → `service_error`.
+
+See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy and [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for the tested data flow.
+
 ## Dependency policy
 
 Third-party dependencies should live in `submodules/` and be wired from `cmake/Dependencies.cmake`.
