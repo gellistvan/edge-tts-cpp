@@ -33,10 +33,10 @@ Three cmake helper files manage module and test registration:
 | `Result.hpp` | `Result<T>` and `Result<void>` — lightweight result types built on `std::variant<T, Error>`. `BadResultAccess` thrown on misuse. |
 | `Clock.hpp` | `IClock` abstract interface (UTC `time_point`), `SystemClock` (wraps `system_clock::now()`), `FixedClock` (deterministic test double). No protocol-specific epoch conversions — those live in the communication/serialization layer. |
 | `Hex.hpp` | `hex_encode_lower(span<byte>)`, `hex_encode_upper(span<byte>)`, `is_hex(string_view)`. Used by `IdGenerator` and the communication/DRM layer for encoding. |
-| `Utf8.hpp` | `is_continuation(char)` (constexpr), `safe_boundary(sv, pos)` (constexpr, backward compat). Full API: `is_valid_utf8(sv)` (rejects overlong, surrogates, truncated, >U+10FFFF), `previous_code_point_boundary(sv, i)`, `next_code_point_boundary(sv, i)`, `split_utf8_by_byte_limit(sv, max_bytes)`. Used by `TextChunker`; split function is the canonical source for safe UTF-8 slicing. |
+| `Utf8.hpp` | `is_continuation(char)` (constexpr), `safe_boundary(sv, pos)` (constexpr, backward compat). Full API: `is_valid_utf8(sv)` (rejects overlong, surrogates, truncated, >U+10FFFF), `previous_code_point_boundary(sv, i)`, `next_code_point_boundary(sv, i)`, `split_utf8_by_byte_limit(sv, max_bytes)`. `split_utf8_by_byte_limit` is the canonical source for safe UTF-8 slicing; used by `serialization::TextChunker`. |
 | `IdGenerator.hpp` | `IdGenerator` class: `uuid_v4()` (36-char hyphenated lowercase UUID v4), `uuid_v4_without_hyphens()` (32-char, matches Python `uuid.uuid4().hex`), `random_32_hex()` (32-char lowercase, matches Python `secrets.token_hex(16)`). Edge-specific header assignments (ConnectionId, X-RequestId, MUID) are in the communication layer. |
 | `Expected.hpp` | Generic `Expected<T,E>` / `Unexpected<E>` for cases that need a custom error type. |
-| `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `TextChunker` to avoid splitting mid-sequence. |
+| `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `serialization::TextChunker` to avoid splitting mid-sequence. |
 
 **Allowed dependencies:** none (foundational, must stay zero-dep).
 
@@ -89,8 +89,6 @@ Two error propagation styles are used:
 | `TtsChunk.hpp` | Compatibility shim — `#include`s `Chunk.hpp`. |
 | `TtsConfig.hpp` | `TtsConfig` struct (voice, rate, volume, pitch, boundary). `validate()` normalizes the voice field and throws `ConfigurationError` on invalid syntax. `normalize_voice_name(string_view)` free function. |
 | `Voice.hpp` | `VoiceGender` enum (`Female`, `Male`, `Unknown`). `Voice` struct (name, short_name, gender, locale, styles) with `operator==`/`operator!=`. |
-| `TextChunker.hpp` | `TextChunker(max_bytes)` — splits text into byte-capped chunks at UTF-8 code-point boundaries. |
-
 | `OutputFormat.hpp` | `OutputFormat` — validated audio format type. `default_format()` returns `"audio-24khz-48kbitrate-mono-mp3"` (the only format used by the Python reference). `from_string()` rejects empty strings and unknown formats. No arbitrary format strings permitted. |
 | `Voice.hpp` | `VoiceGender {unknown, female, male}`, `Voice` struct (all fields from Python `Voice` TypedDict: `name`, `short_name`, `gender`, `locale`, `friendly_name`, `status`, `suggested_codec`, `content_categories`, `voice_personalities`, `language`). `voice_gender_from_string()` parses `"Female"`/`"Male"` (case-sensitive). `to_string(VoiceGender)` returns exact Python wire strings. |
 
@@ -130,7 +128,7 @@ of the voice-list response.
 | `SsmlBuilder.hpp` | Builds SSML `<speak>` documents from `TtsConfig` + raw text. |
 | `XmlEscaper.hpp` | `xml_escape` / `xml_unescape` matching `xml.sax.saxutils`. |
 | `TextNormalizer.hpp` | UTF-8 validation + control-character replacement. |
-| `TextChunker.hpp` | Splits text into 4096-byte XML-escaped chunks. |
+| `TextChunker.hpp` | `TextChunker` + `TextChunkerOptions` — the Edge SSML chunker: normalize UTF-8, XML-escape, split at the 4096-byte escaped limit (sentence/word/UTF-8 boundary preference), protect XML entities. Returns chunks ready for `<prosody>` embedding. |
 | `VoiceJsonParser.hpp` | Parses the voice-list JSON array into `std::vector<core::Voice>`. No HTTP dependency. |
 | `ProtocolMessage.hpp` | `ProtocolMessage` struct: `vector<pair<string,string>>` headers + string body. Header lookup via `header(name)`. |
 | `ProtocolParser.hpp` | Parses an Edge TTS WebSocket text frame (`\r\n\r\n`-delimited) into a `ProtocolMessage`. |
@@ -213,7 +211,6 @@ spawning system executables — no direct linking to FFmpeg libraries.
 | File | Description |
 |------|-------------|
 | `ProcessRunner.hpp` | `ProcessCommand` (executable + argument list, no shell string), `ProcessResult` (exit_code, stdout_text, stderr_text), `IProcessRunner` (injectable interface), `ProcessRunner` (POSIX fork+execvp, no `system()` or shell) |
-| `FakeProcessRunner.hpp` | `FakeProcessRunner` — in-memory `IProcessRunner` test double.  No POSIX dependencies; compiles on all platforms.  Inject instead of `ProcessRunner` to keep tests fast and side-effect-free. |
 | `AudioConverter.hpp` | `IAudioConverter` — pure virtual interface: `play_mp3(path)`, `convert(input, output)`. Both return `Result<void>`. |
 | `ExecutableDiscovery.hpp` | `ExecutableDiscovery::find_on_path(name, path_env)` — PATH scanner used to locate `ffmpeg`/`ffplay` without executing any process. Returns `optional<path>`. |
 | `FfmpegAudioConverter.hpp` | `FfmpegAudioConverter` — concrete `IAudioConverter`. Uses `ExecutableDiscovery` to find `ffmpeg` (for `convert()`) and `ffplay` (for `play_mp3()`) then dispatches via an injected `IProcessRunner`. No FFmpeg library is linked. |
@@ -237,29 +234,28 @@ in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 | `ConnectionMetadata.hpp` | `ConnectionMetadata` struct (connection_id + request_id, both 32-char lowercase hex UUID v4 without hyphens). `ConnectionMetadataFactory` wraps `IdGenerator`. |
 | `HttpTypes.hpp` | `HttpRequest` and `HttpResponse` plain data types. |
 | `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
-| `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
 | `EdgeRequestHeaders.hpp` | `build_websocket_headers(config, ids)` → `vector<pair<string,string>>` (7 headers incl. Cookie/MUID); `build_voice_list_headers(config, ids)` → `map<string,string>` (5 headers incl. Cookie/MUID). Both match Python `DRM.headers_with_muid(WSS_HEADERS)` / `DRM.headers_with_muid(VOICE_HEADERS)` exactly. |
 | `VoiceService.hpp` | Fetches and parses the Edge TTS voice list. Injects `IHttpClient`, `VoiceJsonParser`, `IdGenerator`, and `EdgeTokenProvider`. Retries once on HTTP 403 with clock-skew correction. `VoiceFilter` applies client-side locale/gender/short_name filtering. |
 | `EdgeProtocol.hpp` | Builds outgoing WebSocket text frames (`build_speech_config_frame`, `build_ssml_frame`) and parses incoming frames (`parse_incoming`). The single production path for all protocol framing. |
 | `IWebSocketClient.hpp` | Pure virtual WebSocket transport boundary. |
 | `WebSocketClient.hpp` | `WebSocketClient` — ixwebsocket-backed `IWebSocketClient` (Pimpl; no ixwebsocket symbols in the public header). |
-| `FakeWebSocketClient.hpp` | In-memory `IWebSocketClient` for tests: error injection, message queuing, state inspection. |
 | `SynthesisSession.hpp` | Per-chunk WebSocket synthesis lifecycle: connect → speech.config → SSML → receive loop → boundary offset compensation. |
 | `RetryPolicy.hpp` | Configurable `RetryPolicy` used by `SynthesisSession` on DRM errors. |
 | `HttpDate.hpp` | Parses the HTTP `Date` header for clock-skew correction. |
 
-**Allowed dependencies:** `common`, `core`, `serialization`, `subtitle`, `media`.
+**Allowed dependencies:** `common`, `core`, `serialization`.
 
-**Convention:** keep business rules delegated to `core`/`serialization`; this
-module is pure transport orchestration.  The public `Communicate` facade lives
-in `api`, above `communication`.
+**Forbidden:** `subtitle`, `media` — `communication` is pure transport
+orchestration (WebSocket/HTTP framing, session lifecycle, DRM token).  Subtitle
+accumulation and audio conversion are `api`-layer concerns.  The public
+`Communicate` facade lives in `api`, above `communication`.
 
 ---
 
 ## `edge_tts::api`
 
 **CMake target:** `edge_tts_api` / `edge_tts::api`
-**Test target:** `edge_tts_api_tests` (offline integration — uses `FakeWebSocketClient` seam; real-network tests gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`)
+**Test target:** `edge_tts_api_tests` (offline integration — uses `FakeWebSocketClient` from `edge_tts_test_support`; real-network tests gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`)
 **Headers:** `include/edge_tts/api/`
 **Sources:** `src/api/`
 
@@ -268,7 +264,7 @@ the CLI layer should depend on for synthesis.
 
 | File | Description |
 |------|-------------|
-| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `stream_sync()` or `save()` is called. |
+| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `serialization::TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `stream_sync()` or `save()` is called. |
 
 **Rationale for a separate module:** `Communicate` needs `SynthesisSession` from
 `communication`, `SubMaker` from `subtitle`, and `media` for audio saving.
@@ -296,9 +292,44 @@ CLI argument parsing and application-level plumbing shared between the
 parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) that mirrors the
 Python `argparse` option surface exactly.
 
-**Allowed dependencies:** `edge_tts::api` (transitively provides everything).
+**Allowed dependencies (PUBLIC):** `edge_tts::api`, `edge_tts::media`
+(PlaybackCommandDispatcher public header exposes `IAudioConverter`).
 
-**Forbidden:** bypass `api` to reach `communication` or `core` internals directly.
+**Allowed dependencies (PRIVATE):** `edge_tts::subtitle` (EdgeTtsCommandDispatcher.cpp
+uses `SubMaker`; not exposed in any public header).
+
+**Transitive via api:** `core`, `common`, `serialization`, `communication`, `subtitle`.
+
+**Forbidden:** direct `#include` of `communication` or `serialization` headers —
+cli must reach those only through the `api` facade, never directly.
+
+---
+
+## `edge_tts_test_support` (test-only)
+
+**CMake target:** `edge_tts_test_support` (STATIC, defined in `tests/CMakeLists.txt`)
+**Headers:** `tests/support/edge_tts/` (NOT under `include/` — not exported)
+**Sources:** `tests/support/Fake*.cpp`
+
+In-memory test doubles for the injectable production interfaces.  Only test
+targets may link against this target.  Production modules must not.
+
+| Header | Description |
+|--------|-------------|
+| `tests/support/edge_tts/communication/FakeWebSocketClient.hpp` | In-memory `IWebSocketClient`: error injection, message queuing, state inspection |
+| `tests/support/edge_tts/communication/FakeHttpClient.hpp` | In-memory `IHttpClient`: configurable response, request capture, error injection, send count |
+| `tests/support/edge_tts/media/FakeProcessRunner.hpp` | In-memory `IProcessRunner`: configurable result, error injection, call count — no POSIX deps |
+
+**Include path:** `tests/support/` is the include root, so existing includes such
+as `"edge_tts/communication/FakeWebSocketClient.hpp"` resolve from the test
+executable's include directory list.  Production library targets do not have
+`tests/support/` in their include paths.
+
+**Enforcement:** three checks in `tests/tools/test_repository_hygiene.py` prevent
+regression:
+- `test_fake_headers_not_in_public_include` — fails if any `Fake*.hpp` appears under `include/edge_tts/`
+- `test_fake_sources_not_in_production_src` — fails if any `Fake*.cpp` appears under `src/`
+- `test_production_cmake_does_not_compile_fakes` — fails if root `CMakeLists.txt` lists a `Fake*.cpp` source in a production target
 
 ---
 

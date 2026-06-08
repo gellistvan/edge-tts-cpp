@@ -106,6 +106,30 @@ These rules are enforced by `tests/tools/test_network_hygiene.py` (run as
    `*NetworkTests.cpp` file must call `network_enabled()` within its first 6
    executable lines and return immediately when false.
 
+## Test-support library (`edge_tts_test_support`)
+
+`edge_tts_test_support` is a STATIC library defined in `tests/CMakeLists.txt`
+that provides in-memory test doubles for the injectable production interfaces.
+It compiles `tests/support/Fake*.cpp` and adds `tests/support/` as a PUBLIC
+include directory, so test executables that link it can do:
+
+```cpp
+#include "edge_tts/communication/FakeWebSocketClient.hpp"
+#include "edge_tts/communication/FakeHttpClient.hpp"
+#include "edge_tts/media/FakeProcessRunner.hpp"
+```
+
+**Rule:** only test targets may link `edge_tts_test_support`.  The fake headers
+live under `tests/support/`, not under `include/edge_tts/`, so they are never
+part of the installed public API.  Three hygiene checks in
+`test_repository_hygiene.py` enforce this isolation permanently.
+
+Test targets that link `edge_tts_test_support`:
+- `edge_tts_communication_tests`
+- `edge_tts_media_tests`
+- `edge_tts_api_tests`
+- `edge_tts_cli_tests`
+
 ## C++ test targets
 
 | CTest target | Source folder | Linked module |
@@ -113,11 +137,11 @@ These rules are enforced by `tests/tools/test_network_hygiene.py` (run as
 | `edge_tts_common_tests` | `tests/common` | `edge_tts::common` |
 | `edge_tts_core_tests` | `tests/core` | `edge_tts::core` |
 | `edge_tts_serialization_tests` | `tests/serialization` | `edge_tts::serialization` |
-| `edge_tts_communication_tests` | `tests/communication` | `edge_tts::communication` |
-| `edge_tts_media_tests` | `tests/media` | `edge_tts::media` |
+| `edge_tts_communication_tests` | `tests/communication` | `edge_tts::communication`, `edge_tts_test_support` |
+| `edge_tts_media_tests` | `tests/media` | `edge_tts::media`, `edge_tts_test_support` |
 | `edge_tts_subtitle_tests` | `tests/subtitles` | `edge_tts::subtitle` |
-| `edge_tts_api_tests` | `tests/api` | `edge_tts::api`, `edge_tts::cli` |
-| `edge_tts_cli_tests` | `tests/cli` | `edge_tts::cli` |
+| `edge_tts_api_tests` | `tests/api` | `edge_tts::api`, `edge_tts::cli`, `edge_tts_test_support` |
+| `edge_tts_cli_tests` | `tests/cli` | `edge_tts::cli`, `edge_tts_test_support` |
 
 ## Python-based tests
 

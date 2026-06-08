@@ -7,14 +7,16 @@ namespace edge_tts::communication {
 
 // Minimal HTTP transport boundary.
 //
-// Reference: voices.py uses aiohttp.ClientSession.get() with headers and proxy.
-// Error handling: non-2xx responses are represented as Result::fail with
-// ErrorCode::service_error; network-level failures use ErrorCode::network_error.
-// The 403 retry-with-clock-skew logic lives in the caller (VoiceService),
-// not in the transport.
+// Error contract:
+//   - Transport-level failures (network unreachable, TLS error, timeout,
+//     unsupported proxy) → Result::fail with the appropriate ErrorCode.
+//   - All HTTP responses, including non-2xx status codes, are returned as a
+//     successful Result<HttpResponse>.  Service-level interpretation (e.g.
+//     mapping 403 to a DRM retry or 5xx to service_error) is the caller's
+//     responsibility.
 //
-// Proxy support and SSL details are implementation concerns; this interface
-// exposes only the logical request/response boundary.
+// Reference: voices.py — aiohttp.ClientSession.get() returns a response object
+// for any HTTP status; callers check e.status for 403 retry logic.
 class IHttpClient {
 public:
     virtual ~IHttpClient() = default;

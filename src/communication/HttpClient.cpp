@@ -13,8 +13,25 @@
 #include <algorithm>
 #include <chrono>
 #include <string>
+#include <string_view>
 
 namespace edge_tts::communication {
+
+// Replace user:password credentials in a URL with [credentials] so the URL
+// is safe to include in error messages.  No-op when no credentials are present.
+static std::string sanitize_proxy_url(std::string_view url) {
+    const auto scheme_end = url.find("://");
+    if (scheme_end == std::string_view::npos) return std::string(url);
+    const auto auth_start = scheme_end + 3;
+    const auto at_pos     = url.find('@', auth_start);
+    if (at_pos == std::string_view::npos) return std::string(url);
+    std::string out;
+    out.reserve(url.size());
+    out.append(url.data(), auth_start);
+    out.append("[credentials]");
+    out.append(url.data() + at_pos, url.size() - at_pos);
+    return out;
+}
 
 HttpClient::HttpClient(HttpClientOptions options)
     : options_(std::move(options))
@@ -39,7 +56,7 @@ common::Result<HttpResponse> HttpClient::send(const HttpRequest& request) {
                           "HTTP proxy is not supported by the ixwebsocket "
                           "networking backend; remove --proxy to proceed without "
                           "a proxy",
-                          *options_.proxy});
+                          sanitize_proxy_url(*options_.proxy)});
     }
 
     ix::HttpClient client;

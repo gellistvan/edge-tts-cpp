@@ -249,6 +249,12 @@ REMOVED_SKELETON_FILES: list[str] = [
     # Both are superseded by EdgeTtsArguments / PlaybackArguments.
     "src/cli/CliPlaceholder.cpp",
     "include/edge_tts/cli/CliOptions.hpp",
+    # core::TextChunker was a raw UTF-8 byte splitter with no production callers.
+    # All Edge-SSML-aware chunking lives in serialization::TextChunker, which
+    # normalizes, XML-escapes, and applies the 4096-byte escaped-length limit.
+    # Re-adding core::TextChunker would create the same ambiguity this task resolved.
+    "src/core/TextChunker.cpp",
+    "include/edge_tts/core/TextChunker.hpp",
 ]
 
 
@@ -346,7 +352,106 @@ def test_skeleton_source_not_in_cmake() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. docs/CONTRIBUTING.md documents hygiene rules
+# 6. Fake headers must not exist under include/edge_tts/ (public install tree)
+#
+# Fake implementations belong exclusively in tests/support/.  If a Fake*.hpp
+# appears under include/edge_tts/ it would be exported as part of the public
+# API and confuse downstream consumers.
+# ---------------------------------------------------------------------------
+
+FAKE_HEADER_NAMES = (
+    "FakeHttpClient.hpp",
+    "FakeWebSocketClient.hpp",
+    "FakeProcessRunner.hpp",
+)
+
+
+def test_fake_headers_not_in_public_include() -> None:
+    public_include = REPO_ROOT / "include" / "edge_tts"
+    if not public_include.exists():
+        ok("include/edge_tts/ does not exist — nothing to check")
+        return
+
+    found: list[str] = []
+    for name in FAKE_HEADER_NAMES:
+        for hit in public_include.rglob(name):
+            found.append(str(hit.relative_to(REPO_ROOT)))
+
+    if found:
+        fail(
+            "Fake test-double headers found under include/edge_tts/ (public API tree).\n"
+            "Move them to tests/support/edge_tts/<module>/ and update test include "
+            "directories accordingly:\n  " + "\n  ".join(found)
+        )
+    ok("No Fake* headers found in include/edge_tts/ (public include tree)")
+
+
+# ---------------------------------------------------------------------------
+# 7. Fake source files must not exist under src/ (production source tree)
+#
+# Fake source files were moved to tests/support/.  Placing them back in src/
+# would cause them to be compiled into production libraries.
+# ---------------------------------------------------------------------------
+
+FAKE_SOURCE_NAMES = (
+    "FakeHttpClient.cpp",
+    "FakeWebSocketClient.cpp",
+    "FakeProcessRunner.cpp",
+)
+
+
+def test_fake_sources_not_in_production_src() -> None:
+    src_dir = REPO_ROOT / "src"
+    if not src_dir.exists():
+        ok("src/ does not exist — nothing to check")
+        return
+
+    found: list[str] = []
+    for name in FAKE_SOURCE_NAMES:
+        for hit in src_dir.rglob(name):
+            found.append(str(hit.relative_to(REPO_ROOT)))
+
+    if found:
+        fail(
+            "Fake test-double source files found under src/ (production source tree).\n"
+            "These files must live in tests/support/ and be compiled only by the "
+            "edge_tts_test_support CMake target:\n  " + "\n  ".join(found)
+        )
+    ok("No Fake* source files found in src/ (production source tree)")
+
+
+# ---------------------------------------------------------------------------
+# 8. Root CMakeLists.txt production targets must not reference Fake*.cpp
+#
+# The production library targets (edge_tts_media, edge_tts_communication, etc.)
+# must not list Fake*.cpp as source files.  Fake sources belong exclusively in
+# the edge_tts_test_support target defined in tests/CMakeLists.txt.
+# ---------------------------------------------------------------------------
+
+def test_production_cmake_does_not_compile_fakes() -> None:
+    cmake_path = REPO_ROOT / "CMakeLists.txt"
+    if not cmake_path.exists():
+        fail("CMakeLists.txt not found at repo root")
+
+    content = _strip_comments(read(cmake_path))
+    violations: list[str] = []
+    for lineno, line in enumerate(content.splitlines(), 1):
+        for name in FAKE_SOURCE_NAMES:
+            if name in line:
+                violations.append(f"CMakeLists.txt:{lineno}: {line.strip()!r}")
+
+    if violations:
+        fail(
+            "Root CMakeLists.txt references Fake source files in production targets.\n"
+            "Move Fake*.cpp to tests/support/ and add them only to the "
+            "edge_tts_test_support target in tests/CMakeLists.txt:\n  "
+            + "\n  ".join(violations)
+        )
+    ok("Root CMakeLists.txt production targets do not compile Fake*.cpp sources")
+
+
+# ---------------------------------------------------------------------------
+# 9. docs/CONTRIBUTING.md documents hygiene rules
 # ---------------------------------------------------------------------------
 
 CONTRIBUTING_REQUIRED_SECTIONS = [
@@ -392,6 +497,9 @@ def main() -> None:
         test_removed_skeleton_files_are_absent,
         test_no_build_artifacts_in_git,
         test_skeleton_source_not_in_cmake,
+        test_fake_headers_not_in_public_include,
+        test_fake_sources_not_in_production_src,
+        test_production_cmake_does_not_compile_fakes,
         test_contributing_documents_hygiene,
     ]
     print("Running repository hygiene tests...\n")

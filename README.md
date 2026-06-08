@@ -270,7 +270,7 @@ EDGE_PLAYBACK_DEBUG=1 edge-playback --text "Hello"
 
 **Playback backend:** `ffplay` (from FFmpeg) is used on all platforms. The `--mpv` flag is explicitly rejected with a clear error — passing it returns exit 1 with a message explaining the limitation.
 
-**Platform support:** POSIX only (Linux, macOS). Building with `EDGE_TTS_BUILD_APPS=ON` on Windows will fail at compile time with a descriptive error from `ProcessRunner.cpp`.
+**Platform support:** POSIX only (Linux, macOS). `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `OFF` on Windows; setting it `ON` on Windows is a configure-time `FATAL_ERROR`. The `edge-tts` CLI (synthesis only) builds cleanly on Windows.
 
 Two CLI apps are built:
 
@@ -384,4 +384,8 @@ Boost is intentionally not required.
 
 ## Design documentation
 
-See [`docs/high-level-design.md`](docs/high-level-design.md) for module boundaries, dependency direction, and testing structure.
+See [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for module boundaries, dependency direction, and testing structure.
+
+See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy.
+
+See [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) for the current maturity level and pre-release checklist.

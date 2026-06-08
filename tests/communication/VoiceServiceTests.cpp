@@ -332,6 +332,70 @@ TEST(VoiceService, Http500DoesNotRetry) {
 }
 
 // ---------------------------------------------------------------------------
+// 403 clock-skew correction via Date header
+// ---------------------------------------------------------------------------
+
+TEST(VoiceService, Http403DateHeaderAdjustsSkewFromServerTime) {
+    // Server Date is 10 minutes ahead of local clock → skew = 600 s.
+    // Local clock: 2024-01-01 00:00:00 UTC = Unix 1704067200
+    // Server Date: 2024-01-01 00:10:00 UTC = Unix 1704067800
+    FakeHttpClient http;
+    http.push_response({403, {{"Date", "Mon, 01 Jan 2024 00:10:00 GMT"}}, "Forbidden"});
+    http.push_response({403, {}, "Forbidden"});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    (void)svc.list_voices();
+    EXPECT_EQ(tokens.clock_skew_seconds(), 600.0);
+}
+
+TEST(VoiceService, Http403DateHeaderRetrySucceeds) {
+    // Date-header skew applied before retry; retry returns 200 → success.
+    FakeHttpClient http;
+    http.push_response({403, {{"Date", "Mon, 01 Jan 2024 00:10:00 GMT"}}, "Forbidden"});
+    http.push_response({200, {}, one_voice_json("en-US-X", "en-US")});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    const auto r = svc.list_voices();
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().size(), 1u);
+    EXPECT_EQ(http.send_count(), 2);
+}
+
+TEST(VoiceService, Http403MissingDateHeaderUsesFallbackSkew) {
+    // No Date header in the 403 response → fall back to 300 s fixed adjustment.
+    FakeHttpClient http;
+    http.push_response({403, {}, "Forbidden"});
+    http.push_response({403, {}, "Forbidden"});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    (void)svc.list_voices();
+    EXPECT_EQ(tokens.clock_skew_seconds(), 300.0);
+}
+
+TEST(VoiceService, Http403InvalidDateHeaderUsesFallbackSkew) {
+    // Unparsable Date header → fall back to 300 s fixed adjustment.
+    FakeHttpClient http;
+    http.push_response({403, {{"Date", "not-a-date"}}, "Forbidden"});
+    http.push_response({403, {}, "Forbidden"});
+    IdGenerator ids;
+    FixedClock  clock{std::chrono::system_clock::from_time_t(1704067200)};
+    EdgeTokenProvider tokens{k_cfg, clock};
+    VoiceService svc{k_cfg, http, k_parser, ids, tokens};
+
+    (void)svc.list_voices();
+    EXPECT_EQ(tokens.clock_skew_seconds(), 300.0);
+}
+
+// ---------------------------------------------------------------------------
 // HTTP error propagates
 // ---------------------------------------------------------------------------
 

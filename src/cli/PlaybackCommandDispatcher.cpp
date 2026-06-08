@@ -1,13 +1,43 @@
 #include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
 
 #include "edge_tts/cli/InputLoader.hpp"
+#include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace edge_tts::cli {
 
 namespace fs = std::filesystem;
+
+// Replace user:password credentials in a URL with [credentials].
+// "http://user:pass@host:8080" → "http://[credentials]@host:8080"
+// URLs with no credentials are returned unchanged.
+static std::string redact_url_credentials(std::string_view url) {
+    const auto scheme_end = url.find("://");
+    if (scheme_end == std::string_view::npos) return std::string(url);
+    const auto auth_start = scheme_end + 3;
+    const auto at_pos     = url.find('@', auth_start);
+    if (at_pos == std::string_view::npos) return std::string(url);
+    std::string out;
+    out.reserve(url.size());
+    out.append(url.data(), auth_start);
+    out.append("[credentials]");
+    out.append(url.data() + at_pos, url.size() - at_pos);
+    return out;
+}
+
+// Format an error for display, redacting any URL credentials in the context.
+static std::string format_error(const common::Error& e) {
+    if (e.has_context() && e.context().find("://") != std::string_view::npos) {
+        const std::string safe = redact_url_credentials(e.context());
+        return "[" + std::string(common::to_string(e.code())) + "] "
+               + std::string(e.message()) + " (context: " + safe + ")";
+    }
+    return std::string(e.what());
+}
 
 PlaybackCommandDispatcher::PlaybackCommandDispatcher(
     CommunicateFactory      communicate_factory,
@@ -67,7 +97,7 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     InputLoader loader;
     auto text = loader.load_playback(args, in_);
     if (!text) {
-        err_ << "error: " << text.error().what() << '\n';
+        err_ << "error: " << format_error(text.error()) << '\n';
         return 1;
     }
 
@@ -79,8 +109,8 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     config.pitch  = args.pitch;
 
     // 4. Build transport options.
-    //    Reference: proxy is forwarded verbatim to edge-tts subprocess in Python.
-    //    Here it flows into CommunicateOptions::proxy.
+    //    Proxy flows into CommunicateOptions::proxy.  The ixwebsocket backend
+    //    returns ErrorCode::unsupported if proxy is set — same as edge-tts.
     api::CommunicateOptions options;
     options.proxy = args.proxy;
 
@@ -117,14 +147,14 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     //    Reference: _run_edge_tts(mp3_fname, srt_fname, ...) writes both files.
     api::Communicate communicate = communicate_factory_(*text, config, options);
     if (auto r = communicate.save(tmp_mp3, srt_opt); !r) {
-        err_ << "error: " << r.error().what() << '\n';
+        err_ << "error: " << format_error(r.error()) << '\n';
         return 1;
     }
 
     // 7. Play the temp MP3 file.
     //    Reference: _play_media(use_mpv, mp3_fname, srt_fname)
     if (auto r = converter_.play_mp3(tmp_mp3); !r) {
-        err_ << "error: " << r.error().what() << '\n';
+        err_ << "error: " << format_error(r.error()) << '\n';
         return 1;
     }
 

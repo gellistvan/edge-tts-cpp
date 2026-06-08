@@ -5,6 +5,7 @@
 #include "edge_tts/core/Voice.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
 #include "edge_tts/communication/EdgeTokenProvider.hpp"
+#include "edge_tts/communication/HttpTypes.hpp"
 #include "edge_tts/communication/IHttpClient.hpp"
 #include "edge_tts/serialization/VoiceJsonParser.hpp"
 
@@ -54,8 +55,8 @@ public:
     list_voices(const VoiceFilter& filter = {});
 
 private:
-    [[nodiscard]] common::Result<std::vector<core::Voice>>
-    fetch_and_parse();
+    // Build URL with a fresh DRM token and send the HTTP GET.
+    [[nodiscard]] common::Result<HttpResponse> send_request();
 
     const EdgeServiceConfig&              config_;
     IHttpClient&                          http_;

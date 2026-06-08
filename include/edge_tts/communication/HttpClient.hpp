@@ -11,7 +11,9 @@ namespace edge_tts::communication {
 // Options for HttpClient.
 //
 // Reference: voices.py list_voices() / aiohttp.ClientSession.get() parameters:
-//   proxy   — optional HTTP/HTTPS proxy URL forwarded verbatim (e.g. "http://proxy:8080")
+//   proxy   — optional HTTP/HTTPS proxy URL.  Accepted and validated at parse
+//             time but not functional: send() returns ErrorCode::unsupported if
+//             proxy is set (the ixwebsocket HTTP backend has no proxy API).
 //   timeout — connect + transfer timeout; aiohttp default ~300s, we default 30s
 struct HttpClientOptions {
     std::optional<std::string>  proxy;
@@ -22,8 +24,7 @@ struct HttpClientOptions {
 //
 // This class is only compiled when the ixwebsocket submodule is initialized and
 // the 'ixwebsocket' CMake target exists.  When the submodule is absent, send()
-// returns ErrorCode::unsupported so callers can fall back to FakeHttpClient in
-// tests.
+// returns ErrorCode::unsupported.
 //
 // Public header guarantee: no ixwebsocket types appear here.  All ixwebsocket
 // includes live exclusively in src/communication/HttpClient.cpp.

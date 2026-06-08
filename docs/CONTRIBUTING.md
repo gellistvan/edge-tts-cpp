@@ -34,7 +34,7 @@ ctest --test-dir build --output-on-failure
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `EDGE_TTS_BUILD_APPS` | `ON` | Build the `edge-tts` and `edge-playback` CLI apps |
+| `EDGE_TTS_BUILD_APPS` | `ON` | Build the `edge-tts` CLI app |
 | `EDGE_TTS_BUILD_TESTS` | `ON` | Build per-module test suites |
 | `EDGE_TTS_BUILD_EXAMPLES` | `OFF` | Build example programs under `examples/` |
 | `EDGE_TTS_WARNINGS_AS_ERRORS` | `OFF` | Promote all compiler warnings to errors |
@@ -120,18 +120,23 @@ ctest --test-dir build -R edge_tts_repository_hygiene_tests --output-on-failure
 ### No fake clients in production source
 
 `FakeHttpClient`, `FakeWebSocketClient`, and `FakeProcessRunner` are test doubles.
-They must **only** appear in:
-- Their own definition files (`Fake*.hpp` / `Fake*.cpp` in the appropriate module directory)
-- Test files (`tests/**`)
+They live exclusively in the `edge_tts_test_support` library under `tests/support/`
+and must **never** be placed in production source or headers.
 
 The canonical locations are:
-- `include/edge_tts/communication/FakeHttpClient.hpp` + `src/communication/FakeHttpClient.cpp`
-- `include/edge_tts/communication/FakeWebSocketClient.hpp` + `src/communication/FakeWebSocketClient.cpp`
-- `include/edge_tts/media/FakeProcessRunner.hpp` + `src/media/FakeProcessRunner.cpp`
+- `tests/support/edge_tts/communication/FakeHttpClient.hpp` + `tests/support/FakeHttpClient.cpp`
+- `tests/support/edge_tts/communication/FakeWebSocketClient.hpp` + `tests/support/FakeWebSocketClient.cpp`
+- `tests/support/edge_tts/media/FakeProcessRunner.hpp` + `tests/support/FakeProcessRunner.cpp`
 
-Two hygiene checks enforce this at CI time (`test_repository_hygiene.py`):
+**Rule:** only CMake targets that appear in `tests/CMakeLists.txt` may link
+`edge_tts_test_support`.  Production library targets and CLI apps must not.
+
+Five hygiene checks enforce this at CI time (`test_repository_hygiene.py`):
 1. Production non-Fake source files must never `#include` a `Fake*.hpp` header.
-2. `class Fake...` must not be defined inside a non-Fake production header (e.g. do not embed `FakeProcessRunner` inside `ProcessRunner.hpp`).
+2. `class Fake...` must not be defined inside a non-Fake production header.
+3. No `Fake*.hpp` may exist under `include/edge_tts/` (public install tree).
+4. No `Fake*.cpp` may exist under `src/` (production source tree).
+5. Root `CMakeLists.txt` production targets must not list `Fake*.cpp` sources.
 
 ### No build artifacts in git
 

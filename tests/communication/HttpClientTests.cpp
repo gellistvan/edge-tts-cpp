@@ -1,4 +1,5 @@
 #include "edge_tts/communication/HttpClient.hpp"
+#include "edge_tts/communication/FakeHttpClient.hpp"
 #include "edge_tts/communication/IHttpClient.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "vendor/minigtest/minigtest.hpp"
@@ -6,9 +7,11 @@
 #include <chrono>
 #include <string>
 
+using edge_tts::communication::FakeHttpClient;
 using edge_tts::communication::HttpClient;
 using edge_tts::communication::HttpClientOptions;
 using edge_tts::communication::HttpRequest;
+using edge_tts::communication::HttpResponse;
 using edge_tts::common::ErrorCode;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +105,31 @@ TEST(HttpClient, ProxyErrorMessageMentionsProxy) {
     EXPECT_TRUE(mentions_proxy);
 }
 
+TEST(HttpClient, ProxyCredentialsNotExposedInErrorContext) {
+    // Proxy URLs with user:password credentials must have credentials replaced
+    // with [credentials] before appearing in any error field.
+    HttpClientOptions opts;
+    opts.proxy = "http://user:s3cr3t@proxy.example.com:8080";
+    HttpClient client{opts};
+    auto r = client.send(make_get("https://example.com"));
+    ASSERT_FALSE(r.has_value());
+    const std::string ctx = std::string(r.error().context());
+    EXPECT_EQ(ctx.find("s3cr3t"), std::string::npos);
+    EXPECT_NE(ctx.find("[credentials]"), std::string::npos);
+}
+
+TEST(HttpClient, ProxyWithoutCredentialsContextUnchanged) {
+    // URLs without credentials must appear in the context without modification.
+    HttpClientOptions opts;
+    opts.proxy = "http://proxy.example.com:8080";
+    HttpClient client{opts};
+    auto r = client.send(make_get("https://example.com"));
+    ASSERT_FALSE(r.has_value());
+    const std::string ctx = std::string(r.error().context());
+    EXPECT_NE(ctx.find("proxy.example.com"), std::string::npos);
+    EXPECT_EQ(ctx.find("[credentials]"), std::string::npos);
+}
+
 TEST(HttpClient, NoProxySendsRequest) {
     // Without a proxy, send() reaches ixwebsocket (which will fail on a
     // fake hostname, but the failure is transport-level, not unsupported).
@@ -113,6 +141,29 @@ TEST(HttpClient, NoProxySendsRequest) {
 }
 
 #endif  // EDGE_TTS_HAVE_IXWEBSOCKET (proxy tests)
+
+// ---------------------------------------------------------------------------
+// IHttpClient contract: non-2xx status codes in HttpResponse (not Result::fail)
+// ---------------------------------------------------------------------------
+
+// The transport layer must return any HTTP status code as a successful
+// Result<HttpResponse>.  Service-level error interpretation (403 → DRM retry,
+// 5xx → service_error) is the caller's responsibility, not the transport's.
+TEST(HttpClient, NonTwoxxStatusCodeReturnedInHttpResponse) {
+    FakeHttpClient client;
+    client.set_response({403, {}, "Forbidden"});
+    auto r = client.send(make_get("https://example.com/voices"));
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->status_code, 403);
+}
+
+TEST(HttpClient, FiveHundredStatusCodeReturnedInHttpResponse) {
+    FakeHttpClient client;
+    client.set_response({500, {}, "Internal Server Error"});
+    auto r = client.send(make_get("https://example.com/voices"));
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->status_code, 500);
+}
 
 // ---------------------------------------------------------------------------
 // Invalid URL: transport-level error (no network required)

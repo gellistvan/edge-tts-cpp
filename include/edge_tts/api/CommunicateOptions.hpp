@@ -20,8 +20,11 @@ namespace edge_tts::api {
 //   ws_read_timeout    = 60 s  (sock_read=60 in aiohttp ClientSession)
 //   http_timeout       = 30 s  (reasonable default for voice-list GET)
 struct CommunicateOptions {
-    // HTTP/HTTPS proxy URL forwarded verbatim to the WebSocket upgrade request
-    // and to voice-list HTTP requests.
+    // HTTP/HTTPS proxy URL.  Accepted and validated at the CLI/API layer.
+    // Both transport backends (WebSocketClient, HttpClient) return
+    // ErrorCode::unsupported at runtime if this is set — the ixwebsocket
+    // library has no client-side proxy API.  Credentials in the URL
+    // (user:pass@host) are sanitized before appearing in any error message.
     // Reference: communicate.py proxy parameter, aiohttp trust_env / proxy kwarg.
     std::optional<std::string> proxy;
 

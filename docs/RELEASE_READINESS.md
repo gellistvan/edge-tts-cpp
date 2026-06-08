@@ -1,5 +1,11 @@
 # Release Readiness
 
+**Overall project maturity: Alpha**
+
+Core synthesis, voice listing, subtitles, and CLI are implemented and tested offline.
+Proxy support is not yet functional end-to-end. Windows support is limited (synthesis works; `edge-playback` requires POSIX).
+Live network tests are optional and not run in CI by default.
+
 This document tracks the maturity of the `edge-tts-cpp` project and defines
 what "ready to release" means for each capability area.
 
@@ -29,10 +35,10 @@ what "ready to release" means for each capability area.
 | Voice list filtering | **Implemented · Tested offline** | `VoiceFilter` supports locale, gender, short_name. |
 | DRM token (`Sec-MS-GEC`) | **Implemented · Tested offline** | `EdgeTokenProvider` — SHA-256, 5-minute rounding, Windows epoch. |
 | DRM 403 retry | **Implemented · Tested offline** | One retry with clock-skew correction, matching Python behavior. |
-| Multi-chunk long text | **Implemented · Tested offline** | `TextChunker` splits at UTF-8 boundaries, 4096-byte limit. |
+| Multi-chunk long text | **Implemented · Tested offline** | `serialization::TextChunker` normalizes, XML-escapes, and splits at the 4096-byte escaped-length limit. |
 | `edge-tts` CLI | **Implemented · Tested offline** | Matches Python `edge-tts` option surface (see `docs/CLI_COMPATIBILITY.md`). |
 | `edge-playback` CLI | **Implemented · Tested offline** | Temp-file lifecycle, proxy forwarding, error on unsupported options. |
-| Proxy support | **Implemented** | `CommunicateOptions::proxy` forwarded through WebSocket connect. |
+| Proxy support | **Partial** | `CommunicateOptions::proxy` is parsed and validated at the CLI/API layer; the ixwebsocket backend has no client-side proxy API and explicitly returns `ErrorCode::unsupported` if a proxy is set. Proxy is not functional end-to-end. |
 | ffmpeg integration | **Implemented · Tested offline** | `FfmpegAudioConverter` via injected `IProcessRunner`; real invocations not run in CI. |
 | Windows build | **Partial** | CMake guards POSIX `ProcessRunner`; `FakeProcessRunner` and protocol code compile. Full Windows CI not yet in place. |
 | Live network tests | **Tested live** | Gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`; not run in default CI. |
@@ -75,5 +81,5 @@ Before tagging a release:
 ## Known limitations
 
 - **Windows:** `ProcessRunner` (POSIX fork/exec) is excluded. `edge-playback` cannot spawn `ffplay` on Windows without a Win32 `CreateProcess` implementation. Everything else compiles.
-- **Proxy:** Forwarded to WebSocket connect options; not tested with a real proxy server.
+- **Proxy:** Recognized and validated at parse time, propagated into `CommunicateOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
 - **Rate limiting:** No client-side rate limiter; matches Python behavior (no limiter there either).

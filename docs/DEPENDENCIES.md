@@ -145,9 +145,9 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 | Property | Value |
 |----------|-------|
 | Source | Git submodule at `submodules/ixwebsocket` (https://github.com/machinezone/IXWebSocket) |
-| Purpose | WebSocket client (`communication::WebSocketTransport`) and HTTP client (`communication::IHttpClient` implementation) for the voice-list and synthesis endpoints |
+| Purpose | WebSocket client (`communication::WebSocketClient`) and HTTP client (`communication::HttpClient` via `communication::IHttpClient`) for the voice-list and synthesis endpoints |
 | Integration | `cmake/EdgeTtsDependencies.cmake` adds `submodules/ixwebsocket` via `add_subdirectory(… EXCLUDE_FROM_ALL)` when the submodule is present; the top-level `CMakeLists.txt` links `ixwebsocket` to `edge_tts_communication` when the target exists |
-| Consumers | `edge_tts::communication` (WebSocketTransport, HTTP voice-list client) |
+| Consumers | `edge_tts::communication` (`WebSocketClient`, `HttpClient` for voice-list and synthesis) |
 | License | BSD 3-Clause (`submodules/ixwebsocket/LICENSE`) |
 | CMake target | `ixwebsocket` |
 | Required when | `EDGE_TTS_REQUIRE_NETWORKING=ON` (default when `EDGE_TTS_BUILD_APPS=ON`) |

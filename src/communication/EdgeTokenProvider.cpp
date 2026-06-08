@@ -56,6 +56,14 @@ void EdgeTokenProvider::adjust_clock_skew(double seconds) noexcept
     clock_skew_seconds_ += seconds;
 }
 
+void EdgeTokenProvider::adjust_clock_skew_from_server_timestamp(
+    double server_unix_seconds) noexcept
+{
+    const double now_sec = std::chrono::duration<double>(
+        clock_.now().time_since_epoch()).count();
+    adjust_clock_skew(server_unix_seconds - (now_sec + clock_skew_seconds_));
+}
+
 double EdgeTokenProvider::clock_skew_seconds() const noexcept
 {
     return clock_skew_seconds_;

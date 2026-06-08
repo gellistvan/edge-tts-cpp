@@ -46,11 +46,8 @@ using SynthesizerFn = std::function<
 class Communicate final {
 public:
     // Production constructor: uses default transport options.
-    // Constructs the full networking stack (SystemClock, IdGenerator,
-    // EdgeServiceConfig, EdgeTokenProvider, EdgeProtocol,
-    // ConnectionMetadataFactory, WebSocketClient, SynthesisSession) eagerly,
-    // but performs NO network I/O at construction time.  Network work is
-    // deferred to the first call to stream_sync() or save().
+    // Builds the full networking stack at construction time but performs NO
+    // network I/O.  All network work is deferred to stream_sync() / save().
     explicit Communicate(std::string text, core::TtsConfig config = {});
 
     // Production constructor with explicit transport options (proxy, timeouts).
@@ -62,7 +59,7 @@ public:
 
     // Test / dependency-injection constructor: synthesizer is called in place
     // of a real SynthesisSession.  Receives the validated TtsConfig and the
-    // pre-chunked, XML-escaped text strings produced by TextChunker.
+    // pre-chunked, XML-escaped text strings produced by serialization::TextChunker.
     // Uses default CommunicateOptions.
     Communicate(std::string text, core::TtsConfig config, SynthesizerFn synthesizer);
 

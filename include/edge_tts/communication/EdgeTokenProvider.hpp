@@ -40,6 +40,11 @@ public:
     // Called when a 403 response Date header reveals client/server time drift.
     void adjust_clock_skew(double seconds) noexcept;
 
+    // Compute and apply skew from a server-side Unix timestamp (parsed from
+    // a 403 response Date header).  Equivalent to calling adjust_clock_skew()
+    // with (server_unix_seconds - (clock_now + current_skew)).
+    void adjust_clock_skew_from_server_timestamp(double server_unix_seconds) noexcept;
+
     // Returns the current accumulated skew (seconds).  Primarily for tests.
     [[nodiscard]] double clock_skew_seconds() const noexcept;
 

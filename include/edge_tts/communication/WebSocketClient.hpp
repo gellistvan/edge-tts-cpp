@@ -18,13 +18,13 @@ namespace edge_tts::communication {
 // Reference: communicate.py __stream() — aiohttp.ClientSession.ws_connect()
 //   connect_timeout → sock_connect timeout (default 10 s in Python reference)
 //   read_timeout    → sock_read timeout (default 60 s in Python reference)
-//   proxy           → trust_env or explicit proxy URL
+//   proxy           → accepted but not functional; connect() returns
+//                     ErrorCode::unsupported if set — ixwebsocket has no
+//                     CONNECT-tunnel proxy API.
 //   extra_headers   → WSS_HEADERS (Pragma, Cache-Control, Origin, User-Agent, …)
 //
 // extra_headers is set by the caller (e.g. SynthesisSession) before construction
 // so that the same client instance always uses the same upgrade headers.
-// Proxy: if proxy is set, connect() returns ErrorCode::unsupported before
-// attempting the connection — ixwebsocket has no CONNECT-tunnel proxy API.
 struct WebSocketClientOptions {
     std::optional<std::string>                       proxy;
     std::chrono::milliseconds                        connect_timeout{10'000};

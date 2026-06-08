@@ -28,9 +28,8 @@ struct PlaybackArguments {
     std::optional<std::string> proxy;                 // --proxy
 
     // --- Playback -----------------------------------------------------------
-    // Reference: --mpv forces mpv even on Windows (no-op on non-Windows where
-    // mpv/ffplay is always used).  Stored but currently has no effect in the
-    // C++ implementation because IAudioConverter always uses ffplay.
+    // Stored but rejected at dispatch time: the C++ implementation uses only
+    // ffplay via IAudioConverter; --mpv is not supported.
     bool use_mpv{false};  // --mpv
 };
 
@@ -62,7 +61,7 @@ struct PlaybackParseResult {
 //       --volume VOL       speech volume (default: +0%)
 //       --pitch PITCH      speech pitch (default: +0Hz)
 //       --proxy URL        HTTP proxy for TTS
-//       --mpv              force mpv on Windows
+//       --mpv              [not supported] parsed but rejected at dispatch
 //   -h / --help            show help and exit
 //
 // Not accepted (unlike edge-tts):

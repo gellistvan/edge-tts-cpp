@@ -1,6 +1,7 @@
 #include "edge_tts/communication/VoiceService.hpp"
 #include "edge_tts/communication/EdgeRequestHeaders.hpp"
 #include "edge_tts/communication/EdgeTokenProvider.hpp"
+#include "edge_tts/communication/HttpDate.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/communication/HttpTypes.hpp"
 #include "edge_tts/core/Voice.hpp"
@@ -23,12 +24,12 @@ VoiceService::VoiceService(const EdgeServiceConfig&              config,
     , tokens_(tokens)
 {}
 
-// One attempt: build URL with fresh DRM token, send, parse.
-common::Result<std::vector<core::Voice>> VoiceService::fetch_and_parse()
+// Build URL with a fresh DRM token and send the HTTP GET.
+common::Result<HttpResponse> VoiceService::send_request()
 {
     auto token = tokens_.sec_ms_gec();
     if (!token)
-        return common::Result<std::vector<core::Voice>>::fail(token.error());
+        return common::Result<HttpResponse>::fail(token.error());
 
     // Reference: voices.py __list_voices():
     //   f"{VOICE_LIST}&Sec-MS-GEC={DRM.generate_sec_ms_gec()}&Sec-MS-GEC-Version={SEC_MS_GEC_VERSION}"
@@ -39,9 +40,36 @@ common::Result<std::vector<core::Voice>> VoiceService::fetch_and_parse()
                   + "&Sec-MS-GEC-Version=" + tokens_.sec_ms_gec_version();
     req.headers = build_voice_list_headers(config_, ids_);
 
-    auto resp = http_.send(req);
+    return http_.send(req);
+}
+
+common::Result<std::vector<core::Voice>>
+VoiceService::list_voices(const VoiceFilter& filter)
+{
+    auto resp = send_request();
     if (!resp)
         return common::Result<std::vector<core::Voice>>::fail(resp.error());
+
+    // On HTTP 403: compute clock skew from server Date header and retry once.
+    // Reference: voices.py list_voices() try/except ClientResponseError(status=403)
+    //   → DRM.handle_client_response_error(e) → __list_voices() again
+    if (resp->status_code == 403) {
+        auto date_it = resp->headers.find("Date");
+        if (date_it != resp->headers.end()) {
+            auto server_ts = parse_http_date(date_it->second);
+            if (server_ts) {
+                tokens_.adjust_clock_skew_from_server_timestamp(
+                    static_cast<double>(*server_ts));
+            } else {
+                tokens_.adjust_clock_skew(300.0);
+            }
+        } else {
+            tokens_.adjust_clock_skew(300.0);
+        }
+        resp = send_request();
+        if (!resp)
+            return common::Result<std::vector<core::Voice>>::fail(resp.error());
+    }
 
     if (resp->status_code != 200)
         return common::Result<std::vector<core::Voice>>::fail(
@@ -53,33 +81,10 @@ common::Result<std::vector<core::Voice>> VoiceService::fetch_and_parse()
     if (!voices)
         return common::Result<std::vector<core::Voice>>::fail(voices.error());
 
-    return common::Result<std::vector<core::Voice>>::ok(std::move(*voices));
-}
-
-common::Result<std::vector<core::Voice>>
-VoiceService::list_voices(const VoiceFilter& filter)
-{
-    // First attempt.
-    auto result = fetch_and_parse();
-
-    // On HTTP 403: adjust clock skew and retry once.
-    // Reference: voices.py list_voices() try/except ClientResponseError(status=403)
-    //   → DRM.handle_client_response_error(e) → __list_voices() again
-    if (!result &&
-        result.error().code() == common::ErrorCode::service_error &&
-        result.error().context() == "403")
-    {
-        tokens_.adjust_clock_skew(300.0);
-        result = fetch_and_parse();
-    }
-
-    if (!result)
-        return result;
-
     // Apply client-side filter (all conditions ANDed).
     // Wire order is preserved — sorting for display is the caller's concern.
     if (filter.locale || filter.gender || filter.short_name) {
-        auto& v = *result;
+        auto& v = *voices;
         v.erase(std::remove_if(v.begin(), v.end(),
             [&](const core::Voice& voice) {
                 if (filter.locale     && voice.locale      != *filter.locale)     return true;
@@ -90,7 +95,7 @@ VoiceService::list_voices(const VoiceFilter& filter)
         v.end());
     }
 
-    return result;
+    return voices;
 }
 
 } // namespace edge_tts::communication

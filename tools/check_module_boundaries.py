@@ -41,12 +41,18 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     "serialization": {"common", "core"},
     "subtitles":     {"common", "core"},
     "media":         {"common"},
-    "communication": {"common", "core", "serialization", "subtitles", "media"},
+    # communication is pure transport: WebSocket/HTTP framing, protocol parsing,
+    # session lifecycle.  It must not include subtitle or media — those are owned
+    # by api above it.
+    "communication": {"common", "core", "serialization"},
     # api is the public facade above communication; it may include everything below.
     "api":           {"common", "core", "serialization", "subtitles", "media",
                       "communication"},
-    "cli":           {"common", "core", "serialization", "subtitles", "media",
-                      "communication", "api"},
+    # cli may depend on api (and transitively everything api exposes), plus media
+    # directly (public header PlaybackCommandDispatcher.hpp includes AudioConverter)
+    # and subtitles directly (EdgeTtsCommandDispatcher.cpp uses SubMaker).
+    # cli must not reach past api into communication or serialization internals.
+    "cli":           {"common", "core", "subtitles", "media", "api"},
     # apps/ executables sit above the cli layer and may include any module.
     "apps":          {"common", "core", "serialization", "subtitles", "media",
                       "communication", "api", "cli"},

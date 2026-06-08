@@ -65,6 +65,21 @@ C++ implementation: `IdGenerator::random_32_hex()` produces 32 lowercase hex cha
 the full `"muid=<32 UPPER HEX>;"` string.  One fresh MUID is generated per call to either
 builder — matching Python's per-request cookie generation.
 
+#### HTTP transport vs. service layer
+
+`IHttpClient::send()` is a pure transport boundary: it returns a successful
+`Result<HttpResponse>` for any HTTP status code, including 403, 500, etc.
+Transport-level failures only (network unreachable, TLS error, timeout,
+unsupported proxy) produce `Result::fail`.
+
+Service-layer code (`VoiceService`) is responsible for mapping HTTP status codes
+to application errors:
+- HTTP 403 → DRM retry path (compute clock skew, retry once)
+- any other non-200 → `ErrorCode::service_error` with status code as context
+
+This separation means `FakeHttpClient` can inject any status code directly
+into service tests without the transport layer interfering.
+
 #### Voice-list request headers
 
 The following HTTP headers are sent by `VoiceService::list_voices()`
@@ -102,19 +117,24 @@ try:
 except aiohttp.ClientResponseError as e:
     if e.status != 403:
         raise
-    DRM.handle_client_response_error(e)   # adjust clock_skew_seconds by +300 s
+    DRM.handle_client_response_error(e)   # adjust clock_skew_seconds from Date header
     return await session.get(url, headers=VOICE_HEADERS, ssl=True)
 ```
 
 **Rules:**
 - **One retry** per `list_voices()` call, only on HTTP 403.
 - All other HTTP errors propagate immediately.
-- Clock skew is adjusted by `+300 s` before the retry token is generated.
+- Clock skew is adjusted before the retry token is regenerated.
 
-**C++ implementation:** `communication::VoiceService::list_voices()` checks
-`result.error().code() == service_error && result.error().context() == "403"`,
-then calls `EdgeTokenProvider::adjust_clock_skew(300.0)` and retries
-`fetch_and_parse()` once.
+**C++ implementation:** `communication::VoiceService::list_voices()` calls the
+private `send_request()` helper (returns the raw `HttpResponse`).  On HTTP 403:
+
+1. Inspect the `Date` response header.
+2. Parse it with `parse_http_date()` (same parser as the WebSocket path).
+3. If valid: call `EdgeTokenProvider::adjust_clock_skew_from_server_timestamp(server_ts)`,
+   which computes `skew = server_ts - (clock_now + current_skew)` and accumulates it.
+4. **Fallback:** If `Date` is absent or unparsable, call `adjust_clock_skew(300.0)`.
+5. Call `send_request()` once more with the corrected token.
 
 ### Timeouts
 
@@ -191,9 +211,10 @@ of success or error, and before returning any error.
 ### Proxy
 
 `WebSocketClientOptions::proxy` stores an optional proxy URL, matching Python's
-`proxy=self.proxy` passed to `ws_connect()`. Forwarding to the ixwebsocket
-synchronous API is deferred (ixwebsocket WebSocket CONNECT proxy is not exposed
-via the synchronous `connect()` / `run()` API).
+`proxy=self.proxy` passed to `ws_connect()`. The ixwebsocket synchronous API
+has no CONNECT-tunnel proxy support, so if `proxy` is set, `connect()` returns
+`ErrorCode::unsupported` before attempting the connection. Proxy is not
+functional end-to-end; callers receive a clear error rather than a silent no-op.
 
 ---
 

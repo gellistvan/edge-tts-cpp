@@ -39,7 +39,6 @@ edge_tts_add_module(
     NAME core
     SOURCES
         src/core/Chunk.cpp
-        src/core/TextChunker.cpp
         src/core/TtsConfig.cpp
         src/core/OutputFormat.cpp
         src/core/Voice.cpp
@@ -78,7 +77,6 @@ edge_tts_add_module(
         src/media/AudioConverter.cpp
         src/media/ExecutableDiscovery.cpp
         src/media/FfmpegAudioConverter.cpp
-        src/media/FakeProcessRunner.cpp
     PUBLIC_DEPS edge_tts::common
 )
 
@@ -94,10 +92,8 @@ edge_tts_add_module(
         src/communication/ConnectionMetadata.cpp
         src/communication/EdgeProtocol.cpp
         src/communication/EdgeProtocolIncoming.cpp
-        src/communication/FakeWebSocketClient.cpp
         src/communication/HttpDate.cpp
         src/communication/SynthesisSession.cpp
-        src/communication/FakeHttpClient.cpp
         src/communication/HttpClient.cpp
         src/communication/VoiceService.cpp
         src/communication/EdgeRequestHeaders.cpp
@@ -108,8 +104,6 @@ edge_tts_add_module(
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::serialization
-        edge_tts::subtitle
-        edge_tts::media
         edge_tts::common
 )
 
@@ -136,6 +130,8 @@ edge_tts_add_module(
     PUBLIC_DEPS
         edge_tts::api
         edge_tts::media
+    PRIVATE_DEPS
+        edge_tts::subtitle
 )
 
 # ---------------------------------------------------------------------------

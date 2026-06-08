@@ -351,7 +351,11 @@ GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices
 `VoicesManager.create()` adds a synthetic `Language` field derived as
 `Locale.split("-")[0]`.
 
-**Retry on 403:** uses the same clock-skew correction as WebSocket (see DRM section).
+**Retry on 403:** On HTTP 403, inspect the `Date` response header; parse it with
+`parse_http_date()` and compute `skew = server_ts - (clock_now + current_skew)`;
+call `EdgeTokenProvider::adjust_clock_skew_from_server_timestamp()`.  If the
+`Date` header is absent or unparsable, fall back to `adjust_clock_skew(300.0)`.
+Retry exactly once with the corrected token.  See DRM section for full algorithm.
 
 **Match exactly:** Yes — same endpoint, same headers including MUID cookie.
 
@@ -433,10 +437,6 @@ by walking back from the limit position.
 - `TextChunkerOptions::prefer_word_boundary = true` (space fallback)
 - Returns XML-escaped, stripped chunks ready for SSML `<prosody>` embedding.
 - Propagates UTF-8 validation errors from `TextNormalizer`.
-
-The older `core::TextChunker` performs UTF-8-safe byte splitting only and does
-**not** normalize, escape, or protect entities.  The communication layer must
-use `serialization::TextChunker`.
 
 **Match exactly:** Yes.
 
@@ -931,6 +931,7 @@ shared across all `Communicate` and `list_voices` calls in the same process.
 
 **C++ implementation status:** Implemented.
 
+**WebSocket path (`SynthesisSession`):**
 - `WebSocketClient::connect()` maps HTTP 403 → `ErrorCode::drm_error` and stores the
   `Date` response header (from `ix::WebSocketInitResult::headers`) as `error.context()`.
 - `SynthesisSession` retry path: if `should_retry()` returns true, calls
@@ -938,8 +939,18 @@ shared across all `Communicate` and `list_voices` calls in the same process.
   `skew = server_time - (client_now + existing_skew)`, then calls
   `token_provider_.adjust_clock_skew(skew)` before retrying with a new ConnectionId
   and freshly computed `Sec-MS-GEC`.
-- If the Date header is absent or malformed, skew adjustment is skipped (no error raised —
-  divergence from Python's `SkewAdjustmentError`; the retry still proceeds).
+- If the Date header is absent or malformed, skew adjustment is skipped (retry still
+  proceeds without correction — divergence from Python's `SkewAdjustmentError`).
+
+**Voice-list path (`VoiceService`):**
+- `send_request()` returns the raw `HttpResponse`; on HTTP 403, `list_voices()`
+  inspects `resp.headers["Date"]`.
+- Calls `EdgeTokenProvider::adjust_clock_skew_from_server_timestamp(server_ts)`, which
+  computes `skew = server_ts - (clock_now + current_skew)` and accumulates it.
+- **Fallback:** if `Date` is absent or unparsable, calls `adjust_clock_skew(300.0)`.
+  This is a conservative fallback not present in Python (which raises `SkewAdjustmentError`).
+
+**Shared:**
 - `parse_http_date()` is in `communication/HttpDate.hpp`; format:
   `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (reference: `drm.py DRM.parse_rfc2616_date()`).
 - `EdgeTokenProvider::clock_skew_seconds()` is per-instance (injectable for tests),

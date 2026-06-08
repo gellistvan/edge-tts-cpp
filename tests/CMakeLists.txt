@@ -1,6 +1,25 @@
 # EdgeTtsAddTest is included from the parent CMakeLists.txt before this
 # subdirectory is processed, so edge_tts_add_module_test() is available here.
 
+# ---------------------------------------------------------------------------
+# Test-support library: fake in-memory implementations of production interfaces.
+# Only test targets may link against this.  Production modules must not.
+# ---------------------------------------------------------------------------
+add_library(edge_tts_test_support STATIC
+    support/FakeWebSocketClient.cpp
+    support/FakeHttpClient.cpp
+    support/FakeProcessRunner.cpp
+)
+target_compile_features(edge_tts_test_support PUBLIC cxx_std_20)
+# tests/support/ shadows include/ for fake headers — resolved before installed headers.
+target_include_directories(edge_tts_test_support PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+target_link_libraries(edge_tts_test_support PUBLIC
+    edge_tts::communication
+    edge_tts::media
+)
+
 edge_tts_add_module_test(
     NAME common
     SOURCES
@@ -21,7 +40,6 @@ edge_tts_add_module_test(
         common/test_main.cpp
         core/test_tts_config.cpp
         core/test_voice.cpp
-        core/test_text_chunker.cpp
         core/OutputFormatTests.cpp
         core/TtsConfigTests.cpp
         core/VoiceTests.cpp
@@ -74,7 +92,7 @@ edge_tts_add_module_test(
         communication/WebSocketClientTests.cpp
         communication/RetryPolicyTests.cpp
         communication/CommunicateStyleFlowTests.cpp
-    LIBRARIES edge_tts::communication
+    LIBRARIES edge_tts::communication edge_tts_test_support
 )
 
 # Propagate ixwebsocket availability to the offline communication tests so
@@ -107,7 +125,7 @@ edge_tts_add_module_test(
         common/test_main.cpp
         media/ExecutableDiscoveryTests.cpp
         media/FfmpegAudioConverterTests.cpp
-    LIBRARIES edge_tts::media
+    LIBRARIES edge_tts::media edge_tts_test_support
 )
 
 # ProcessRunnerTests.cpp uses POSIX APIs (::pipe, real ProcessRunner with
@@ -127,7 +145,7 @@ edge_tts_add_module_test(
         api/CommunicateProductionWiringTests.cpp
         api/CommunicateEndToEndTests.cpp
         api/OfflineIntegrationTests.cpp
-    LIBRARIES edge_tts::api edge_tts::cli
+    LIBRARIES edge_tts::api edge_tts::cli edge_tts_test_support
 )
 
 if(EDGE_TTS_ENABLE_NETWORK_TESTS)
@@ -184,5 +202,5 @@ edge_tts_add_module_test(
         cli/EdgeTtsCommandDispatcherTests.cpp
         cli/PlaybackCommandDispatcherTests.cpp
         cli/ListVoicesProductionPathTests.cpp
-    LIBRARIES edge_tts::cli
+    LIBRARIES edge_tts::cli edge_tts_test_support
 )

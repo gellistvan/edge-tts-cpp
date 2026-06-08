@@ -89,10 +89,10 @@ def test_allowed_includes_inline(tmp_path: Path) -> None:
         ("src/serialization/F.cpp",
          '#include "edge_tts/core/TtsConfig.hpp"\n'
          '#include "edge_tts/common/Utf8.hpp"\n'),
+        # communication: pure transport — may use serialization/core/common only
         ("src/communication/F.cpp",
          '#include "edge_tts/serialization/EdgeProtocol.hpp"\n'
-         '#include "edge_tts/subtitles/SrtComposer.hpp"\n'
-         '#include "edge_tts/media/AudioConverter.hpp"\n'),
+         '#include "edge_tts/core/TtsConfig.hpp"\n'),
         # api is the public facade — may include communication and everything below
         ("src/api/F.cpp",
          '#include "edge_tts/communication/SynthesisSession.hpp"\n'
@@ -162,6 +162,21 @@ def test_forbidden_includes_inline(tmp_path: Path) -> None:
         ("src/communication/Bad2.cpp",
          '#include "edge_tts/cli/CliOptions.hpp"\n',
          "[communication] forbidden include of [cli]"),
+        # communication must not include subtitle or media — those belong in api
+        ("src/communication/Bad3.cpp",
+         '#include "edge_tts/subtitles/SubMaker.hpp"\n',
+         "[communication] forbidden include of [subtitles]"),
+        ("src/communication/Bad4.cpp",
+         '#include "edge_tts/media/AudioConverter.hpp"\n',
+         "[communication] forbidden include of [media]"),
+        # cli must not reach past api into communication internals
+        ("src/cli/Bad.cpp",
+         '#include "edge_tts/communication/SynthesisSession.hpp"\n',
+         "[cli] forbidden include of [communication]"),
+        # cli must not include serialization directly
+        ("src/cli/Bad2.cpp",
+         '#include "edge_tts/serialization/TextChunker.hpp"\n',
+         "[cli] forbidden include of [serialization]"),
     ]
     for rel, content, expected_sub in cases:
         path = tmp_path / rel
@@ -228,6 +243,10 @@ def test_forbidden_fixture_tree() -> None:
         "[media] forbidden include of [communication]",
         "[serialization] forbidden include of [communication]",
         "[api] forbidden include of [cli]",
+        "[communication] forbidden include of [subtitles]",
+        "[communication] forbidden include of [media]",
+        "[cli] forbidden include of [communication]",
+        "[cli] forbidden include of [serialization]",
         "private header",
     ]
     for pattern in expected_patterns:

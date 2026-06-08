@@ -19,9 +19,9 @@ module.  A blank cell means the dependency is **forbidden**.
 | `serialization`  | ✓      | ✓    | —             |          |       |               |     |     |
 | `subtitle`       | ✓ (transitively via core) | ✓ | | — |  |             |     |     |
 | `media`          | ✓      |      |               |          | —     |               |     |     |
-| `communication`  | ✓      | ✓    | ✓             | ✓        | ✓     | —             |     |     |
+| `communication`  | ✓      | ✓    | ✓             |          |       | —             |     |     |
 | `api`            | ✓      | ✓    | ✓             | ✓        | ✓     | ✓             | —   |     |
-| `cli`            |        |      |               |          |       |               | ✓   | —   |
+| `cli`            | ✓      | ✓    |               | ✓        | ✓     |               | ✓   | —   |
 
 **Rules in plain language:**
 
@@ -35,14 +35,18 @@ module.  A blank cell means the dependency is **forbidden**.
    include serialization or communication headers.
 5. `media` depends on `common` only.  It must not include TTS domain types
    or protocol headers.
-6. `communication` may depend on all modules below it.  Business logic must
-   stay in `core` and `serialization`; `communication` is pure transport
-   orchestration and must not depend on `api` or `cli`.
-7. `api` is the public synthesis facade.  It may depend on all modules below
-   it (`communication` and everything `communication` links).  It must not
-   depend on `cli`.  Future tasks implement `Communicate` behavior here.
-8. `cli` depends on `api` only (which transitively provides everything needed).
-   It must not reach past `api` to touch transport or domain internals directly.
+6. `communication` depends on `common`, `core`, and `serialization` only.
+   It is pure transport orchestration (WebSocket/HTTP framing, protocol parsing,
+   session lifecycle).  It must not include `subtitle` or `media` — those belong
+   in `api`.  It must not depend on `api` or `cli`.
+7. `api` is the public synthesis facade.  It depends on `communication`,
+   `serialization`, `subtitle`, `media`, `core`, and `common`.  It must not
+   depend on `cli`.
+8. `cli` is the application-layer helper shared by the `edge-tts` and
+   `edge-playback` executables.  It depends on `api`, `media` (for
+   `IAudioConverter` in its public headers), `subtitle` (for `SubMaker` in its
+   `.cpp` files), `core`, and `common`.  It must not reach past `api` into
+   `communication` or `serialization` internals.
 
 ## Forbidden dependency examples
 
@@ -57,6 +61,14 @@ target_link_libraries(edge_tts_subtitle PUBLIC edge_tts::communication)
 
 # WRONG: media must not depend on core domain types
 target_link_libraries(edge_tts_media PUBLIC edge_tts::core)
+
+# WRONG: communication must not depend on subtitle or media
+target_link_libraries(edge_tts_communication PUBLIC edge_tts::subtitle)
+target_link_libraries(edge_tts_communication PUBLIC edge_tts::media)
+
+# WRONG: cli must not bypass api to reach communication internals
+target_link_libraries(edge_tts_cli PUBLIC edge_tts::communication)
+target_link_libraries(edge_tts_cli PUBLIC edge_tts::serialization)
 ```
 
 ## Automated boundary check
@@ -120,19 +132,25 @@ cmake --build build --target edge_tts_core -- VERBOSE=1 2>&1 | grep -o "libedge.
 | api | `edge_tts_api` | `edge_tts::api` |
 | cli | `edge_tts_cli` | `edge_tts::cli` |
 | *(aggregate)* | `edge_tts` | `edge_tts::edge_tts` |
+| *(test-only)* | `edge_tts_test_support` | *(no alias — test use only)* |
 
 The aggregate target `edge_tts::edge_tts` links all modules for use in
 examples.  Applications and tests must link specific module targets.
 
+`edge_tts_test_support` is defined in `tests/CMakeLists.txt` and is only
+available when `EDGE_TTS_BUILD_TESTS=ON`.  It must **never** be linked from
+production library targets (`edge_tts_media`, `edge_tts_communication`, etc.)
+or from CLI app targets (`edge-tts`, `edge-playback`).
+
 ## Test targets
 
-| Module | Test executable |
-|--------|----------------|
-| common | `edge_tts_common_tests` |
-| core | `edge_tts_core_tests` |
-| serialization | `edge_tts_serialization_tests` |
-| subtitle | `edge_tts_subtitle_tests` |
-| media | `edge_tts_media_tests` |
-| communication | `edge_tts_communication_tests` |
-| api | *(no separate test target — tested via communication_tests and integration)* |
-| cli | `edge_tts_cli_tests` |
+| Module | Test executable | Extra link |
+|--------|----------------|------------|
+| common | `edge_tts_common_tests` | — |
+| core | `edge_tts_core_tests` | — |
+| serialization | `edge_tts_serialization_tests` | — |
+| subtitle | `edge_tts_subtitle_tests` | — |
+| media | `edge_tts_media_tests` | `edge_tts_test_support` |
+| communication | `edge_tts_communication_tests` | `edge_tts_test_support` |
+| api | `edge_tts_api_tests` | `edge_tts_test_support` |
+| cli | `edge_tts_cli_tests` | `edge_tts_test_support` |

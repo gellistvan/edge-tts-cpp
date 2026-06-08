@@ -146,6 +146,31 @@ TEST(WebSocketClient, ConnectWithProxyErrorMessageMentionsProxy) {
     EXPECT_TRUE(mentions_proxy);
 }
 
+TEST(WebSocketClient, ProxyCredentialsNotExposedInErrorContext) {
+    // Proxy URLs with user:password credentials must have credentials replaced
+    // with [credentials] before appearing in any error field.
+    WebSocketClientOptions opts;
+    opts.proxy = "http://user:s3cr3t@proxy.example.com:3128";
+    WebSocketClient client{std::move(opts)};
+    auto r = client.connect("wss://example.com");
+    ASSERT_FALSE(r.has_value());
+    const std::string ctx = std::string(r.error().context());
+    EXPECT_EQ(ctx.find("s3cr3t"), std::string::npos);
+    EXPECT_NE(ctx.find("[credentials]"), std::string::npos);
+}
+
+TEST(WebSocketClient, ProxyWithoutCredentialsContextUnchanged) {
+    // URLs without credentials must appear in the context without modification.
+    WebSocketClientOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    WebSocketClient client{std::move(opts)};
+    auto r = client.connect("wss://example.com");
+    ASSERT_FALSE(r.has_value());
+    const std::string ctx = std::string(r.error().context());
+    EXPECT_NE(ctx.find("proxy.example.com"), std::string::npos);
+    EXPECT_EQ(ctx.find("[credentials]"), std::string::npos);
+}
+
 TEST(WebSocketClient, ConnectWithoutProxyDoesNotReturnUnsupportedForProxy) {
     // Without a proxy the guard must not fire.  connect() will fail on a fake
     // hostname, but the error code must NOT be unsupported.
