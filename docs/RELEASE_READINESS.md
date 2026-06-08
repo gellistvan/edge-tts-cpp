@@ -59,7 +59,9 @@ what "ready to release" means for each capability area.
 | Stale "Stub:" labels in conditional-compile paths | **Resolved** — relabelled as "ixwebsocket not available" |
 | `tools/README.md` placeholder text | **Resolved** — describes actual tools |
 | All C++ tests pass | **Yes** — 17/17 CTest targets |
-| All Python quality-gate tests pass | **Yes** — 4/4 gates (docs, module-boundary, dependency-config, hygiene) |
+| All Python quality-gate tests pass | **Yes** — 7/7 gates (docs, module-boundary, dependency-config, hygiene, cmake-source-dir-regression, consumer-add-subdirectory, public-tts-target) |
+| Safe as add_subdirectory dependency | **Done** — EDGE_TTS_SOURCE_DIR/BINARY_DIR used throughout; regression check enforced by CTest |
+| Public `edge_tts::tts` consumer target | **Done** — INTERFACE target linking `edge_tts::api`; does not expose CLI/playback/tests; consumer fixture and hygiene tests enforce it |
 
 ---
 
@@ -67,14 +69,16 @@ what "ready to release" means for each capability area.
 
 Before tagging a release:
 
-1. `ctest --test-dir build --output-on-failure` — all 17 targets pass.
-2. `python3 tests/tools/test_repository_hygiene.py` — all 7 hygiene checks pass.
-3. `ctest --test-dir build -R "edge_tts_module_boundary_tests|edge_tts_docs_tests|edge_tts_dependency_config_tests" --output-on-failure` — all pass.
+1. `ctest --test-dir build --output-on-failure` — all targets pass.
+2. `python3 tests/tools/test_repository_hygiene.py` — all hygiene checks pass.
+3. `ctest --test-dir build -R "edge_tts_module_boundary_tests|edge_tts_docs_tests|edge_tts_dependency_config_tests|edge_tts_cmake_source_dir_regression|edge_tts_consumer_add_subdirectory_tests|edge_tts_public_tts_target_tests" --output-on-failure` — all pass.
 4. Build with `EDGE_TTS_WARNINGS_AS_ERRORS=ON` — zero warnings.
 5. Enable `EDGE_TTS_ENABLE_NETWORK_TESTS=ON` in an environment with outbound TLS to `speech.platform.bing.com` — network smoke tests pass.
 6. Run `tools/make_release_archive.sh <VERSION>` and verify the archive builds offline (see `docs/RELEASE.md`).
-7. Update version in `CMakeLists.txt` `project()` call.
-8. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
+7. Verify `add_subdirectory` integration: `python3 tests/cmake/test_consumer_add_subdirectory.py` passes with the release source tree.
+7a. Verify public consumer target: `python3 tests/cmake/test_public_tts_target.py` passes — `edge_tts::tts` builds a consumer app without CLI/playback.
+8. Update version in `CMakeLists.txt` `project()` call.
+9. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
 
 ---
 

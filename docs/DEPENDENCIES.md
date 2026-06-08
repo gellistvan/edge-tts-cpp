@@ -56,6 +56,52 @@ the release checklist.
 
 ---
 
+## add_subdirectory safety
+
+edge-tts-cpp is safe to consume via `add_subdirectory` from a parent CMake project.
+
+### Canonical directory variables
+
+All project-local file paths use `EDGE_TTS_SOURCE_DIR` and `EDGE_TTS_BINARY_DIR`
+instead of `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR`.
+
+These variables are defined at the top of `CMakeLists.txt`:
+
+```cmake
+set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "")
+set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "")
+```
+
+`CMAKE_CURRENT_SOURCE_DIR` and `CMAKE_CURRENT_BINARY_DIR` refer to
+edge-tts-cpp's own directory regardless of nesting depth, so the parent
+project's `CMAKE_SOURCE_DIR` is never touched.
+
+A regression check (`tests/cmake/test_cmake_source_dir_regression.py`, CTest
+name `edge_tts_cmake_source_dir_regression`) scans all of edge-tts-cpp's own
+cmake files and fails the build if any bare `${CMAKE_SOURCE_DIR}` or
+`${CMAKE_BINARY_DIR}` reference is introduced.  The check excludes the
+`submodules/` directory (third-party projects have their own conventions) and
+the consumer fixture under `tests/cmake/consumer_add_subdirectory_basic/`.
+
+### Consumer fixture
+
+A minimal consumer project lives in `tests/cmake/consumer_add_subdirectory_basic/`.
+It is a standalone CMake project that:
+
+1. Calls `add_subdirectory(edge-tts-cpp …)` with `EDGE_TTS_CPP_SOURCE_DIR` pointing
+   to the repo root.
+2. Links against `edge_tts::common` and `edge_tts::core`.
+3. Asserts at configure time that `CMAKE_SOURCE_DIR` still points to the consumer's
+   own root (not inside edge-tts-cpp).
+4. Compiles a small C++ binary that uses `edge_tts/common/Error.hpp` and
+   `edge_tts/core/Voice.hpp` to confirm that the public include path is correct.
+
+The Python test `tests/cmake/test_consumer_add_subdirectory.py` (CTest name
+`edge_tts_consumer_add_subdirectory_tests`) configures and builds this fixture in
+a temporary directory.
+
+---
+
 ## minigtest
 
 | Property | Value |

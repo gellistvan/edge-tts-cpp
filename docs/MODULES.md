@@ -333,11 +333,67 @@ regression:
 
 ---
 
-## Aggregate target
+## Public consumer targets
 
-`edge_tts` / `edge_tts::edge_tts` — INTERFACE target linking all modules.
-Used only by example programs.  Applications and tests must link specific
-module targets.
+### `edge_tts::tts` (recommended)
+
+**CMake target:** `edge_tts_tts` / `edge_tts::tts`
+
+The stable, minimal entry point for external consumers of the TTS library.
+
+```cmake
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+`edge_tts_tts` is an INTERFACE target that links `edge_tts::api`.  Transitively
+provides the full synthesis library:
+
+```
+edge_tts::tts
+  └─ edge_tts::api
+       ├─ edge_tts::communication  (WebSocket, HTTP, DRM token)
+       ├─ edge_tts::serialization  (SSML, protocol frames, JSON)
+       ├─ edge_tts::subtitle       (SRT generation)
+       ├─ edge_tts::core           (TtsConfig, Voice, TtsChunk)
+       └─ edge_tts::common         (Error, Result<T>, IClock)
+```
+
+`edge_tts::tts` does **not** expose:
+- `edge_tts::cli` — CLI argument parsing for the `edge-tts` / `edge-playback` apps
+- `edge_tts::media` — ffplay/ffmpeg process runner (not needed for synthesis)
+- `edge_tts_test_support` — test-only fake clients
+
+Stability contract: `edge_tts::tts` is stable and consumer-facing.  It will
+not be removed or renamed in a patch release.  Breaking changes require a semver
+major bump.
+
+### Advanced targets
+
+Lower-level module targets remain available for consumers who need fine-grained
+control over link graphs:
+
+| Target | Description |
+|--------|-------------|
+| `edge_tts::api` | Public synthesis facade only. |
+| `edge_tts::communication` | WebSocket/HTTP transport + DRM token. |
+| `edge_tts::serialization` | SSML, protocol framing, JSON parsing. |
+| `edge_tts::subtitle` | SRT generation. |
+| `edge_tts::media` | ffplay/ffmpeg process runner. |
+| `edge_tts::core` | Domain types. |
+| `edge_tts::common` | Errors, Result, utilities. |
+
+## Broad aggregate target (internal)
+
+`edge_tts` / `edge_tts::edge_tts` / `edge_tts::all` — INTERFACE target linking
+all modules including `edge_tts::cli` and `edge_tts::media`.
+
+Used only by internal example programs.  External consumers must use
+`edge_tts::tts` instead.  Apps and tests must link specific module targets.
+
+| Alias | Status |
+|-------|--------|
+| `edge_tts::edge_tts` | Retained for compatibility |
+| `edge_tts::all` | Preferred name for the broad aggregate |
 
 ---
 

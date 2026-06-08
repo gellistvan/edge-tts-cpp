@@ -119,23 +119,50 @@ cmake --build build --target edge_tts_core -- VERBOSE=1 2>&1 | grep -o "libedge.
 
 ---
 
+## Target ownership rules
+
+### Rule 1 — Consumer-facing targets must not expose internal modules
+
+`edge_tts::tts` is the stable public consumer target.  The following must never
+appear in its direct or transitive link interface via its own definition:
+
+- `edge_tts_cli` / `edge_tts::cli` — CLI argument-parsing; app-layer only
+- `edge_tts_test_support` — test-only fake clients; never in production graphs
+- App executables (`edge-tts`, `edge-playback`)
+
+Enforced by `tests/tools/test_repository_hygiene.py`
+(`test_edge_tts_tts_does_not_link_internal_targets`) and by
+`tests/cmake/test_public_tts_target.py`.
+
+### Rule 2 — Internal modules must not depend upward
+
+See the dependency matrix above.  `communication` may not depend on `api`;
+`cli` must not bypass `api` to reach `communication`.
+
+### Rule 3 — Test-support targets are test-only
+
+`edge_tts_test_support` is only available when `EDGE_TTS_BUILD_TESTS=ON`.
+It must never be linked from any production library or CLI app target.
+
 ## CMake target names
 
-| Module | CMake target | Alias |
-|--------|-------------|-------|
-| common | `edge_tts_common` | `edge_tts::common` |
-| core | `edge_tts_core` | `edge_tts::core` |
-| serialization | `edge_tts_serialization` | `edge_tts::serialization` |
-| subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` |
-| media | `edge_tts_media` | `edge_tts::media` |
-| communication | `edge_tts_communication` | `edge_tts::communication` |
-| api | `edge_tts_api` | `edge_tts::api` |
-| cli | `edge_tts_cli` | `edge_tts::cli` |
-| *(aggregate)* | `edge_tts` | `edge_tts::edge_tts` |
-| *(test-only)* | `edge_tts_test_support` | *(no alias — test use only)* |
+| Target | Alias | Audience |
+|--------|-------|----------|
+| `edge_tts_tts` | `edge_tts::tts` | **External consumers** — recommended entry point |
+| `edge_tts_api` | `edge_tts::api` | External consumers (advanced) |
+| `edge_tts_communication` | `edge_tts::communication` | External consumers (advanced) |
+| `edge_tts_serialization` | `edge_tts::serialization` | External consumers (advanced) |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | External consumers (advanced) |
+| `edge_tts_media` | `edge_tts::media` | External consumers (advanced) |
+| `edge_tts_core` | `edge_tts::core` | External consumers (advanced) |
+| `edge_tts_common` | `edge_tts::common` | External consumers (advanced) |
+| `edge_tts_cli` | `edge_tts::cli` | Internal / app-layer only |
+| `edge_tts` | `edge_tts::edge_tts`, `edge_tts::all` | Internal examples / broad convenience |
+| `edge_tts_test_support` | *(no alias)* | Test targets only |
 
-The aggregate target `edge_tts::edge_tts` links all modules for use in
-examples.  Applications and tests must link specific module targets.
+The aggregate target `edge_tts::edge_tts` / `edge_tts::all` links all modules
+including `cli` and `media`.  Internal examples may use it.  External consumers
+must use `edge_tts::tts`.
 
 `edge_tts_test_support` is defined in `tests/CMakeLists.txt` and is only
 available when `EDGE_TTS_BUILD_TESTS=ON`.  It must **never** be linked from

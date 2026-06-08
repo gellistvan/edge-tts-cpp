@@ -47,25 +47,31 @@ tests/
 
 ### CMake targets
 
-Each module is a separate CMake library.  Link specific targets — do not link
-the aggregate unless writing examples.
-
-| Module | Target | Alias | Test target |
-|--------|--------|-------|-------------|
-| common | `edge_tts_common` | `edge_tts::common` | `edge_tts_common_tests` |
-| core | `edge_tts_core` | `edge_tts::core` | `edge_tts_core_tests` |
-| serialization | `edge_tts_serialization` | `edge_tts::serialization` | `edge_tts_serialization_tests` |
-| subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` | `edge_tts_subtitle_tests` |
-| media | `edge_tts_media` | `edge_tts::media` | `edge_tts_media_tests` |
-| communication | `edge_tts_communication` | `edge_tts::communication` | `edge_tts_communication_tests` |
-| api | `edge_tts_api` | `edge_tts::api` | `edge_tts_api_tests` |
-| cli | `edge_tts_cli` | `edge_tts::cli` | `edge_tts_cli_tests` |
-
-The aggregate convenience target:
+**Recommended consumer target: `edge_tts::tts`**
 
 ```cmake
-target_link_libraries(my_example PRIVATE edge_tts::edge_tts)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
 ```
+
+`edge_tts::tts` is the stable, minimal public entry point for TTS consumers.
+It links `edge_tts::api`, which transitively provides the full synthesis library
+(`common`, `core`, `serialization`, `subtitle`, `communication`) without pulling
+in CLI argument parsing, playback infrastructure, or test utilities.
+
+**All available targets:**
+
+| Target | Alias | Purpose | Stability |
+|--------|-------|---------|-----------|
+| `edge_tts_tts` | `edge_tts::tts` | **Recommended consumer target.** Links the TTS API and all transitive deps. No CLI, no playback, no tests. | Stable public API |
+| `edge_tts_api` | `edge_tts::api` | Public synthesis facade (`Communicate`, `FileWriter`). | Stable public API |
+| `edge_tts_communication` | `edge_tts::communication` | WebSocket/HTTP transport, DRM tokens, voice service. | Advanced use |
+| `edge_tts_serialization` | `edge_tts::serialization` | SSML building, protocol framing, JSON parsing. | Advanced use |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | SRT subtitle generation. | Advanced use |
+| `edge_tts_media` | `edge_tts::media` | ffplay/ffmpeg process runner. | Advanced use |
+| `edge_tts_core` | `edge_tts::core` | Domain types (`TtsConfig`, `Voice`, `TtsChunk`). | Advanced use |
+| `edge_tts_common` | `edge_tts::common` | Error types, `Result<T>`, `IClock`. | Advanced use |
+| `edge_tts_cli` | `edge_tts::cli` | CLI argument parsing for `edge-tts` / `edge-playback`. | Internal / app-only |
+| `edge_tts` | `edge_tts::edge_tts`, `edge_tts::all` | Broad aggregate: all modules including CLI. For internal examples only. | Internal convenience |
 
 See [`docs/DEPENDENCY_RULES.md`](docs/DEPENDENCY_RULES.md) for the enforced
 dependency matrix and [`docs/MODULES.md`](docs/MODULES.md) for per-module
@@ -178,6 +184,38 @@ GitHub automatic "Source code" archives do **not** include submodule contents
 See [`docs/RELEASE.md`](docs/RELEASE.md) for the complete source archive policy.
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
+
+### Using as an add_subdirectory dependency
+
+edge-tts-cpp can be consumed from a parent CMake project via `add_subdirectory`:
+
+```cmake
+# In your parent CMakeLists.txt:
+cmake_minimum_required(VERSION 3.24)
+project(my_app LANGUAGES CXX)
+
+add_subdirectory(
+    path/to/edge-tts-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/edge-tts-cpp
+    EXCLUDE_FROM_ALL
+)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE edge_tts::tts)  # recommended consumer target
+```
+
+edge-tts-cpp uses `EDGE_TTS_SOURCE_DIR` / `EDGE_TTS_BINARY_DIR` internally (set
+to `CMAKE_CURRENT_SOURCE_DIR` / `CMAKE_CURRENT_BINARY_DIR` at its own root) so
+your parent project's `CMAKE_SOURCE_DIR` is never touched.
+
+The submodules (`submodules/json`, `submodules/ixwebsocket`) must be initialized
+before the parent project configures:
+
+```bash
+git submodule update --init --recursive path/to/edge-tts-cpp
+```
+
+Or set `EDGE_TTS_FETCH_DEPS=ON` to let CMake download them automatically.
 
 ## Usage
 

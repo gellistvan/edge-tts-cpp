@@ -70,13 +70,13 @@ macro(_edge_tts_suppress_ixwebsocket_warnings)
     endif()
 endmacro()
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
+if(EXISTS "${EDGE_TTS_SOURCE_DIR}/submodules/ixwebsocket/CMakeLists.txt")
 
     _edge_tts_configure_ixwebsocket_options()
 
     add_subdirectory(
-        "${CMAKE_SOURCE_DIR}/submodules/ixwebsocket"
-        "${CMAKE_BINARY_DIR}/_deps/ixwebsocket"
+        "${EDGE_TTS_SOURCE_DIR}/submodules/ixwebsocket"
+        "${EDGE_TTS_BINARY_DIR}/_deps/ixwebsocket"
         EXCLUDE_FROM_ALL)
 
     _edge_tts_suppress_ixwebsocket_warnings()

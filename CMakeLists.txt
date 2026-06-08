@@ -6,6 +6,12 @@ project(edge_tts_cpp
     LANGUAGES CXX
 )
 
+# Canonical project-local directory variables.
+# Use these instead of CMAKE_SOURCE_DIR / CMAKE_BINARY_DIR so that
+# add_subdirectory consumers keep their own CMAKE_SOURCE_DIR untouched.
+set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "edge-tts-cpp source root")
+set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "edge-tts-cpp binary root")
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(ProjectOptions)
@@ -165,11 +171,24 @@ if((EDGE_TTS_BUILD_APPS OR EDGE_TTS_BUILD_PLAYBACK_APP) AND EDGE_TTS_REQUIRE_NET
 endif()
 
 # ---------------------------------------------------------------------------
-# Aggregate convenience target — for examples and external consumers only.
-# Apps and tests should link specific module targets, not this.
+# Public consumer target — the recommended entry point for external consumers.
+#
+# Links edge_tts::api, which transitively covers the full TTS library:
+#   common, core, serialization, subtitle, communication
+# Does NOT expose edge_tts::cli, playback, or test-support utilities.
+# ---------------------------------------------------------------------------
+add_library(edge_tts_tts INTERFACE)
+add_library(edge_tts::tts ALIAS edge_tts_tts)
+target_link_libraries(edge_tts_tts INTERFACE edge_tts::api)
+
+# ---------------------------------------------------------------------------
+# Broad aggregate — links all modules including cli and media.
+# Intended for example programs and internal convenience only.
+# External consumers should prefer edge_tts::tts.
 # ---------------------------------------------------------------------------
 add_library(edge_tts INTERFACE)
 add_library(edge_tts::edge_tts ALIAS edge_tts)
+add_library(edge_tts::all ALIAS edge_tts)
 target_link_libraries(edge_tts
     INTERFACE
         edge_tts::common
@@ -235,32 +254,47 @@ if(EDGE_TTS_BUILD_TESTS)
         add_test(
             NAME edge_tts_docs_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
         )
         add_test(
             NAME edge_tts_cli_compat_docs_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
         )
         add_test(
             NAME edge_tts_module_boundary_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
         )
         add_test(
             NAME edge_tts_dependency_config_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/cmake/test_dependency_config.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_dependency_config.py"
         )
         add_test(
             NAME edge_tts_network_hygiene_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_network_hygiene.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_network_hygiene.py"
         )
         add_test(
             NAME edge_tts_repository_hygiene_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_repository_hygiene.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_repository_hygiene.py"
+        )
+        add_test(
+            NAME edge_tts_cmake_source_dir_regression
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_cmake_source_dir_regression.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_add_subdirectory_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_add_subdirectory.py"
+        )
+        add_test(
+            NAME edge_tts_public_tts_target_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_public_tts_target.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")

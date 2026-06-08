@@ -11,7 +11,7 @@ function(edge_tts_setup_static_analysis)
 
     set(CMAKE_CXX_CLANG_TIDY
         "${CLANG_TIDY_EXE}"
-        "--config-file=${CMAKE_SOURCE_DIR}/.clang-tidy"
+        "--config-file=${EDGE_TTS_SOURCE_DIR}/.clang-tidy"
         PARENT_SCOPE
     )
     message(STATUS "clang-tidy enabled: ${CLANG_TIDY_EXE}")
