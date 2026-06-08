@@ -10,7 +10,7 @@ namespace edge_tts::communication {
 // Reference: voices.py uses aiohttp.ClientSession.get() with headers and proxy.
 // Error handling: non-2xx responses are represented as Result::fail with
 // ErrorCode::service_error; network-level failures use ErrorCode::network_error.
-// The 403 retry-with-clock-skew logic lives in the caller (HttpVoiceService),
+// The 403 retry-with-clock-skew logic lives in the caller (VoiceService),
 // not in the transport.
 //
 // Proxy support and SSL details are implementation concerns; this interface

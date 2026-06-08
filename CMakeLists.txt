@@ -49,7 +49,6 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME serialization
     SOURCES
-        src/serialization/EdgeProtocol.cpp
         src/serialization/XmlEscaper.cpp
         src/serialization/TextNormalizer.cpp
         src/serialization/TextChunker.cpp
@@ -104,8 +103,6 @@ edge_tts_add_module(
         src/communication/EdgeRequestHeaders.cpp
         src/communication/EdgeServiceConfig.cpp
         src/communication/EdgeTokenProvider.cpp
-        src/communication/HttpVoiceService.cpp
-        src/communication/VoicesManager.cpp
         src/communication/WebSocketClient.cpp
         src/communication/RetryPolicy.cpp
     PUBLIC_DEPS
@@ -130,7 +127,6 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME cli
     SOURCES
-        src/cli/CliPlaceholder.cpp
         src/cli/EdgeTtsArgumentParser.cpp
         src/cli/EdgeTtsCommandDispatcher.cpp
         src/cli/InputLoader.cpp

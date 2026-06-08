@@ -128,8 +128,6 @@ of the voice-list response.
 | File | Description |
 |------|-------------|
 | `SsmlBuilder.hpp` | Builds SSML `<speak>` documents from `TtsConfig` + raw text. |
-| `EdgeProtocol.hpp` | Builds WebSocket text frames (speech.config, ssml path). |
-| `EdgeToken.hpp` | Generates `Sec-MS-GEC` DRM tokens. |
 | `XmlEscaper.hpp` | `xml_escape` / `xml_unescape` matching `xml.sax.saxutils`. |
 | `TextNormalizer.hpp` | UTF-8 validation + control-character replacement. |
 | `TextChunker.hpp` | Splits text into 4096-byte XML-escaped chunks. |
@@ -240,6 +238,14 @@ in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 | `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
 | `FakeHttpClient.hpp` | In-memory `IHttpClient` for tests: configurable response, request capture, error injection, send count. |
 | `EdgeRequestHeaders.hpp` | `build_websocket_headers(config, ids)` → `vector<pair<string,string>>` (7 headers incl. Cookie/MUID); `build_voice_list_headers(config, ids)` → `map<string,string>` (5 headers incl. Cookie/MUID). Both match Python `DRM.headers_with_muid(WSS_HEADERS)` / `DRM.headers_with_muid(VOICE_HEADERS)` exactly. |
+| `VoiceService.hpp` | Fetches and parses the Edge TTS voice list. Injects `IHttpClient`, `VoiceJsonParser`, `IdGenerator`, and `EdgeTokenProvider`. Retries once on HTTP 403 with clock-skew correction. `VoiceFilter` applies client-side locale/gender/short_name filtering. |
+| `EdgeProtocol.hpp` | Builds outgoing WebSocket text frames (`build_speech_config_frame`, `build_ssml_frame`) and parses incoming frames (`parse_incoming`). The single production path for all protocol framing. |
+| `IWebSocketClient.hpp` | Pure virtual WebSocket transport boundary. |
+| `WebSocketClient.hpp` | `WebSocketClient` — ixwebsocket-backed `IWebSocketClient` (Pimpl; no ixwebsocket symbols in the public header). |
+| `FakeWebSocketClient.hpp` | In-memory `IWebSocketClient` for tests: error injection, message queuing, state inspection. |
+| `SynthesisSession.hpp` | Per-chunk WebSocket synthesis lifecycle: connect → speech.config → SSML → receive loop → boundary offset compensation. |
+| `RetryPolicy.hpp` | Configurable `RetryPolicy` used by `SynthesisSession` on DRM errors. |
+| `HttpDate.hpp` | Parses the HTTP `Date` header for clock-skew correction. |
 
 **Allowed dependencies:** `common`, `core`, `serialization`, `subtitle`, `media`.
 

@@ -1,2 +1,2 @@
 // FIXTURE: forbidden — serialization must not include communication
-#include "edge_tts/communication/VoicesManager.hpp"
+#include "edge_tts/communication/VoiceService.hpp"

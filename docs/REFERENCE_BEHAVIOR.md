@@ -50,8 +50,8 @@ __version__, __version_info__
 |---------------|-----------|
 | `Communicate` | `edge_tts::api::Communicate` |
 | `SubMaker` | `edge_tts::subtitles::SubMaker` |
-| `list_voices()` | `edge_tts::communication::HttpVoiceService::list_voices()` |
-| `VoicesManager` | `edge_tts::communication::VoicesManager` |
+| `list_voices()` | `edge_tts::communication::VoiceService::list_voices()` |
+| `VoicesManager.find()` | `edge_tts::communication::VoiceFilter` (passed to `VoiceService::list_voices`) |
 
 **Match exactly:** Yes.
 

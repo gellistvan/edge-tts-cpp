@@ -1,37 +1,38 @@
-#include "edge_tts/cli/CliOptions.hpp"
+#include "edge_tts/cli/EdgeTtsArguments.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
-using edge_tts::cli::CliOptions;
+using edge_tts::cli::EdgeTtsArguments;
 
-TEST(CliOptions, DefaultVoice) {
-    CliOptions opts;
-    EXPECT_EQ(opts.voice, "en-US-EmmaMultilingualNeural");
+TEST(EdgeTtsArguments, DefaultVoice) {
+    EdgeTtsArguments args;
+    EXPECT_EQ(args.voice, "en-US-EmmaMultilingualNeural");
 }
 
-TEST(CliOptions, DefaultRate) {
-    CliOptions opts;
-    EXPECT_EQ(opts.rate, "+0%");
+TEST(EdgeTtsArguments, DefaultRate) {
+    EdgeTtsArguments args;
+    EXPECT_EQ(args.rate, "+0%");
 }
 
-TEST(CliOptions, DefaultVolume) {
-    CliOptions opts;
-    EXPECT_EQ(opts.volume, "+0%");
+TEST(EdgeTtsArguments, DefaultVolume) {
+    EdgeTtsArguments args;
+    EXPECT_EQ(args.volume, "+0%");
 }
 
-TEST(CliOptions, DefaultPitch) {
-    CliOptions opts;
-    EXPECT_EQ(opts.pitch, "+0Hz");
+TEST(EdgeTtsArguments, DefaultPitch) {
+    EdgeTtsArguments args;
+    EXPECT_EQ(args.pitch, "+0Hz");
 }
 
-TEST(CliOptions, DefaultListVoicesIsFalse) {
-    CliOptions opts;
-    EXPECT_FALSE(opts.list_voices);
+TEST(EdgeTtsArguments, DefaultListVoicesIsFalse) {
+    EdgeTtsArguments args;
+    EXPECT_FALSE(args.list_voices);
 }
 
-TEST(CliOptions, OptionalFieldsAreNullByDefault) {
-    CliOptions opts;
-    EXPECT_FALSE(opts.file.has_value());
-    EXPECT_FALSE(opts.write_media.has_value());
-    EXPECT_FALSE(opts.write_subtitles.has_value());
-    EXPECT_FALSE(opts.proxy.has_value());
+TEST(EdgeTtsArguments, OptionalFieldsAreNullByDefault) {
+    EdgeTtsArguments args;
+    EXPECT_FALSE(args.text.has_value());
+    EXPECT_FALSE(args.file.has_value());
+    EXPECT_FALSE(args.write_media.has_value());
+    EXPECT_FALSE(args.write_subtitles.has_value());
+    EXPECT_FALSE(args.proxy.has_value());
 }

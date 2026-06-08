@@ -185,6 +185,23 @@ REMOVED_SKELETON_FILES: list[str] = [
     # Transport.hpp defined the ITransport / RawMessage skeleton interface.
     # The real interface is IWebSocketClient / WebSocketMessage.
     "include/edge_tts/communication/Transport.hpp",
+    # serialization::EdgeProtocol was a skeleton frame-builder with hardcoded JSON and
+    # no timestamp support.  Replaced by communication::EdgeProtocol (full implementation).
+    "src/serialization/EdgeProtocol.cpp",
+    "include/edge_tts/serialization/EdgeProtocol.hpp",
+    # HttpVoiceService was a skeleton voice-list stub that returned an empty vector.
+    # Replaced by VoiceService (DRM token injection, HTTP retry on 403).
+    "src/communication/HttpVoiceService.cpp",
+    "include/edge_tts/communication/HttpVoiceService.hpp",
+    # VoicesManager wrapped HttpVoiceService and is equally stale.
+    # The VoiceFilter API on VoiceService replaces its find_by_locale().
+    "src/communication/VoicesManager.cpp",
+    "include/edge_tts/communication/VoicesManager.hpp",
+    # CliPlaceholder.cpp was the sole translation unit of the cli module before real
+    # argument parsing was implemented.  CliOptions.hpp was the struct it included.
+    # Both are superseded by EdgeTtsArguments / PlaybackArguments.
+    "src/cli/CliPlaceholder.cpp",
+    "include/edge_tts/cli/CliOptions.hpp",
 ]
 
 
@@ -266,9 +283,10 @@ def test_skeleton_source_not_in_cmake() -> None:
 
     violations: list[str] = []
     for rel in REMOVED_SKELETON_FILES:
-        # Use just the filename part for matching (CMake usually uses relative paths)
-        filename = pathlib.Path(rel).name
-        if filename in cmake_text or rel in cmake_text:
+        # Match on the full relative path so files with the same basename in
+        # different modules (e.g. serialization/EdgeProtocol.cpp vs
+        # communication/EdgeProtocol.cpp) do not produce false positives.
+        if rel in cmake_text:
             violations.append(rel)
 
     if violations:
