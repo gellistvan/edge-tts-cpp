@@ -690,3 +690,298 @@ TEST(PlaybackCommandDispatcher, CustomMp3PathFromProviderIsUsed) {
     EXPECT_EQ(conv.last_played, custom_path);
     fs::remove(custom_path);
 }
+
+// ---------------------------------------------------------------------------
+// Parser: rate, volume, pitch, proxy options
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, RateOption) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--rate", "+20%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.rate, "+20%");
+}
+
+TEST(PlaybackArgumentParser, VolumeOption) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--volume", "+10%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.volume, "+10%");
+}
+
+TEST(PlaybackArgumentParser, VolumeEqualsNegative) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--volume=-10%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.volume, "-10%");
+}
+
+TEST(PlaybackArgumentParser, PitchOption) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--pitch", "+5Hz"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.pitch, "+5Hz");
+}
+
+TEST(PlaybackArgumentParser, ProxyOption) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--proxy", "http://proxy.example.com:8080"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    ASSERT_TRUE(r.arguments.proxy.has_value());
+    EXPECT_EQ(*r.arguments.proxy, "http://proxy.example.com:8080");
+}
+
+TEST(PlaybackArgumentParser, ProxyEmptyStringIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--proxy", ""});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, ProxyMissingSchemeIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--proxy", "barehost:8080"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: missing-value errors
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, VoiceMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--voice"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--voice"), std::string::npos);
+}
+
+TEST(PlaybackArgumentParser, RateMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--rate"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--rate"), std::string::npos);
+}
+
+TEST(PlaybackArgumentParser, VolumeMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--volume"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--volume"), std::string::npos);
+}
+
+TEST(PlaybackArgumentParser, PitchMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--pitch"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--pitch"), std::string::npos);
+}
+
+TEST(PlaybackArgumentParser, ProxyMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--proxy"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--proxy"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: unknown and positional rejection
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, PositionalArgumentIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"sometext"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, UnknownLongOptionIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--unknown-flag"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: defaults
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, DefaultVoice) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi"});
+    EXPECT_EQ(r.arguments.voice, PlaybackArguments::kDefaultVoice);
+}
+
+TEST(PlaybackArgumentParser, DefaultRate) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi"});
+    EXPECT_EQ(r.arguments.rate, "+0%");
+}
+
+TEST(PlaybackArgumentParser, DefaultVolume) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi"});
+    EXPECT_EQ(r.arguments.volume, "+0%");
+}
+
+TEST(PlaybackArgumentParser, DefaultPitch) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi"});
+    EXPECT_EQ(r.arguments.pitch, "+0Hz");
+}
+
+TEST(PlaybackArgumentParser, DefaultProxyIsAbsent) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi"});
+    EXPECT_FALSE(r.arguments.proxy.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// Parser: help text completeness
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, HelpTextContainsAllDocumentedOptions) {
+    PlaybackArgumentParser parser;
+    const std::string h = parser.help_text();
+    EXPECT_NE(h.find("--text"),   std::string::npos);
+    EXPECT_NE(h.find("--file"),   std::string::npos);
+    EXPECT_NE(h.find("--voice"),  std::string::npos);
+    EXPECT_NE(h.find("--rate"),   std::string::npos);
+    EXPECT_NE(h.find("--volume"), std::string::npos);
+    EXPECT_NE(h.find("--pitch"),  std::string::npos);
+    EXPECT_NE(h.find("--proxy"),  std::string::npos);
+    EXPECT_NE(h.find("--mpv"),    std::string::npos);
+    EXPECT_NE(h.find("--help"),   std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: TTS config forwarding
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Helper: build ParseResult with given field modifications.
+static PlaybackParseResult make_play_with_voice(std::string voice) {
+    auto r = make_play_result("hi");
+    r.arguments.voice = std::move(voice);
+    return r;
+}
+
+} // anonymous namespace
+
+TEST(PlaybackCommandDispatcher, VoiceForwardedToFactory) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"fwd_voice"};
+    TtsConfig received;
+    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(), false, out, err, in};
+    d.dispatch(make_play_with_voice("en-GB-RyanNeural"));
+    EXPECT_EQ(received.voice, "en-GB-RyanNeural");
+}
+
+TEST(PlaybackCommandDispatcher, RateForwardedToFactory) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"fwd_rate"};
+    TtsConfig received;
+    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(), false, out, err, in};
+    auto r = make_play_result("hi");
+    r.arguments.rate = "+30%";
+    d.dispatch(r);
+    EXPECT_EQ(received.rate, "+30%");
+}
+
+TEST(PlaybackCommandDispatcher, VolumeForwardedToFactory) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"fwd_vol"};
+    TtsConfig received;
+    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(), false, out, err, in};
+    auto r = make_play_result("hi");
+    r.arguments.volume = "-20%";
+    d.dispatch(r);
+    EXPECT_EQ(received.volume, "-20%");
+}
+
+TEST(PlaybackCommandDispatcher, PitchForwardedToFactory) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"fwd_pitch"};
+    TtsConfig received;
+    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(), false, out, err, in};
+    auto r = make_play_result("hi");
+    r.arguments.pitch = "+10Hz";
+    d.dispatch(r);
+    EXPECT_EQ(received.pitch, "+10Hz");
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: stdin reading via --file=-
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, FileDashReadsFromStdin) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"stdin_read"};
+    std::string received_text;
+    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_text = text;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in("hello from stdin");
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(), false, out, err, in};
+
+    PlaybackParseResult r;
+    r.action    = PlaybackParseAction::play;
+    r.exit_code = 0;
+    r.arguments.file = "-";
+
+    int rc = d.dispatch(r);
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(received_text, "hello from stdin");
+}

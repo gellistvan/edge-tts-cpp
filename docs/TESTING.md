@@ -340,6 +340,51 @@ messages without any outbound network requests.
 | SubMaker type conflict | `SubtitleFeedTypeMismatchReturnsError`, `SubtitleFeedErrorPrintsMessageToStderr` |
 | TTY warning | `TtyWarningPrintedToStderr`, `TtyWarningAllowsSynthesisAfterEnter`, `TtyWarningCancelsOnEof`, `TtyWarningNotShownWhen*` (4 variants) |
 
+### edge-playback CLI test coverage matrix
+
+Both parser and dispatcher tests live in `PlaybackCommandDispatcherTests.cpp`
+(the same file, consistent with the single `edge_tts_cli_tests` target).
+
+`PlaybackArgumentParser` — parser behavior (stateless, no I/O):
+
+| Area | Tests |
+|------|-------|
+| `--help` / `-h` | `HelpFlag`, `HelpShortFlag`, `HelpMentionsSeeEdgeTts`, `HelpTextContainsAllDocumentedOptions` |
+| `--text` / `-t` | `TextArgument`, `TextShortFlag` |
+| `--file` / `-f` | `FileArgument` |
+| Missing required group | `MissingTextOrFileIsError` |
+| Mutual exclusion | `TextAndFileMutuallyExclusive` |
+| Not-accepted options | `ListVoicesNotAccepted`, `WriteMediaNotAccepted` |
+| `--voice` / `-v` | `VoiceOption`, `VoiceMissingValueIsError` |
+| `--rate` | `RateOption`, `RateMissingValueIsError` |
+| `--volume` | `VolumeOption`, `VolumeEqualsNegative`, `VolumeMissingValueIsError` |
+| `--pitch` | `PitchOption`, `PitchMissingValueIsError` |
+| `--proxy` | `ProxyOption`, `ProxyEmptyStringIsError`, `ProxyMissingSchemeIsError`, `ProxyMissingValueIsError` |
+| `--mpv` | `MpvFlag` |
+| Unknown / positional | `PositionalArgumentIsError`, `UnknownLongOptionIsError` |
+| Defaults | `DefaultVoice`, `DefaultRate`, `DefaultVolume`, `DefaultPitch`, `DefaultProxyIsAbsent` |
+
+`PlaybackCommandDispatcher` — dispatcher behavior (with injected seams):
+
+| Area | Tests |
+|------|-------|
+| help / error dispatch | `HelpPrintsToStdoutAndReturns0`, `ErrorPrintsToStderrAndReturns2` |
+| `--mpv` rejection | `MpvFlagReturnsErrorWithClearMessage` |
+| Synthesis text | `SynthesisCalledWithCorrectText`, `FileDashReadsFromStdin` |
+| TTS config forwarding | `VoiceForwardedToFactory`, `RateForwardedToFactory`, `VolumeForwardedToFactory`, `PitchForwardedToFactory` |
+| Proxy forwarding | `ProxyReachesCommunicateOptions`, `NoProxyLeavesOptionEmpty` |
+| Playback invoked | `PlaybackIsCalled`, `PlaybackReceivesCorrectTempPath` |
+| MP3 temp file lifecycle | `TempFileCleanedOnSuccess`, `TempFileCleanedOnPlaybackError`, `TempFileAbsentOnSynthesisError`, `TempFileKeptWhenKeepTempTrue`, `CustomMp3PathFromProviderIsUsed` |
+| SRT temp file lifecycle | `SrtTempFileCleanedOnSuccess`, `SrtTempFileKeptWhenKeepTempTrue`, `NoSrtWhenProviderReturnsNullopt` |
+| Error exit codes | `SynthesisErrorReturns1`, `PlaybackErrorReturns1` |
+| Missing player error | `MissingPlayerErrorNamesPlayerInStderr` |
+
+The `EDGE_PLAYBACK_DEBUG`, `EDGE_PLAYBACK_KEEP_TEMP`, `EDGE_PLAYBACK_MP3_FILE`,
+and `EDGE_PLAYBACK_SRT_FILE` environment-variable behaviors are tested indirectly:
+`TempFileKeptWhenKeepTempTrue` verifies `keep_temp` propagation; `CustomMp3PathFromProviderIsUsed`
+verifies custom-path propagation; both are exercised via the `TempFileProvider`
+seam, which in production reads the env vars (see `apps/edge-playback/main.cpp`).
+
 ## Writing tests
 
 - Use behavior-level tests: test observable outputs, not internal implementation
