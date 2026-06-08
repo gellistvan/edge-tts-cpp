@@ -1,4 +1,5 @@
 #include "edge_tts/media/FfmpegAudioConverter.hpp"
+#include "edge_tts/media/FakeProcessRunner.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 

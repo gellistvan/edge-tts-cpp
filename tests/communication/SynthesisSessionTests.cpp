@@ -6,6 +6,7 @@
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
+#include "communication/WebSocketFrameHelpers.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -82,57 +83,14 @@ static SynthesisSession make_session(FakeWebSocketClient& fake,
     };
 }
 
-// ---------------------------------------------------------------------------
-// Frame builders for the fake incoming queue
-// ---------------------------------------------------------------------------
-
-// Build a well-formed binary audio frame.
-// See EdgeProtocolIncomingTests.cpp for format details.
-static WebSocketMessage make_audio_frame(const std::vector<std::byte>& body) {
-    const std::string hdr = "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
-    const auto hl = static_cast<uint16_t>(2 + hdr.size());
-    std::vector<std::byte> frame;
-    frame.reserve(2 + hdr.size() + 2 + body.size());
-    frame.push_back(static_cast<std::byte>(hl >> 8));
-    frame.push_back(static_cast<std::byte>(hl & 0xff));
-    for (char c : hdr) frame.push_back(static_cast<std::byte>(c));
-    frame.push_back(static_cast<std::byte>('\r'));
-    frame.push_back(static_cast<std::byte>('\n'));
-    for (auto b : body) frame.push_back(b);
-    WebSocketMessage m;
-    m.type   = WebSocketMessage::Type::binary;
-    m.binary = std::move(frame);
-    return m;
-}
-
-static WebSocketMessage make_turn_end() {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:turn.end\r\n\r\n";
-    return m;
-}
-
-static WebSocketMessage make_word_boundary(int64_t offset, int64_t duration,
-                                            const std::string& text) {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
-             "{\"Metadata\":[{\"Type\":\"WordBoundary\","
-             "\"Data\":{\"Offset\":" + std::to_string(offset) +
-             ",\"Duration\":" + std::to_string(duration) +
-             ",\"text\":{\"Text\":\"" + text + "\"}}}]}";
-    return m;
-}
-
-static std::vector<std::byte> audio_bytes(const std::string& s) {
-    std::vector<std::byte> v;
-    for (char c : s) v.push_back(static_cast<std::byte>(c));
-    return v;
-}
+using edge_tts::test::make_audio_frame;
+using edge_tts::test::make_turn_end;
+using edge_tts::test::make_word_boundary;
+using edge_tts::test::to_bytes;
 
 // Push a complete minimal chunk sequence: audio + turn.end
 static void push_minimal_chunk(FakeWebSocketClient& fake) {
-    fake.push_incoming(make_audio_frame(audio_bytes("MP3DATA")));
+    fake.push_incoming(make_audio_frame(to_bytes("MP3DATA")));
     fake.push_incoming(make_turn_end());
 }
 
@@ -241,7 +199,7 @@ TEST(SynthesisSession, EachSsmlContainsItsChunkText) {
 
 TEST(SynthesisSession, YieldsAudioChunk) {
     FakeWebSocketClient fake;
-    fake.push_incoming(make_audio_frame(audio_bytes("AUDIODATA")));
+    fake.push_incoming(make_audio_frame(to_bytes("AUDIODATA")));
     fake.push_incoming(make_turn_end());
     auto session = make_session(fake);
 
@@ -258,7 +216,7 @@ TEST(SynthesisSession, YieldsAudioChunk) {
 
 TEST(SynthesisSession, AudioBytesPreservedExactly) {
     FakeWebSocketClient fake;
-    const auto body = audio_bytes("AUDIOBYTES");
+    const auto body = to_bytes("AUDIOBYTES");
     fake.push_incoming(make_audio_frame(body));
     fake.push_incoming(make_turn_end());
     auto session = make_session(fake);
@@ -279,7 +237,7 @@ TEST(SynthesisSession, AudioBytesPreservedExactly) {
 TEST(SynthesisSession, YieldsBoundaryChunk) {
     FakeWebSocketClient fake;
     fake.push_incoming(make_word_boundary(100, 200, "hello"));
-    fake.push_incoming(make_audio_frame(audio_bytes("MP3")));
+    fake.push_incoming(make_audio_frame(to_bytes("MP3")));
     fake.push_incoming(make_turn_end());
     auto session = make_session(fake);
 
@@ -297,7 +255,7 @@ TEST(SynthesisSession, YieldsBoundaryChunk) {
 TEST(SynthesisSession, BoundaryChunkFieldsArePreserved) {
     FakeWebSocketClient fake;
     fake.push_incoming(make_word_boundary(1000, 2000, "test"));
-    fake.push_incoming(make_audio_frame(audio_bytes("MP3")));
+    fake.push_incoming(make_audio_frame(to_bytes("MP3")));
     fake.push_incoming(make_turn_end());
     auto session = make_session(fake);
 
@@ -318,10 +276,10 @@ TEST(SynthesisSession, BoundaryChunkFieldsArePreserved) {
 
 TEST(SynthesisSession, StopsOnTurnEnd) {
     FakeWebSocketClient fake;
-    fake.push_incoming(make_audio_frame(audio_bytes("A")));
+    fake.push_incoming(make_audio_frame(to_bytes("A")));
     fake.push_incoming(make_turn_end());
     // Extra messages that should NOT be consumed
-    fake.push_incoming(make_audio_frame(audio_bytes("B")));
+    fake.push_incoming(make_audio_frame(to_bytes("B")));
     auto session = make_session(fake);
 
     const std::vector<std::string> chunks{"Hello"};

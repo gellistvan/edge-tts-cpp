@@ -16,6 +16,7 @@
 #include "edge_tts/communication/EdgeTokenProvider.hpp"
 #include "edge_tts/communication/FakeWebSocketClient.hpp"
 #include "edge_tts/communication/WebSocketMessage.hpp"
+#include "communication/WebSocketFrameHelpers.hpp"
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/core/Chunk.hpp"
@@ -44,51 +45,10 @@ using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
 using edge_tts::serialization::TextChunker;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-static std::vector<std::byte> to_bytes(const std::string& s) {
-    std::vector<std::byte> v;
-    for (char c : s) v.push_back(static_cast<std::byte>(c));
-    return v;
-}
-
-static WebSocketMessage make_audio_frame(const std::vector<std::byte>& body) {
-    const std::string hdr = "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
-    const auto hl = static_cast<uint16_t>(2 + hdr.size());
-    std::vector<std::byte> frame;
-    frame.reserve(2 + hdr.size() + 2 + body.size());
-    frame.push_back(static_cast<std::byte>(hl >> 8));
-    frame.push_back(static_cast<std::byte>(hl & 0xff));
-    for (char c : hdr)  frame.push_back(static_cast<std::byte>(c));
-    frame.push_back(static_cast<std::byte>('\r'));
-    frame.push_back(static_cast<std::byte>('\n'));
-    for (auto b : body) frame.push_back(b);
-    WebSocketMessage m;
-    m.type   = WebSocketMessage::Type::binary;
-    m.binary = std::move(frame);
-    return m;
-}
-
-static WebSocketMessage make_turn_end() {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:turn.end\r\n\r\n";
-    return m;
-}
-
-static WebSocketMessage make_word_boundary(int64_t offset, int64_t duration,
-                                            const std::string& word) {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
-             "{\"Metadata\":[{\"Type\":\"WordBoundary\","
-             "\"Data\":{\"Offset\":" + std::to_string(offset) +
-             ",\"Duration\":" + std::to_string(duration) +
-             ",\"text\":{\"Text\":\"" + word + "\"}}}]}";
-    return m;
-}
+using edge_tts::test::make_audio_frame;
+using edge_tts::test::make_turn_end;
+using edge_tts::test::make_word_boundary;
+using edge_tts::test::to_bytes;
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

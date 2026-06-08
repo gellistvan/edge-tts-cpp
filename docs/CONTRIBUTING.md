@@ -121,11 +121,17 @@ ctest --test-dir build -R edge_tts_repository_hygiene_tests --output-on-failure
 
 `FakeHttpClient`, `FakeWebSocketClient`, and `FakeProcessRunner` are test doubles.
 They must **only** appear in:
-- Their own definition files (`src/communication/Fake*.cpp`, `include/edge_tts/communication/Fake*.hpp`)
+- Their own definition files (`Fake*.hpp` / `Fake*.cpp` in the appropriate module directory)
 - Test files (`tests/**`)
 
-Production source (`src/`, `include/edge_tts/`, `apps/`) must never `#include` any `Fake*.hpp` header.
-The hygiene test (`test_repository_hygiene.py`) catches violations at CI time.
+The canonical locations are:
+- `include/edge_tts/communication/FakeHttpClient.hpp` + `src/communication/FakeHttpClient.cpp`
+- `include/edge_tts/communication/FakeWebSocketClient.hpp` + `src/communication/FakeWebSocketClient.cpp`
+- `include/edge_tts/media/FakeProcessRunner.hpp` + `src/media/FakeProcessRunner.cpp`
+
+Two hygiene checks enforce this at CI time (`test_repository_hygiene.py`):
+1. Production non-Fake source files must never `#include` a `Fake*.hpp` header.
+2. `class Fake...` must not be defined inside a non-Fake production header (e.g. do not embed `FakeProcessRunner` inside `ProcessRunner.hpp`).
 
 ### No build artifacts in git
 
@@ -164,5 +170,32 @@ return "TODO_TRUSTED_CLIENT_TOKEN";  // ← banned by hygiene test
 throw NetworkError{"WebSocket transport is not implemented yet"};  // ← banned
 ```
 
+Additional banned patterns (see `tests/tools/test_repository_hygiene.py` for the
+full list):
+- `vibe code` — signals unreviewed AI-generated scaffolding
+- `Task 9:` — scaffolding task references that should not appear in production
+- `pending implementation` — placeholder text that signals incomplete work
+
 The hygiene test scans `src/`, `include/edge_tts/`, and `apps/` for these strings
 and fails if they appear (comments stripped, so documenting them in `docs/` is safe).
+
+### Shared test helpers
+
+Protocol-level frame builders (`make_audio_frame`, `make_turn_end`,
+`make_word_boundary`, `to_bytes`) are defined once in
+`tests/communication/WebSocketFrameHelpers.hpp`.  All test targets under
+`tests/` have the `tests/` root on their include path, so any test file
+can include the helpers regardless of which module it lives in:
+
+```cpp
+#include "communication/WebSocketFrameHelpers.hpp"
+using edge_tts::test::make_audio_frame;
+using edge_tts::test::make_turn_end;
+using edge_tts::test::make_word_boundary;
+using edge_tts::test::to_bytes;
+```
+
+Do not add local copies of these functions to new test files.  Local
+helpers that build frames with different signatures (e.g. a two-argument
+`make_audio_frame(header, body)` for low-level protocol tests) are
+acceptable when the signature differs from the shared versions.

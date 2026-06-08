@@ -18,6 +18,7 @@
 #include "edge_tts/common/IdGenerator.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
+#include "communication/WebSocketFrameHelpers.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <chrono>
@@ -40,6 +41,8 @@ using edge_tts::common::IdGenerator;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::TtsConfig;
 using edge_tts::core::TtsChunk;
+using edge_tts::test::make_audio_frame;
+using edge_tts::test::make_turn_end;
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -83,34 +86,9 @@ static SynthesisSession make_session(FakeWebSocketClient& fake,
     };
 }
 
-// Push a minimal successful response: one audio frame + turn.end.
-static WebSocketMessage make_audio_frame_rt() {
-    const std::string hdr = "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
-    const auto hl = static_cast<uint16_t>(2 + hdr.size());
-    const std::string body = "AUDIO";
-    std::vector<std::byte> frame;
-    frame.push_back(static_cast<std::byte>(hl >> 8));
-    frame.push_back(static_cast<std::byte>(hl & 0xff));
-    for (char c : hdr)  frame.push_back(static_cast<std::byte>(c));
-    frame.push_back(static_cast<std::byte>('\r'));
-    frame.push_back(static_cast<std::byte>('\n'));
-    for (char c : body) frame.push_back(static_cast<std::byte>(c));
-    WebSocketMessage m;
-    m.type   = WebSocketMessage::Type::binary;
-    m.binary = std::move(frame);
-    return m;
-}
-
-static WebSocketMessage make_turn_end_rt() {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:turn.end\r\n\r\n";
-    return m;
-}
-
 static void push_success(FakeWebSocketClient& fake) {
-    fake.push_incoming(make_audio_frame_rt());
-    fake.push_incoming(make_turn_end_rt());
+    fake.push_incoming(make_audio_frame("AUDIO"));
+    fake.push_incoming(make_turn_end());
 }
 
 // ---------------------------------------------------------------------------

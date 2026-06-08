@@ -173,8 +173,8 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
                 "Use --write-media to write to a file.\n"
                 "Press Ctrl+C to cancel the operation. "
                 "Press Enter to continue.\n";
-        std::string dummy;
-        if (!std::getline(in_, dummy)) {
+        std::string line;
+        if (!std::getline(in_, line)) {
             err_ << "\nOperation canceled.\n";
             return 0;
         }

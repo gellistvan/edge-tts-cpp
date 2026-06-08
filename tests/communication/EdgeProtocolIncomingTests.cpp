@@ -3,6 +3,7 @@
 #include "edge_tts/communication/WebSocketMessage.hpp"
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/core/Chunk.hpp"
+#include "communication/WebSocketFrameHelpers.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <chrono>
@@ -21,6 +22,7 @@ using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::BoundaryEventType;
 using edge_tts::core::TtsChunk;
+using edge_tts::test::to_bytes;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -72,15 +74,6 @@ static WebSocketMessage make_audio_frame(
     for (auto b : body)
         frame.push_back(b);
     return binary_msg(std::move(frame));
-}
-
-// Convert ASCII string to bytes
-static std::vector<std::byte> to_bytes(const std::string& s) {
-    std::vector<std::byte> v;
-    v.reserve(s.size());
-    for (char c : s)
-        v.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
-    return v;
 }
 
 // Standard audio frame with Path:audio + Content-Type:audio/mpeg

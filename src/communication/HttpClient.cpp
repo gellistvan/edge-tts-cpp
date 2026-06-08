@@ -118,7 +118,7 @@ common::Result<HttpResponse> HttpClient::send(const HttpRequest& request) {
 #else  // EDGE_TTS_HAVE_IXWEBSOCKET not defined
 
 // ---------------------------------------------------------------------------
-// Stub: ixwebsocket submodule not initialized
+// ixwebsocket not available — return unsupported error
 // ---------------------------------------------------------------------------
 
 common::Result<HttpResponse> HttpClient::send(const HttpRequest&) {

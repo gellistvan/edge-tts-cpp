@@ -26,6 +26,7 @@
 #include "edge_tts/communication/FakeWebSocketClient.hpp"
 #include "edge_tts/communication/SynthesisSession.hpp"
 #include "edge_tts/communication/WebSocketMessage.hpp"
+#include "communication/WebSocketFrameHelpers.hpp"
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/common/IdGenerator.hpp"
@@ -90,30 +91,11 @@ static SynthesizerFn make_seam(SynthesisSession& session) {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Frame builders
-// ---------------------------------------------------------------------------
+using edge_tts::test::make_audio_frame;
+using edge_tts::test::make_turn_end;
+using edge_tts::test::make_word_boundary;
 
-// Binary audio frame: 2-byte big-endian header length, header, \r\n, body.
-static WebSocketMessage make_audio_frame(const std::string& body) {
-    const std::string hdr =
-        "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
-    const auto hl = static_cast<uint16_t>(2 + hdr.size());
-    std::vector<std::byte> frame;
-    frame.reserve(2 + hdr.size() + 2 + body.size());
-    frame.push_back(static_cast<std::byte>(hl >> 8));
-    frame.push_back(static_cast<std::byte>(hl & 0xff));
-    for (char c : hdr)  frame.push_back(static_cast<std::byte>(c));
-    frame.push_back(static_cast<std::byte>('\r'));
-    frame.push_back(static_cast<std::byte>('\n'));
-    for (char c : body) frame.push_back(static_cast<std::byte>(c));
-    WebSocketMessage m;
-    m.type   = WebSocketMessage::Type::binary;
-    m.binary = std::move(frame);
-    return m;
-}
-
-// Binary audio frame from a raw byte vector (for size-controlled offset tests).
+// Binary audio frame from a byte-count (for size-controlled offset tests).
 static WebSocketMessage make_audio_frame_bytes(std::size_t n_bytes) {
     const std::string hdr =
         "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
@@ -130,28 +112,6 @@ static WebSocketMessage make_audio_frame_bytes(std::size_t n_bytes) {
     WebSocketMessage m;
     m.type   = WebSocketMessage::Type::binary;
     m.binary = std::move(frame);
-    return m;
-}
-
-static WebSocketMessage make_word_boundary(int64_t offset_ticks,
-                                            int64_t duration_ticks,
-                                            const std::string& word) {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text =
-        std::string{"X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
-                    "{\"Metadata\":[{\"Type\":\"WordBoundary\","
-                    "\"Data\":{\"Offset\":"} +
-        std::to_string(offset_ticks) +
-        ",\"Duration\":" + std::to_string(duration_ticks) +
-        ",\"text\":{\"Text\":\"" + word + "\"}}}]}";
-    return m;
-}
-
-static WebSocketMessage make_turn_end() {
-    WebSocketMessage m;
-    m.type = WebSocketMessage::Type::text;
-    m.text = "X-RequestId:abc\r\nPath:turn.end\r\n\r\n";
     return m;
 }
 

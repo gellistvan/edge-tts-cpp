@@ -42,40 +42,6 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// FakeProcessRunner — in-memory test double, no child process.
-// ---------------------------------------------------------------------------
-
-class FakeProcessRunner final : public IProcessRunner {
-public:
-    // Configure the result returned by the next run() call.
-    // Default: ProcessResult{0, "", ""} (success, no output).
-    void set_result(ProcessResult result) noexcept;
-
-    // Configure run() to return an error (transport-level failure).
-    // Clears any configured result override.
-    void set_error(common::Error error) noexcept;
-
-    // Clear a configured error, reverting to the configured result.
-    void clear_error() noexcept;
-
-    // The most recent command passed to run(), or nullopt if never called.
-    [[nodiscard]] const std::optional<ProcessCommand>& last_command() const noexcept;
-
-    // Total number of times run() has been called.
-    [[nodiscard]] int run_count() const noexcept;
-
-    // IProcessRunner
-    [[nodiscard]] common::Result<ProcessResult>
-    run(const ProcessCommand& cmd) override;
-
-private:
-    ProcessResult                  result_{};
-    std::optional<common::Error>   error_;
-    std::optional<ProcessCommand>  last_command_;
-    int                            run_count_{0};
-};
-
-// ---------------------------------------------------------------------------
 // ProcessRunner — real POSIX implementation (fork + execvp, no shell).
 //
 // Not marked final so tests can subclass and override make_pipe() to inject

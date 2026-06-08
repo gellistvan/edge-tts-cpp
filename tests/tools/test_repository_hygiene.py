@@ -87,6 +87,14 @@ SKELETON_PATTERNS: list[tuple[str, str]] = [
      "skeleton EdgeToken placeholder connection ID"),
     ("TODO_SEC_MS_GEC",
      "skeleton EdgeToken placeholder DRM token"),
+    # Generic patterns that indicate unfinished work in production code.
+    # These should never appear in src/, include/edge_tts/, or apps/.
+    ("vibe code",
+     "vibe-code marker in production source"),
+    ("Task 9:",
+     "scaffolding task reference in production source"),
+    ("pending implementation",
+     "pending-implementation marker in production source"),
 ]
 
 
@@ -165,6 +173,45 @@ def test_no_fake_client_includes_in_production() -> None:
             "Violations:\n  " + "\n  ".join(violations)
         )
     ok("No fake client headers included from production source files")
+
+
+# ---------------------------------------------------------------------------
+# 2b. No Fake* class definitions embedded in non-Fake production headers
+#
+# Fake classes must live in their own Fake*.hpp files, not be inlined into a
+# production header like ProcessRunner.hpp.  This check catches the pattern
+# "class FakeXxx" appearing in a header whose name does not start with "Fake".
+# ---------------------------------------------------------------------------
+
+FAKE_CLASS_PATTERN = re.compile(r'\bclass\s+Fake[A-Z]')
+
+
+def test_no_fake_class_defined_in_production_headers() -> None:
+    violations: list[str] = []
+
+    for path in _production_source_files():
+        if not path.suffix == ".hpp":
+            continue
+        if path.name.startswith("Fake"):
+            continue
+
+        content = _strip_comments(read(path))
+        rel = path.relative_to(REPO_ROOT)
+        for lineno, line in enumerate(read(path).splitlines(), 1):
+            stripped = _strip_comments(line)
+            if FAKE_CLASS_PATTERN.search(stripped):
+                violations.append(
+                    f"{rel}:{lineno}: Fake class defined in non-Fake header — {line.strip()!r}"
+                )
+
+    if violations:
+        fail(
+            "Fake test-double classes must be defined in their own Fake*.hpp files.\n"
+            "Move the class declaration to include/edge_tts/<module>/Fake<Name>.hpp "
+            "and include it from test files only.\n\n"
+            "Violations:\n  " + "\n  ".join(violations)
+        )
+    ok("No Fake* class definitions found in non-Fake production headers")
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +388,7 @@ def main() -> None:
     tests = [
         test_no_skeleton_placeholders_in_production,
         test_no_fake_client_includes_in_production,
+        test_no_fake_class_defined_in_production_headers,
         test_removed_skeleton_files_are_absent,
         test_no_build_artifacts_in_git,
         test_skeleton_source_not_in_cmake,

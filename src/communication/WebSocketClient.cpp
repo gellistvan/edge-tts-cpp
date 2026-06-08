@@ -55,7 +55,7 @@ struct WebSocketClient::Impl {
 
 #else
 
-// Stub Impl: no ixwebsocket available.
+// Minimal Impl when ixwebsocket is not available.
 struct WebSocketClient::Impl {
     WebSocketClientOptions options;
     explicit Impl(WebSocketClientOptions opts) : options(std::move(opts)) {}
@@ -262,7 +262,7 @@ common::Result<void> WebSocketClient::close()
 }
 
 // ---------------------------------------------------------------------------
-// Stub: ixwebsocket submodule not available
+// ixwebsocket not available — return unsupported errors
 // ---------------------------------------------------------------------------
 
 #else

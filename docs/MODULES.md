@@ -212,7 +212,8 @@ spawning system executables — no direct linking to FFmpeg libraries.
 
 | File | Description |
 |------|-------------|
-| `ProcessRunner.hpp` | `ProcessCommand` (executable + argument list, no shell string), `ProcessResult` (exit_code, stdout_text, stderr_text), `IProcessRunner` (injectable interface), `FakeProcessRunner` (test double), `ProcessRunner` (POSIX fork+execvp, no `system()` or shell) |
+| `ProcessRunner.hpp` | `ProcessCommand` (executable + argument list, no shell string), `ProcessResult` (exit_code, stdout_text, stderr_text), `IProcessRunner` (injectable interface), `ProcessRunner` (POSIX fork+execvp, no `system()` or shell) |
+| `FakeProcessRunner.hpp` | `FakeProcessRunner` — in-memory `IProcessRunner` test double.  No POSIX dependencies; compiles on all platforms.  Inject instead of `ProcessRunner` to keep tests fast and side-effect-free. |
 | `AudioConverter.hpp` | `IAudioConverter` — pure virtual interface: `play_mp3(path)`, `convert(input, output)`. Both return `Result<void>`. |
 | `ExecutableDiscovery.hpp` | `ExecutableDiscovery::find_on_path(name, path_env)` — PATH scanner used to locate `ffmpeg`/`ffplay` without executing any process. Returns `optional<path>`. |
 | `FfmpegAudioConverter.hpp` | `FfmpegAudioConverter` — concrete `IAudioConverter`. Uses `ExecutableDiscovery` to find `ffmpeg` (for `convert()`) and `ffplay` (for `play_mp3()`) then dispatches via an injected `IProcessRunner`. No FFmpeg library is linked. |
