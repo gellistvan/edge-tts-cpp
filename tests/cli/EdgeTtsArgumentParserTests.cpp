@@ -414,3 +414,183 @@ TEST(EdgeTtsArgumentParser, ArgcArgvSkipsArgv0) {
     EXPECT_EQ(r.action, ParseAction::synthesize);
     EXPECT_EQ(*r.arguments.text, "hello");
 }
+
+// ---------------------------------------------------------------------------
+// Missing-value errors — every option that requires an argument must produce
+// a parse error (exit 2) when the flag is present but no value follows.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, TextMissingValueIsError) {
+    auto r = parse({"--text"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--text"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, FileMissingValueIsError) {
+    auto r = parse({"--file"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--file"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, VoiceMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--voice"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--voice"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, RateMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--rate"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--rate"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, VolumeMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--volume"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--volume"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, PitchMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--pitch"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--pitch"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, WriteMediaMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--write-media"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--write-media"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, WriteSubtitlesMissingValueIsError) {
+    auto r = parse({"--text", "hi", "--write-subtitles"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--write-subtitles"), std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, ProxyMissingValueIsError) {
+    // --proxy with no following token → exit 2.
+    auto r = parse({"--text", "hi", "--proxy"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+    EXPECT_NE(r.message.find("--proxy"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Missing-value errors for short forms
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, ShortTextMissingValueIsError) {
+    auto r = parse({"-t"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, ShortFileMissingValueIsError) {
+    auto r = parse({"-f"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, ShortVoiceMissingValueIsError) {
+    auto r = parse({"--text", "hi", "-v"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Positional argument rejection
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, PositionalArgumentIsError) {
+    // Bare words that are not option flags are rejected.
+    auto r = parse({"hello"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, PositionalAfterOptionsIsError) {
+    auto r = parse({"--text", "hi", "extraword"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Negative-value-with-space is a parse error (documented behavior #8)
+//
+// Reference: CLI_COMPATIBILITY.md behavioral note 8 — `--rate -50%` is
+// misinterpreted because `-50%` looks like an option token.  Users must use
+// `--rate=-50%` instead.  The C++ parser replicates the Python argparse
+// behavior: `--rate -50%` → "requires an argument" error with exit 2.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, RateNegativeWithSpaceIsError) {
+    // "-50%" starts with '-' and has length > 1, so is_option_token() returns
+    // true — the parser cannot consume it as the --rate value.
+    auto r = parse({"--text", "hi", "--rate", "-50%"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, VolumeNegativeWithSpaceIsError) {
+    auto r = parse({"--text", "hi", "--volume", "-10%"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(EdgeTtsArgumentParser, PitchNegativeWithSpaceIsError) {
+    auto r = parse({"--text", "hi", "--pitch", "-5Hz"});
+    EXPECT_EQ(r.action, ParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Help text completeness — every documented CLI option must appear
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, HelpTextContainsAllDocumentedOptions) {
+    const std::string h = EdgeTtsArgumentParser{}.help_text();
+    // All documented options per CLI_COMPATIBILITY.md option matrix.
+    EXPECT_NE(h.find("--text"),           std::string::npos);
+    EXPECT_NE(h.find("--file"),           std::string::npos);
+    EXPECT_NE(h.find("--list-voices"),    std::string::npos);
+    EXPECT_NE(h.find("--voice"),          std::string::npos);
+    EXPECT_NE(h.find("--rate"),           std::string::npos);
+    EXPECT_NE(h.find("--volume"),         std::string::npos);
+    EXPECT_NE(h.find("--pitch"),          std::string::npos);
+    EXPECT_NE(h.find("--write-media"),    std::string::npos);
+    EXPECT_NE(h.find("--write-subtitles"),std::string::npos);
+    EXPECT_NE(h.find("--proxy"),          std::string::npos);
+    EXPECT_NE(h.find("--version"),        std::string::npos);
+    EXPECT_NE(h.find("--help"),           std::string::npos);
+}
+
+TEST(EdgeTtsArgumentParser, HelpTextMentionsNegativeValueSyntax) {
+    // CLI_COMPATIBILITY.md behavioral note 8: help must document that negative
+    // values need the = form (e.g. --rate=-50%).
+    const std::string h = EdgeTtsArgumentParser{}.help_text();
+    EXPECT_NE(h.find("="),                std::string::npos);
+    EXPECT_NE(h.find("negative"),         std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Version string format
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, VersionStringContainsVersionNumber) {
+    // Must contain a version number of the form major.minor.patch.
+    const std::string v = EdgeTtsArgumentParser::version_string();
+    // At minimum, there must be two dots in the string (x.y.z).
+    const auto first_dot  = v.find('.');
+    EXPECT_NE(first_dot, std::string::npos);
+    const auto second_dot = v.find('.', first_dot + 1);
+    EXPECT_NE(second_dot, std::string::npos);
+}

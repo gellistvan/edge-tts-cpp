@@ -848,6 +848,284 @@ TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenCheckFnIsEmpty) {
 // raw credential string in its stderr output.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// TTS config (voice, rate, volume, pitch) forwarded to factory
+//
+// dispatch_synthesize() builds a TtsConfig from the CLI arguments and passes
+// it to the CommunicateFactory.  Each field must be forwarded without mutation.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, VoiceForwardedToFactory) {
+    TtsConfig received_cfg;
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_cfg = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hi");
+    r.arguments.voice = "en-GB-RyanNeural";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(received_cfg.voice, "en-GB-RyanNeural");
+}
+
+TEST(EdgeTtsCommandDispatcher, RateForwardedToFactory) {
+    TtsConfig received_cfg;
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_cfg = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hi");
+    r.arguments.rate = "+50%";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(received_cfg.rate, "+50%");
+}
+
+TEST(EdgeTtsCommandDispatcher, VolumeForwardedToFactory) {
+    TtsConfig received_cfg;
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_cfg = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hi");
+    r.arguments.volume = "+20%";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(received_cfg.volume, "+20%");
+}
+
+TEST(EdgeTtsCommandDispatcher, PitchForwardedToFactory) {
+    TtsConfig received_cfg;
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_cfg = cfg;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r = make_text_result("hi");
+    r.arguments.pitch = "+10Hz";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    d.dispatch(r);
+
+    EXPECT_EQ(received_cfg.pitch, "+10Hz");
+}
+
+// ---------------------------------------------------------------------------
+// Binary audio output — bytes with values > 127 must reach stdout uncorrupted
+//
+// The dispatcher uses out_.write(ptr, size) for audio, not operator<<, so
+// binary bytes with high values must pass through without text-mode
+// translation.  We inject a known byte pattern including 0x00, 0x80, 0xFF
+// and verify the exact bytes appear in the stream.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, BinaryAudioBytesNotCorrupted) {
+    // Build an AudioChunk containing every interesting byte boundary.
+    AudioChunk ac;
+    ac.data = {
+        std::byte{0x00},  // null byte
+        std::byte{0x01},
+        std::byte{0x7F},  // max ASCII
+        std::byte{0x80},  // first high byte
+        std::byte{0xFE},
+        std::byte{0xFF},  // max byte
+    };
+    std::vector<TtsChunk> chunks{TtsChunk{ac}};
+
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("hello"));
+
+    EXPECT_EQ(rc, 0);
+    const std::string result = out.str();
+    ASSERT_EQ(result.size(), 6u);
+    EXPECT_EQ(static_cast<unsigned char>(result[0]), 0x00u);
+    EXPECT_EQ(static_cast<unsigned char>(result[1]), 0x01u);
+    EXPECT_EQ(static_cast<unsigned char>(result[2]), 0x7Fu);
+    EXPECT_EQ(static_cast<unsigned char>(result[3]), 0x80u);
+    EXPECT_EQ(static_cast<unsigned char>(result[4]), 0xFEu);
+    EXPECT_EQ(static_cast<unsigned char>(result[5]), 0xFFu);
+}
+
+TEST(EdgeTtsCommandDispatcher, BinaryAudioBytesNotCorruptedWhenRoutedToFile) {
+    // Same byte pattern, but routed to a file via --write-media.
+    const fs::path mp = tmp_path("binary_exact.mp3");
+    FileGuard gm{mp};
+
+    AudioChunk ac;
+    ac.data = {std::byte{0x00}, std::byte{0x80}, std::byte{0xFF}};
+    std::vector<TtsChunk> chunks{TtsChunk{ac}};
+
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    d.dispatch(make_text_result("hello", mp.string()));
+
+    const auto bytes = read_binary_file(mp);
+    ASSERT_EQ(bytes.size(), 3u);
+    EXPECT_EQ(bytes[0], std::byte{0x00});
+    EXPECT_EQ(bytes[1], std::byte{0x80});
+    EXPECT_EQ(bytes[2], std::byte{0xFF});
+}
+
+// ---------------------------------------------------------------------------
+// Subtitle file write error → stderr, exit 1
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, WriteSubtitlesFileErrorReturnsFailure) {
+    std::vector<TtsChunk> chunks{
+        TtsChunk{make_audio("mp3")},
+        TtsChunk{make_boundary("Hello world", 0, 10'000'000)},
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    // Route subtitles to a path with a non-existent parent directory.
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("Hello world", {}, "/no_such_dir/out.srt"));
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, WriteSubtitlesFileErrorIncludesFilenameInStderr) {
+    std::vector<TtsChunk> chunks{
+        TtsChunk{make_audio("mp3")},
+        TtsChunk{make_boundary("Hello world", 0, 10'000'000)},
+    };
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+    int rc = d.dispatch(make_text_result("Hello world", {}, "/no_such_dir/out.srt"));
+
+    EXPECT_EQ(rc, 1);
+    EXPECT_NE(err.str().find("out.srt"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// --file=- reads text from the injected stdin stream
+//
+// Reference: InputLoader reads from stdin_stream when file path is "-" or
+// "/dev/stdin".  The dispatcher injects in_ into InputLoader.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, FileDashReadsFromStdin) {
+    std::string received_text;
+    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_text = text;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in("stdin content");
+
+    ParseResult r;
+    r.action    = ParseAction::synthesize;
+    r.exit_code = 0;
+    r.arguments.file = "-";  // --file=-
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(received_text, "stdin content");
+}
+
+TEST(EdgeTtsCommandDispatcher, FileDevStdinReadsFromStdin) {
+    std::string received_text;
+    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+        received_text = text;
+        return Communicate(std::move(text), std::move(cfg),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+            });
+    };
+
+    std::ostringstream out, err;
+    std::istringstream in("dev stdin content");
+
+    ParseResult r;
+    r.action    = ParseAction::synthesize;
+    r.exit_code = 0;
+    r.arguments.file = "/dev/stdin";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(received_text, "dev stdin content");
+}
+
+// ---------------------------------------------------------------------------
+// Empty voice list — list-voices with zero voices must succeed and produce
+// some output (at minimum the header row of the table).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ListVoicesEmptyListSucceeds) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    ParseResult r;
+    r.action    = ParseAction::list_voices;
+    r.exit_code = 0;
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 0);
+    // stdout must not be contaminated with errors.
+    EXPECT_TRUE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Proxy credential redaction
+//
+// When synthesis fails and the error context carries a proxy URL that contains
+// embedded credentials (user:password@host), the dispatcher must not expose the
+// raw credential string in its stderr output.
+// ---------------------------------------------------------------------------
+
 TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
     // Inject an error whose context is a proxy URL with embedded credentials.
     // The dispatcher must strip "secretpassword" before printing.

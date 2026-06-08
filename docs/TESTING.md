@@ -290,6 +290,56 @@ Communicate(text, cfg, opts,
 This lets CLI tests verify exact stdout/stderr/file bytes, exit codes, and error
 messages without any outbound network requests.
 
+### CLI test coverage matrix
+
+`EdgeTtsArgumentParserTests.cpp` — parser behavior (stateless, no I/O):
+
+| Area | Tests |
+|------|-------|
+| No args | `NoArgsIsError` |
+| `--help` / `-h` | `LongHelpReturnsHelp`, `ShortHelpReturnsHelp`, `HelpShortCircuitsInvalidArgs`, `HelpTextContainsOptions`, `HelpTextContainsAllDocumentedOptions`, `HelpTextMentionsNegativeValueSyntax` |
+| `--version` | `VersionReturnsVersion`, `VersionStringContainsProjectName`, `VersionStringContainsVersionNumber` |
+| `--text` / `-t` | `TextLongForm`, `TextShortForm`, `TextEqualsForm`, `TextMissingValueIsError`, `ShortTextMissingValueIsError` |
+| `--file` / `-f` | `FileLongForm`, `FileShortForm`, `FileStdinDash`, `FileDevStdin`, `FileMissingValueIsError`, `ShortFileMissingValueIsError` |
+| `--list-voices` / `-l` | `ListVoicesLong`, `ListVoicesShort`, `ListVoicesWithProxy` |
+| Mutual exclusion | `TextAndFileConflict`, `TextAndListVoicesConflict`, `FileAndListVoicesConflict` |
+| `--voice` / `-v` | `VoiceLongForm`, `VoiceShortForm`, `VoiceEqualsForm`, `VoiceMissingValueIsError`, `ShortVoiceMissingValueIsError` |
+| `--rate` | `Rate`, `RateEqualsNegative`, `RateMissingValueIsError`, `RateNegativeWithSpaceIsError` |
+| `--volume` | `Volume`, `VolumeEqualsNegative`, `VolumeMissingValueIsError`, `VolumeNegativeWithSpaceIsError` |
+| `--pitch` | `Pitch`, `PitchEqualsNegative`, `PitchMissingValueIsError`, `PitchNegativeWithSpaceIsError` |
+| `--write-media` | `WriteMedia`, `WriteMediaDashIsStdout`, `WriteMediaEqualsForm`, `WriteMediaMissingValueIsError` |
+| `--write-subtitles` | `WriteSubtitles`, `WriteSubtitlesDashIsStderr`, `WriteSubtitlesMissingValueIsError` |
+| `--proxy` | `Proxy`, `ProxyEqualsForm`, `ProxyEmptyStringIsParseError`, `ProxyMissingSchemeIsParseError`, `ProxyBareHostnameIsParseError`, `ProxyWithHttpSchemeIsAccepted`, `ProxyWithHttpsSchemeIsAccepted`, `ProxyParseErrorMessageIsDescriptive`, `ProxyMissingValueIsError` |
+| Unknown / positional | `UnknownLongOptionIsError`, `UnknownShortOptionIsError`, `FormatOptionIsNotSupported`, `PositionalArgumentIsError`, `PositionalAfterOptionsIsError` |
+| Defaults | `DefaultVoice*`, `DefaultRate*`, `DefaultVolume*`, `DefaultPitch*`, `DefaultWriteMedia*`, `DefaultWriteSubtitles*`, `DefaultProxy*`, `DefaultListVoices*` |
+| argc/argv interface | `ArgcArgvSkipsArgv0` |
+
+`EdgeTtsCommandDispatcherTests.cpp` — dispatcher behavior (with injected seams):
+
+| Area | Tests |
+|------|-------|
+| list-voices: success | `ListVoicesCallsVoiceService`, `ListVoicesExitCodeSuccess`, `ListVoicesEmptyListSucceeds` |
+| list-voices: formatted output | `ListVoicesPrintsFormattedTable`, `ListVoicesSortedInOutput` |
+| list-voices: service error | `ListVoicesServiceErrorPrintsToStderr`, `ListVoicesServiceErrorDoesNotPrintToStdout` |
+| Text synthesis | `TextSynthesisCallsFactory`, `TextSynthesisExitCodeSuccess` |
+| File synthesis | `FileSynthesisLoadsFile`, `FileSynthesisMissingFileReturnsError` |
+| stdin (`--file=-`) | `FileDashReadsFromStdin`, `FileDevStdinReadsFromStdin` |
+| TTS config forwarding | `VoiceForwardedToFactory`, `RateForwardedToFactory`, `VolumeForwardedToFactory`, `PitchForwardedToFactory` |
+| Proxy forwarding | `ProxyIsForwardedToFactory`, `EmptyProxyIsForwardedToFactory` |
+| Audio → stdout | `AudioWrittenToStdoutWhenNoWriteMedia`, `AudioWrittenToStdoutWhenWriteMediaIsDash` |
+| Audio → file | `WriteMediaWritesAudioFile`, `WriteMediaFileDoesNotPolluteSstdout` |
+| Binary output correctness | `BinaryAudioBytesNotCorrupted`, `BinaryAudioBytesNotCorruptedWhenRoutedToFile` |
+| Subtitles → stderr | `WriteSubtitlesDashWritesToStderr` |
+| Subtitles → file | `WriteSubtitlesToFile`, `WriteSubtitlesFileErrorReturnsFailure`, `WriteSubtitlesFileErrorIncludesFilenameInStderr` |
+| No subtitles | `NoSubtitlePathProducesNoSrtOutput` |
+| Synthesis error | `SynthesisErrorPrintsToStderr`, `SynthesisErrorDoesNotWriteToStdout` |
+| help / version / error dispatch | `HelpPrintsToStdoutAndReturns0`, `VersionPrintsToStdoutAndReturns0`, `ErrorActionPrintsToStderrAndReturns2` |
+| Media file write error | `WriteMediaFileErrorReturnsFailure`, `WriteMediaFileErrorIncludesFilenameInStderr` |
+| Proxy runtime error | `ProxyUnsupportedYieldsExitCode1AndErrorOnStderr`, `ProxyIsNotSilentlyIgnored` |
+| Proxy credential redaction | `ProxyCredentialNotExposedInStderr` |
+| SubMaker type conflict | `SubtitleFeedTypeMismatchReturnsError`, `SubtitleFeedErrorPrintsMessageToStderr` |
+| TTY warning | `TtyWarningPrintedToStderr`, `TtyWarningAllowsSynthesisAfterEnter`, `TtyWarningCancelsOnEof`, `TtyWarningNotShownWhen*` (4 variants) |
+
 ## Writing tests
 
 - Use behavior-level tests: test observable outputs, not internal implementation
