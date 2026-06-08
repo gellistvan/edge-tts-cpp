@@ -259,6 +259,10 @@ The installed tree layout follows GNUInstallDirs conventions:
     edge_tts_cpp-targets.cmake
 ```
 
+See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration
+guide including available targets, version compatibility, and transitive
+dependency behavior.
+
 ## Usage
 
 Include the umbrella header and link `edge_tts::tts`:

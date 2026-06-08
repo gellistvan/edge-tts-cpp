@@ -63,6 +63,7 @@ what "ready to release" means for each capability area.
 | Safe as add_subdirectory dependency | **Done** — EDGE_TTS_SOURCE_DIR/BINARY_DIR used throughout; regression check enforced by CTest |
 | Public `edge_tts::tts` consumer target | **Done** — INTERFACE target linking `edge_tts::api`; does not expose CLI/playback/tests; consumer fixture and hygiene tests enforce it |
 | Public umbrella header | **Done** — `include/edge_tts/edge_tts.hpp` aggregates stable consumer API (api, core, common); hygiene test enforces no cli/media/communication/serialization leakage; header self-containment and umbrella consumer tests in CTest |
+| `cmake --install` + `find_package` support | **Done** — `EdgeTtsInstall.cmake` with `configure_package_config_file` / `write_basic_package_version_file`; consumer configure + build + relocation verified by `edge_tts_install_tree_tests` in CTest |
 
 ---
 
@@ -79,6 +80,7 @@ Before tagging a release:
 7. Verify `add_subdirectory` integration: `python3 tests/cmake/test_consumer_add_subdirectory.py` passes with the release source tree.
 7a. Verify public consumer target: `python3 tests/cmake/test_public_tts_target.py` passes — `edge_tts::tts` builds a consumer app without CLI/playback.
 7b. Verify umbrella header: `python3 tests/cmake/test_umbrella_header_hygiene.py` passes — `edge_tts.hpp` includes required stable headers and excludes forbidden ones.
+7c. Verify install tree: `python3 tests/cmake/test_install_tree.py` passes — install, find_package consumer build, and relocation all succeed.
 8. Update version in `CMakeLists.txt` `project()` call.
 9. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
 
