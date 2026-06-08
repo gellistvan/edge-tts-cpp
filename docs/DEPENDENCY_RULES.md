@@ -71,6 +71,25 @@ target_link_libraries(edge_tts_cli PUBLIC edge_tts::communication)
 target_link_libraries(edge_tts_cli PUBLIC edge_tts::serialization)
 ```
 
+## Umbrella pseudo-module
+
+`include/edge_tts/edge_tts.hpp` sits directly at `include/edge_tts/` rather than
+inside a module subdirectory.  The boundary checker treats it as the `"umbrella"`
+pseudo-module with the following allowed includes:
+
+| Umbrella may include | Umbrella must NOT include |
+|----------------------|---------------------------|
+| `common/` | `cli/` |
+| `core/` | `media/` |
+| `api/` | `communication/` |
+| | `serialization/` |
+| | `Fake*.hpp` |
+| | `test_support` |
+
+The umbrella header is the **recommended entry point** for external consumers.
+It must never expose internal transport, serialization, or application-layer
+modules.
+
 ## Automated boundary check
 
 `tools/check_module_boundaries.py` scans all `#include` directives in

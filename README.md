@@ -217,12 +217,54 @@ git submodule update --init --recursive path/to/edge-tts-cpp
 
 Or set `EDGE_TTS_FETCH_DEPS=ON` to let CMake download them automatically.
 
+### Installing and using via find_package
+
+edge-tts-cpp supports `cmake --install` to produce an install tree consumable
+via `find_package(edge_tts_cpp REQUIRED)`.
+
+**Install:**
+
+```bash
+cmake -S . -B build -DEDGE_TTS_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+cmake --install build
+```
+
+`EDGE_TTS_INSTALL` defaults to `ON` when edge-tts-cpp is the top-level project
+and `OFF` when consumed via `add_subdirectory`.
+
+**Consume in your project:**
+
+```cmake
+find_package(edge_tts_cpp REQUIRED)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+**Install options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `EDGE_TTS_INSTALL` | `ON` (top-level) | Generate `cmake --install` rules |
+| `EDGE_TTS_INSTALL_APPS` | `OFF` | Install `edge-tts` / `edge-playback` binaries |
+| `EDGE_TTS_INSTALL_TEST_SUPPORT` | `OFF` | Install `Fake*` test-support headers (test-only) |
+
+The installed tree layout follows GNUInstallDirs conventions:
+
+```
+<prefix>/include/edge_tts/     public headers
+<prefix>/lib/libedge_tts_*.a   compiled modules
+<prefix>/lib/cmake/edge_tts_cpp/
+    edge_tts_cpp-config.cmake
+    edge_tts_cpp-config-version.cmake
+    edge_tts_cpp-targets.cmake
+```
+
 ## Usage
 
+Include the umbrella header and link `edge_tts::tts`:
+
 ```cpp
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"  // transport options (proxy, timeouts)
-#include "edge_tts/core/TtsConfig.hpp"
+#include <edge_tts/edge_tts.hpp>
 
 // Speech config — voice, rate, volume, pitch only (no transport settings).
 edge_tts::core::TtsConfig cfg;
@@ -251,8 +293,15 @@ if (chunks) {
 }
 ```
 
+```cmake
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
 Both `stream_sync()` and `save()` are single-use — a second call returns
 `ErrorCode::invalid_state`, matching Python's `RuntimeError`.
+
+Individual headers (`edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`,
+etc.) remain available for consumers who need finer-grained includes.
 
 Inject a `SynthesizerFn` for testing without a live service connection.
 

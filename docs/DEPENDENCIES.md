@@ -102,6 +102,62 @@ a temporary directory.
 
 ---
 
+## cmake --install support
+
+edge-tts-cpp ships CMake install rules (enabled via `EDGE_TTS_INSTALL=ON`, the
+default when this is the top-level project).
+
+### Installed targets
+
+| Target (installed name) | Alias created by config | Type |
+|-------------------------|------------------------|------|
+| `edge_tts_tts` | `edge_tts::tts` | INTERFACE (entry point) |
+| `edge_tts_api` | `edge_tts::api` | STATIC |
+| `edge_tts_communication` | `edge_tts::communication` | STATIC |
+| `edge_tts_serialization` | `edge_tts::serialization` | STATIC |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | STATIC |
+| `edge_tts_core` | `edge_tts::core` | STATIC |
+| `edge_tts_common` | `edge_tts::common` | STATIC |
+| `ixwebsocket` | — | STATIC (when compiled with ixwebsocket) |
+
+The export set is named `edge_tts_cpp_targets`; the CMake package name is
+`edge_tts_cpp`.  Targets are exported **without** the `edge_tts::` namespace
+prefix to avoid double-prefixing; the generated `edge_tts_cpp-config.cmake`
+creates `edge_tts::<name>` ALIAS targets from the imported `edge_tts_<name>`
+names via `set_target_properties(IMPORTED_GLOBAL TRUE)` + `add_library(ALIAS)`.
+
+### Transitive dependencies of installed targets
+
+| Dependency | Why needed at install |
+|------------|----------------------|
+| `ixwebsocket` | `edge_tts_communication.a` references ixwebsocket symbols; included in the export set when compiled |
+| `ZLIB::ZLIB` | ixwebsocket (TLS/gzip) references `ZLIB::ZLIB`; `edge_tts_cpp-config.cmake` calls `find_dependency(ZLIB QUIET)` |
+| `Threads::Threads` | ixwebsocket references `Threads::Threads`; `edge_tts_cpp-config.cmake` calls `find_dependency(Threads QUIET)` |
+| `nlohmann/json` | header-only; injected via `target_include_directories PRIVATE` so it does **not** appear in the INTERFACE_LINK_LIBRARIES of installed targets — consumers do not need it unless they parse Edge protocol JSON themselves |
+
+### ixwebsocket headers
+
+ixwebsocket's CMakeLists.txt sets `PUBLIC_HEADER` to relative paths
+(`ixwebsocket/IXBase64.h`, …) that are interpreted relative to the **parent**
+project root during `cmake_install.cmake` execution.  To avoid this,
+`EdgeTtsInstall.cmake` clears the `PUBLIC_HEADER` property before the
+`install(TARGETS ixwebsocket …)` call and uses a direct
+`install(DIRECTORY submodules/ixwebsocket/ixwebsocket DESTINATION include)`
+instead, producing `<prefix>/include/ixwebsocket/*.h`.
+
+### Install test
+
+`tests/cmake/test_install_tree.py` (CTest name `edge_tts_install_tree_tests`):
+1. Configures edge-tts-cpp with `EDGE_TTS_BUILD_APPS=OFF -DEDGE_TTS_INSTALL=ON`.
+2. Builds all production library targets.
+3. Runs `cmake --install`.
+4. Verifies required headers and CMake package files are present.
+5. Checks no fake/test-support headers were installed.
+6. Configures `tests/cmake/consumer_install_basic/` against the install prefix
+   to verify `find_package(edge_tts_cpp)` and all `edge_tts::` aliases work.
+
+---
+
 ## minigtest
 
 | Property | Value |

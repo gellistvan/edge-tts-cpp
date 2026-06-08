@@ -73,6 +73,51 @@ cmake --build build
 
 The `.clang-tidy` config at the project root controls which checks are enabled. Start with the existing baseline and add checks as the codebase matures.
 
+## Public header rules
+
+### Umbrella header
+
+`include/edge_tts/edge_tts.hpp` is the stable public entry point for TTS consumers.
+It must only include stable API headers: `api/`, `core/`, `common/`.
+
+**Forbidden in the umbrella header:**
+- `edge_tts/cli/` — CLI argument-parsing is app-layer only
+- `edge_tts/media/` — ffplay/ffmpeg runner is app-layer only
+- `edge_tts/communication/` — internal transport; exposed only via `edge_tts::api`
+- `edge_tts/serialization/` — internal protocol framing; same
+- Any `Fake*.hpp` header — test doubles must never appear in public headers
+- Any reference to `edge_tts_test_support`
+
+The hygiene test `tests/cmake/test_umbrella_header_hygiene.py` (CTest name
+`edge_tts_umbrella_header_hygiene_tests`) enforces this automatically.
+
+### Header self-containment
+
+Every header under `include/edge_tts/` must be self-contained: it must include
+all headers it depends on and must compile in isolation as the first include in a
+translation unit.
+
+The `edge_tts_header_selfcontainment_tests` CTest target compiles one generated
+`.cpp` per stable public header (api, core, common, subtitles modules) to verify
+this.  When adding a new public header:
+
+1. Confirm it compiles in isolation by checking the test target still passes.
+2. Add it to the `_EDGE_TTS_STABLE_HEADERS` list in `tests/CMakeLists.txt` if it
+   belongs to a stable consumer-facing module.
+
+### Adding headers to the public install tree
+
+Headers placed under `include/edge_tts/` are part of the public API.  Follow
+these rules before adding one:
+
+1. It must include a `#pragma once` guard.
+2. It must not include `Fake*.hpp` or any `tests/support/` header.
+3. It must not include headers from modules that are "above" it in the dependency
+   graph (`cli` must not appear in `api`, `api` must not appear in `communication`, etc.)
+4. It must compile standalone (run the self-containment test).
+5. If it belongs to the stable consumer API (`api`, `core`, `common`, `subtitles`),
+   add it to the `_EDGE_TTS_STABLE_HEADERS` list in `tests/CMakeLists.txt`.
+
 ## Module conventions
 
 - One public header directory per module under `include/edge_tts/<module>/`.

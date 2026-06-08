@@ -56,13 +56,18 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     # apps/ executables sit above the cli layer and may include any module.
     "apps":          {"common", "core", "serialization", "subtitles", "media",
                       "communication", "api", "cli"},
+    # umbrella: top-level headers directly under include/edge_tts/ (e.g. edge_tts.hpp).
+    # They aggregate the stable consumer-facing API: api, core, common.
+    # They must not include cli, media, communication, or serialization.
+    "umbrella":      {"common", "core", "api"},
 }
 
 # Known module names — used to validate that a scanned file belongs to a
 # recognised module and that unknown names in includes are not false-positives.
-# KNOWN_MODULES excludes "apps" — it's a file-location sentinel, not an
-# includable module name.
-KNOWN_MODULES: frozenset[str] = frozenset(ALLOWED_DEPS) - {"apps"}
+# KNOWN_MODULES excludes "apps" and "umbrella" — they are file-location
+# sentinels, not includable module names (no include/edge_tts/apps/ or
+# include/edge_tts/umbrella/ directory exists).
+KNOWN_MODULES: frozenset[str] = frozenset(ALLOWED_DEPS) - {"apps", "umbrella"}
 
 # Extensions to scan.
 SCAN_EXTENSIONS: frozenset[str] = frozenset({".cpp", ".hpp", ".h", ".cc", ".cxx"})
@@ -102,6 +107,9 @@ def module_of_file(path: Path, root: Path) -> str | None:
 
     parts = rel.parts
     if len(parts) >= 3 and parts[0] == "include" and parts[1] == "edge_tts":
+        if len(parts) == 3:
+            # File sits directly at include/edge_tts/<file>.hpp — umbrella header.
+            return "umbrella"
         return parts[2]
     if len(parts) >= 2 and parts[0] == "src":
         return parts[1]

@@ -36,6 +36,9 @@ EXCLUDED_DIRS = frozenset([
     REPO_ROOT / ".claude",
     REPO_ROOT / "tests" / "cmake" / "consumer_add_subdirectory_basic",
     REPO_ROOT / "tests" / "cmake" / "consumer_tts_target_basic",
+    # consumer_install_basic is a standalone find_package consumer that may
+    # legitimately use CMAKE_SOURCE_DIR (its own source root, not edge-tts-cpp's).
+    REPO_ROOT / "tests" / "cmake" / "consumer_install_basic",
 ])
 
 # Patterns that indicate a bare (project-corrupting) use of the variables.

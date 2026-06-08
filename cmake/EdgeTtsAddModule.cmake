@@ -29,7 +29,13 @@ function(edge_tts_add_module)
                 $<INSTALL_INTERFACE:include>
         )
         target_compile_features(${target} PUBLIC cxx_std_20)
-        target_link_libraries(${target} PRIVATE edge_tts_compile_options)
+        # Apply warning/sanitizer flags directly via TARGET_PROPERTY genex rather
+        # than target_link_libraries so edge_tts_compile_options does not appear
+        # in LINK_LIBRARIES and need not be included in the install export set.
+        target_compile_options(${target} PRIVATE
+            $<TARGET_PROPERTY:edge_tts_compile_options,INTERFACE_COMPILE_OPTIONS>)
+        target_link_options(${target} PRIVATE
+            $<TARGET_PROPERTY:edge_tts_compile_options,INTERFACE_LINK_OPTIONS>)
 
         if(ARG_PUBLIC_DEPS)
             target_link_libraries(${target} PUBLIC ${ARG_PUBLIC_DEPS})

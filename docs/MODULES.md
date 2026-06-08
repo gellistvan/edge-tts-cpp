@@ -335,6 +335,23 @@ regression:
 
 ## Public consumer targets
 
+### Umbrella header
+
+The recommended way to use edge-tts-cpp as a dependency is through the single
+umbrella header:
+
+```cpp
+#include <edge_tts/edge_tts.hpp>
+```
+
+`include/edge_tts/edge_tts.hpp` exposes the complete stable public API:
+`Communicate`, `CommunicateOptions`, `FileWriter`, `TtsConfig`, `Voice`,
+`Result<T>`, and `ErrorCode`.  It does NOT pull in CLI, media/playback,
+internal transport, or test utilities.
+
+Direct includes of individual headers (`edge_tts/api/Communicate.hpp`, etc.)
+are also supported for consumers who need finer granularity.
+
 ### `edge_tts::tts` (recommended)
 
 **CMake target:** `edge_tts_tts` / `edge_tts::tts`

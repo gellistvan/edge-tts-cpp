@@ -147,9 +147,16 @@ edge_tts_add_module(
 # EDGE_TTS_REQUIRE_NETWORKING=OFF (stub code compiles without it).
 # ---------------------------------------------------------------------------
 
-# nlohmann/json: unconditional — serialization sources always need it.
-target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
-target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
+# nlohmann/json: add the header include path directly to the two modules that
+# use it in their .cpp files.  Using target_include_directories (not
+# target_link_libraries) avoids recording nlohmann_json::nlohmann_json in
+# LINK_LIBRARIES so it does not need to be added to the install export set.
+# nlohmann types do not appear in any public header, so consumers never need
+# the include path propagated to them.
+foreach(_tgt edge_tts_serialization edge_tts_communication)
+    target_include_directories(${_tgt} PRIVATE
+        "$<TARGET_PROPERTY:nlohmann_json::nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>")
+endforeach()
 
 # ixwebsocket: conditional — present only when real networking is available.
 if(TARGET ixwebsocket)
@@ -157,6 +164,12 @@ if(TARGET ixwebsocket)
     # Signal to HttpClient.cpp / WebSocketClient.cpp that ixwebsocket is available.
     # PRIVATE so the definition does not leak into downstream consumers.
     target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
+    # For installed consumers: edge_tts_communication.a references ixwebsocket
+    # symbols, so consumers must also link ixwebsocket at link time.
+    # $<INSTALL_INTERFACE:...> means this only affects installed targets
+    # (find_package consumers), not build-tree consumers (add_subdirectory).
+    target_link_libraries(edge_tts_communication
+        INTERFACE "$<INSTALL_INTERFACE:ixwebsocket>")
 endif()
 
 # Guard: apps must not silently build against stub networking when real
@@ -232,6 +245,13 @@ if(EDGE_TTS_BUILD_PLAYBACK_APP)
 endif()
 
 # ---------------------------------------------------------------------------
+# Install rules
+# ---------------------------------------------------------------------------
+if(EDGE_TTS_INSTALL)
+    include(EdgeTtsInstall)
+endif()
+
+# ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
 option(EDGE_TTS_BUILD_EXAMPLES "Build example programs" OFF)
@@ -295,6 +315,16 @@ if(EDGE_TTS_BUILD_TESTS)
             NAME edge_tts_public_tts_target_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_public_tts_target.py"
+        )
+        add_test(
+            NAME edge_tts_umbrella_header_hygiene_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_umbrella_header_hygiene.py"
+        )
+        add_test(
+            NAME edge_tts_install_tree_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_tree.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")
