@@ -608,6 +608,8 @@ def _create_minimal_cmake_project(
     (tmp / "CMakeLists.txt").write_text(
         "cmake_minimum_required(VERSION 3.24)\n"
         "project(test_dep_resolution CXX)\n"
+        'set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "")\n'
+        'set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "")\n'
         'list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")\n'
         "include(ProjectOptions)\n"
         "include(Dependencies)\n"
