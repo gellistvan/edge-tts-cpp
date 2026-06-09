@@ -12,6 +12,15 @@ project(edge_tts_cpp
 set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "edge-tts-cpp source root")
 set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "edge-tts-cpp binary root")
 
+# Generate version.hpp into the binary include tree from the single source of
+# truth — the VERSION field in the project() declaration above.
+# The file is installed alongside other public headers by EdgeTtsInstall.cmake.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/edge_tts/version.hpp"
+    @ONLY
+)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(ProjectOptions)
@@ -206,6 +215,12 @@ add_library(edge_tts::tts ALIAS edge_tts_tts)
 # dependency chain.  The public headers use std::span (C++20).
 target_compile_features(edge_tts_tts INTERFACE cxx_std_20)
 target_link_libraries(edge_tts_tts INTERFACE edge_tts::api)
+# version.hpp is generated into the binary include tree; expose it for
+# build-tree consumers.  Install-tree consumers find it via the installed
+# include/ directory (covered by edge_tts::api's INSTALL_INTERFACE:include).
+target_include_directories(edge_tts_tts INTERFACE
+    $<BUILD_INTERFACE:${EDGE_TTS_BINARY_DIR}/include>
+)
 
 # ---------------------------------------------------------------------------
 # Broad aggregate — links all modules including cli and media.
@@ -363,6 +378,11 @@ if(EDGE_TTS_BUILD_TESTS)
             NAME edge_tts_install_components_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_components.py"
+        )
+        add_test(
+            NAME edge_tts_package_version_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_package_version.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")

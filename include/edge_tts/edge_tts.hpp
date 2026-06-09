@@ -25,6 +25,7 @@
 //   - Internal protocol/transport headers (edge_tts/communication/, edge_tts/serialization/)
 //   - Test utilities (edge_tts_test_support)
 
+#include "edge_tts/version.hpp"
 #include "edge_tts/api/Communicate.hpp"
 #include "edge_tts/api/CommunicateOptions.hpp"
 #include "edge_tts/api/FileWriter.hpp"

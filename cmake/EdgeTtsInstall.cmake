@@ -77,7 +77,7 @@ if(EDGE_TTS_INSTALL_LIBRARY)
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     )
 
-    # Public headers.
+    # Public headers from the source tree.
     # All fake/test-support headers live under tests/ — not under include/ — so
     # this DIRECTORY install is safe: it never accidentally installs test doubles.
     install(
@@ -87,6 +87,14 @@ if(EDGE_TTS_INSTALL_LIBRARY)
         FILES_MATCHING
             PATTERN "*.hpp"
             PATTERN "*.h"
+    )
+
+    # version.hpp is generated into the binary tree and is not in the source
+    # include/ directory, so it requires a separate FILES install.
+    install(FILES
+        "${EDGE_TTS_BINARY_DIR}/include/edge_tts/version.hpp"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/edge_tts"
+        COMPONENT   Development
     )
 
     # ixwebsocket: install the static archive and headers alongside edge_tts.

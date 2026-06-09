@@ -242,8 +242,9 @@ edge_tts_add_module_test(
 # C++ compiler, verifying that the install tree is complete and standalone.
 # ---------------------------------------------------------------------------
 set(_EDGE_TTS_ALL_PUBLIC_HEADERS
-    # Umbrella
+    # Umbrella + generated
     "edge_tts/edge_tts.hpp"
+    "edge_tts/version.hpp"
     # api
     "edge_tts/api/Communicate.hpp"
     "edge_tts/api/CommunicateOptions.hpp"

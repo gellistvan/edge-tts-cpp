@@ -1,5 +1,7 @@
 # edge-tts-cpp
 
+**Version: 0.1.0** (pre-1.0 — API may change between minor versions; see [Versioning](#versioning))
+
 A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Python `edge-tts` project.
 
 Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
@@ -489,6 +491,37 @@ Boost is intentionally not required.
 ## FFmpeg policy
 
 `ffmpeg` and optionally `ffplay` should be treated as runtime executables through the `edge_tts::media` module. The project should not link against FFmpeg libraries unless a future design decision explicitly changes that.
+
+## Versioning
+
+The project follows [Semantic Versioning](https://semver.org) with these policies:
+
+| Range | Compatibility |
+|-------|---------------|
+| `0.x.y` (current) | **No stability guarantee.** Minor version bumps (`0.x`) may break the public API. |
+| `1.0.0` and later | Full semver: breaking changes only on major bumps. |
+
+**Pre-1.0 policy:** The project is currently at `0.1.0`. Any minor version bump (`0.2`, `0.3`, …) may change or remove public API. Treat each `0.x` as a potentially breaking release. Once the API stabilizes, `1.0.0` will be tagged and the stable-API guarantee will apply.
+
+**CMake package compatibility:** `SameMajorVersion`. This means:
+- `find_package(edge_tts_cpp 0.1 REQUIRED)` — succeeds if `0.x` (x ≥ 1) is installed.
+- `find_package(edge_tts_cpp 1.0 REQUIRED)` — fails if only `0.x` is installed (different major).
+
+**Version macros (after `#include <edge_tts/edge_tts.hpp>`):**
+
+```cpp
+EDGE_TTS_CPP_VERSION_MAJOR  // int
+EDGE_TTS_CPP_VERSION_MINOR  // int
+EDGE_TTS_CPP_VERSION_PATCH  // int
+EDGE_TTS_CPP_VERSION        // string literal, e.g. "0.1.0"
+
+edge_tts::version_major     // inline constexpr int
+edge_tts::version_minor     // inline constexpr int
+edge_tts::version_patch     // inline constexpr int
+edge_tts::version_string    // inline constexpr const char*
+```
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md#versioning-and-compatibility-policy) for the full policy.
 
 ## Design documentation
 

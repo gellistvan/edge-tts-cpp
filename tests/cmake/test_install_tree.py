@@ -36,6 +36,7 @@ FIXTURE_DIR = pathlib.Path(__file__).resolve().parent / "consumer_install_basic"
 # Headers that must be present in the install tree.
 REQUIRED_HEADERS = [
     "include/edge_tts/edge_tts.hpp",
+    "include/edge_tts/version.hpp",
     "include/edge_tts/api/Communicate.hpp",
     "include/edge_tts/api/CommunicateOptions.hpp",
     "include/edge_tts/api/FileWriter.hpp",

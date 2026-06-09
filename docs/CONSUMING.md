@@ -325,13 +325,80 @@ is already in CMake's search list (e.g. `/usr/local` on Linux/macOS).
 
 ---
 
-## Version compatibility
+## Versioning and compatibility policy
 
-The installed package exports `edge_tts_cppConfigVersion.cmake` generated with
-`SameMajorVersion` compatibility.  This means:
+### Current version
 
-- `find_package(edge_tts_cpp 0.1 REQUIRED)` — succeeds if any `0.x` is installed.
-- `find_package(edge_tts_cpp 1.0 REQUIRED)` — fails if only `0.x` is installed.
+The project is at **0.1.0** (pre-1.0 alpha).  See
+[`docs/RELEASE_READINESS.md`](RELEASE_READINESS.md) for the maturity matrix.
+
+### Stability guarantee
+
+| Version range | Policy |
+|---------------|--------|
+| `0.x.y` (current) | **No stability guarantee.** Each minor version (`0.x`) may break the public API without deprecation warnings. |
+| `1.0.0` and later | Full semver: breaking changes bump the major version only. |
+
+**Deprecations:** Before 1.0, symbols may be removed without a deprecation cycle.
+After 1.0, deprecated symbols will carry `[[deprecated("use X instead")]]` for
+at least one minor version before removal.
+
+### CMake find_package version requests
+
+The installed package ships `edge_tts_cpp-config-version.cmake` generated with
+`write_basic_package_version_file(...COMPATIBILITY SameMajorVersion)`.
+
+| Request | Result (0.1.0 installed) |
+|---------|--------------------------|
+| `find_package(edge_tts_cpp REQUIRED)` | Succeeds — no constraint |
+| `find_package(edge_tts_cpp 0.1 REQUIRED)` | Succeeds — same major, installed ≥ requested |
+| `find_package(edge_tts_cpp 0.1.0 EXACT REQUIRED)` | Succeeds — exact match |
+| `find_package(edge_tts_cpp 0.2 REQUIRED)` | **Fails** — 0.1.0 < 0.2 |
+| `find_package(edge_tts_cpp 1.0 REQUIRED)` | **Fails** — different major |
+| `find_package(edge_tts_cpp 0.1.1 EXACT REQUIRED)` | **Fails** — exact mismatch |
+
+### Version macros
+
+After `#include <edge_tts/edge_tts.hpp>` (or `#include <edge_tts/version.hpp>`):
+
+```cpp
+// Preprocessor macros — usable in #if guards
+EDGE_TTS_CPP_VERSION_MAJOR   // int, e.g. 0
+EDGE_TTS_CPP_VERSION_MINOR   // int, e.g. 1
+EDGE_TTS_CPP_VERSION_PATCH   // int, e.g. 0
+EDGE_TTS_CPP_VERSION         // string literal, e.g. "0.1.0"
+
+// C++17 inline constexpr — type-safe, no ODR concerns
+edge_tts::version_major      // inline constexpr int
+edge_tts::version_minor      // inline constexpr int
+edge_tts::version_patch      // inline constexpr int
+edge_tts::version_string     // inline constexpr const char*
+```
+
+Example version guard:
+
+```cpp
+#include <edge_tts/version.hpp>
+#if EDGE_TTS_CPP_VERSION_MAJOR == 0 && EDGE_TTS_CPP_VERSION_MINOR >= 1
+// Use 0.1+ API
+#endif
+```
+
+### Requesting a version at configure time
+
+```cmake
+# Accept any 0.x (x >= 1):
+find_package(edge_tts_cpp 0.1 CONFIG REQUIRED)
+
+# Accept only exactly 0.1.0:
+find_package(edge_tts_cpp 0.1.0 EXACT CONFIG REQUIRED)
+```
+
+### Source of truth
+
+The authoritative version is the `VERSION` field in the root `CMakeLists.txt`
+`project()` declaration.  `include/edge_tts/version.hpp` is generated from that
+value at configure time; do not edit it directly.
 
 ---
 

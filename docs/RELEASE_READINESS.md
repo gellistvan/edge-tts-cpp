@@ -65,6 +65,7 @@ what "ready to release" means for each capability area.
 | Public umbrella header | **Done** — `include/edge_tts/edge_tts.hpp` aggregates stable consumer API (api, core, common); hygiene test enforces no cli/media/communication/serialization leakage; header self-containment and umbrella consumer tests in CTest |
 | `cmake --install` + `find_package` support | **Done** — `EdgeTtsInstall.cmake` with `configure_package_config_file` / `write_basic_package_version_file`; consumer configure + build + relocation verified by `edge_tts_install_tree_tests` in CTest |
 | Consumer examples | **Done** — `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build and link correctly; verified by `edge_tts_consumer_examples_tests` in CTest |
+| Package versioning | **Done** — `project(edge_tts_cpp VERSION 0.1.0)` is the single source of truth; `version.hpp` generated at configure time with `EDGE_TTS_CPP_VERSION_*` macros and `edge_tts::version_*` constexpr values; `SameMajorVersion` CMake compatibility; `edge_tts_package_version_tests` CTest validates macros, find_package version requests, and README consistency |
 
 ---
 
@@ -83,7 +84,8 @@ Before tagging a release:
 7b. Verify umbrella header: `python3 tests/cmake/test_umbrella_header_hygiene.py` passes — `edge_tts.hpp` includes required stable headers and excludes forbidden ones.
 7c. Verify install tree: `python3 tests/cmake/test_install_tree.py` passes — install, find_package consumer build, and relocation all succeed.
 7d. Verify consumer examples: `python3 tests/cmake/test_consumer_examples.py` passes — both `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build cleanly.
-8. Update version in `CMakeLists.txt` `project()` call.
+7e. Verify package versioning: `python3 tests/cmake/test_package_version.py` passes — version.hpp macros match CMake version, find_package version constraints work, README mentions the version.
+8. Update version in `CMakeLists.txt` `project()` call and `README.md` version badge.
 9. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
 
 ---
