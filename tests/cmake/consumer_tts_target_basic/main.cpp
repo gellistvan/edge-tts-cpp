@@ -1,6 +1,6 @@
-#include "edge_tts/api/SpeechSynthesizer.hpp"
-#include "edge_tts/api/SynthesisOptions.hpp"
-#include "edge_tts/core/TtsConfig.hpp"
+#include "api/SpeechSynthesizer.hpp"
+#include "api/SynthesisOptions.hpp"
+#include "core/TtsConfig.hpp"
 
 int main() {
     // Construct a TtsConfig and SynthesisOptions — no network I/O.

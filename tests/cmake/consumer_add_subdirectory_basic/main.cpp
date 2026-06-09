@@ -1,5 +1,5 @@
-#include "edge_tts/common/Error.hpp"
-#include "edge_tts/core/Voice.hpp"
+#include "common/Error.hpp"
+#include "core/Voice.hpp"
 
 int main() {
     // Verify that edge_tts public headers are reachable from a consumer project.

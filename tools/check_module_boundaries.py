@@ -72,15 +72,15 @@ KNOWN_MODULES: frozenset[str] = frozenset(ALLOWED_DEPS) - {"apps", "umbrella"}
 # Extensions to scan.
 SCAN_EXTENSIONS: frozenset[str] = frozenset({".cpp", ".hpp", ".h", ".cc", ".cxx"})
 
-# Regex: captures the path inside an edge_tts #include, e.g.
-#   #include "edge_tts/core/TtsConfig.hpp"   → "core/TtsConfig.hpp"
-#   #include <edge_tts/common/Errors.hpp>    → "common/Errors.hpp"
+# Regex: captures the module name from a bare module include, e.g.
+#   #include "core/TtsConfig.hpp"   → module "core", rest "TtsConfig.hpp"
+#   #include <common/Errors.hpp>    → module "common", rest "Errors.hpp"
 _EDGE_INCLUDE_RE = re.compile(
-    r'#\s*include\s+[<"]edge_tts/([^>"]+)[>"]'
+    r'#\s*include\s+[<"]([^>"]+/[^>"]+)[>"]'
 )
 
 # Regex: catches includes that reach into src/ through relative paths.
-# Examples: #include "../../src/core/Foo.hpp"  or  #include "../src/bar.hpp"
+# Examples: #include "../../modules/core/src/Foo.hpp"  or  #include "../src/bar.hpp"
 _PRIVATE_INCLUDE_RE = re.compile(
     r'#\s*include\s+"[^"]*\bsrc\b[/\\][^"]+'
 )
@@ -96,9 +96,11 @@ def module_of_file(path: Path, root: Path) -> str | None:
     does not belong to a scanned module.
 
     Recognised file locations:
-      include/edge_tts/<module>/...  → <module>
-      src/<module>/...               → <module>
-      apps/...                       → "apps"
+      modules/<name>/src/...            → <name>
+      modules/<name>/include/<name>/... → <name>  (e.g. modules/common/include/common/)
+      modules/subtitle/include/subtitles/... → "subtitles"
+      include/edge_tts/<file>.hpp       → "umbrella"  (top-level umbrella header)
+      apps/...                          → "apps"
     """
     try:
         rel = path.relative_to(root)
@@ -106,15 +108,28 @@ def module_of_file(path: Path, root: Path) -> str | None:
         return None
 
     parts = rel.parts
-    if len(parts) >= 3 and parts[0] == "include" and parts[1] == "edge_tts":
-        if len(parts) == 3:
-            # File sits directly at include/edge_tts/<file>.hpp — umbrella header.
-            return "umbrella"
-        return parts[2]
-    if len(parts) >= 2 and parts[0] == "src":
-        return parts[1]
+
+    # New layout: modules/<name>/src/...
+    # Use the include-subdir convention as the canonical name (e.g. subtitle → subtitles).
+    _SRC_DIR_TO_MODULE = {"subtitle": "subtitles"}
+    if len(parts) >= 3 and parts[0] == "modules" and parts[2] == "src":
+        name = parts[1]
+        return _SRC_DIR_TO_MODULE.get(name, name)
+
+    # New layout: modules/<name>/include/<subdir>/...
+    # The subdir may differ from <name> (e.g. subtitle → subtitles).
+    if len(parts) >= 4 and parts[0] == "modules" and parts[2] == "include":
+        return parts[3]  # the directory under include/ is the canonical module name
+
+    # Umbrella: top-level headers directly under include/edge_tts/
+    if (len(parts) >= 3 and parts[0] == "include" and parts[1] == "edge_tts"
+            and len(parts) == 3):
+        return "umbrella"
+
+    # Apps
     if len(parts) >= 2 and parts[0] == "apps":
         return "apps"
+
     return None
 
 
@@ -135,11 +150,23 @@ def violations_in_file(path: Path, root: Path) -> list[str]:
     found: list[str] = []
 
     for lineno, line in enumerate(lines, start=1):
+        # --- Rule 2: private-header rule (apps only) ---
+        # Checked before Rule 1 so relative-path includes that don't resolve
+        # to a known module name are still caught here.
+        if module == "apps" and _PRIVATE_INCLUDE_RE.search(line):
+            found.append(
+                f"{path}:{lineno}: [apps] private header include "
+                f"(path through src/): {line.strip()}"
+            )
+
         # --- Rule 1: module dependency layer ---
         m = _EDGE_INCLUDE_RE.search(line)
         if m:
             inc_path = m.group(1)           # e.g. "core/TtsConfig.hpp"
             inc_module = inc_path.split("/")[0]  # e.g. "core"
+            # Skip the legacy edge_tts/ umbrella path — not a module name.
+            if inc_module == "edge_tts":
+                continue
 
             if inc_module not in KNOWN_MODULES:
                 # Unknown module name in include — not our business to reject.
@@ -156,13 +183,6 @@ def violations_in_file(path: Path, root: Path) -> list[str]:
                     f"[{inc_module}]: {line.strip()}"
                 )
 
-        # --- Rule 2: private-header rule (apps only) ---
-        if module == "apps" and _PRIVATE_INCLUDE_RE.search(line):
-            found.append(
-                f"{path}:{lineno}: [apps] private header include "
-                f"(path through src/): {line.strip()}"
-            )
-
     return found
 
 
@@ -175,7 +195,8 @@ def scan_tree(root: Path, verbose: bool = False) -> list[str]:
 
     # Top-level directories (relative to root) to skip entirely.
     SKIP_TOP = {"tests", "tools", ".git", ".claude", "cmake-build-debug",
-                "build", "reference", "submodules", ".idea"}
+                "build", "build-strict", "build_verify", "reference",
+                "submodules", ".idea"}
 
     for path in sorted(root.rglob("*")):
         # Skip hidden dirs and known non-project dirs only at the root level.

@@ -78,8 +78,20 @@ if(EDGE_TTS_INSTALL_LIBRARY)
     )
 
     # Public headers from the source tree.
-    # All fake/test-support headers live under tests/ — not under include/ — so
-    # this DIRECTORY install is safe: it never accidentally installs test doubles.
+    # Each module has its own include/<module>/ directory.  Install each module's
+    # headers into the install prefix include/ root so consumers use #include <<module>/...>.
+    # The top-level include/edge_tts/ contains only the umbrella header.
+    foreach(_edge_tts_mod api cli common communication core media serialization subtitle)
+        install(
+            DIRECTORY "${EDGE_TTS_SOURCE_DIR}/modules/${_edge_tts_mod}/include/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+            COMPONENT   Development
+            FILES_MATCHING
+                PATTERN "*.hpp"
+                PATTERN "*.h"
+        )
+    endforeach()
+    # Umbrella header (edge_tts/edge_tts.hpp) lives in the top-level include/.
     install(
         DIRECTORY "${EDGE_TTS_SOURCE_DIR}/include/edge_tts"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"

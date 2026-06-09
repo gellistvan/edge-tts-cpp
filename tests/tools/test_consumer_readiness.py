@@ -150,11 +150,11 @@ def test_story3_umbrella_header() -> None:
 
     # Must include stable API headers.
     required_includes = [
-        "edge_tts/api/SpeechSynthesizer.hpp",
-        "edge_tts/api/SynthesisOptions.hpp",
-        "edge_tts/core/TtsConfig.hpp",
-        "edge_tts/common/Result.hpp",
-        "edge_tts/common/Error.hpp",
+        "api/SpeechSynthesizer.hpp",
+        "api/SynthesisOptions.hpp",
+        "core/TtsConfig.hpp",
+        "common/Result.hpp",
+        "common/Error.hpp",
     ]
     for h in required_includes:
         if h not in content:
@@ -169,10 +169,10 @@ def test_story3_umbrella_header() -> None:
     ]
     include_text = "\n".join(include_lines)
     forbidden_includes = [
-        "edge_tts/cli/",
-        "edge_tts/media/",
-        "edge_tts/communication/",
-        "edge_tts/serialization/",
+        "cli/",
+        "media/",
+        "communication/",
+        "serialization/",
         "Fake",
         "test_support",
         "minigtest",
@@ -317,14 +317,23 @@ def test_story5_no_fakes_in_install() -> None:
         fail("test_install_tree.py does not check for Fake* header leakage")
     ok("Story 5: test_install_tree.py verifies no Fake* headers in install tree")
 
-    # Fake headers must not live under include/edge_tts/.
-    fake_in_include = list((REPO / "include" / "edge_tts").rglob("Fake*.hpp"))
+    # Fake headers must not live under include/edge_tts/ or any module include/.
+    fake_in_include: list[pathlib.Path] = []
+    umbrella_include = REPO / "include" / "edge_tts"
+    if umbrella_include.exists():
+        fake_in_include.extend(umbrella_include.rglob("Fake*.hpp"))
+    modules_dir = REPO / "modules"
+    if modules_dir.exists():
+        for mod_dir in modules_dir.iterdir():
+            inc = mod_dir / "include"
+            if inc.exists():
+                fake_in_include.extend(inc.rglob("Fake*.hpp"))
     if fake_in_include:
         fail(
-            "Fake* headers found under include/edge_tts/ — these would be installed:\n"
+            "Fake* headers found in public include trees — these would be installed:\n"
             + "\n".join(str(p.relative_to(REPO)) for p in fake_in_include)
         )
-    ok("Story 5: no Fake* headers under include/edge_tts/")
+    ok("Story 5: no Fake* headers in any public include tree")
 
     # CONSUMING.md mentions EDGE_TTS_INSTALL_TEST_SUPPORT.
     consuming = read(REPO / "docs" / "CONSUMING.md")
@@ -404,7 +413,7 @@ def test_story7_proxy_error() -> None:
     """A developer gets a clear error when using unsupported proxy behavior."""
 
     # SynthesisOptions.hpp must declare the proxy field.
-    opts_header = REPO / "include" / "edge_tts" / "api" / "SynthesisOptions.hpp"
+    opts_header = REPO / "modules" / "api" / "include" / "api" / "SynthesisOptions.hpp"
     content = read(opts_header)
     if "proxy" not in content:
         fail("SynthesisOptions.hpp does not have a proxy field")

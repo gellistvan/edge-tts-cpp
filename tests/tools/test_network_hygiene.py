@@ -37,6 +37,18 @@ import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 TESTS_DIR = REPO_ROOT / "tests"
+MODULES_DIR = REPO_ROOT / "modules"
+
+
+def _all_test_cpp_files() -> list[pathlib.Path]:
+    """Return all .cpp test files from tests/ and modules/*/tests/."""
+    files: list[pathlib.Path] = list(TESTS_DIR.rglob("*.cpp"))
+    if MODULES_DIR.exists():
+        for mod_dir in MODULES_DIR.iterdir():
+            tests_subdir = mod_dir / "tests"
+            if tests_subdir.exists():
+                files.extend(tests_subdir.rglob("*.cpp"))
+    return sorted(files)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,12 +86,21 @@ def _is_network_test_file(path: pathlib.Path) -> bool:
 def _is_normal_test_file(path: pathlib.Path) -> bool:
     if path.suffix != ".cpp":
         return False
+    # Allow files under modules/*/tests/
+    under_modules = False
     try:
-        rel = path.relative_to(TESTS_DIR)
+        rel = path.relative_to(MODULES_DIR)
+        if len(rel.parts) >= 2 and rel.parts[1] == "tests":
+            under_modules = True
     except ValueError:
-        return False
-    if rel.parts[0] in ("tools", "vendor"):
-        return False
+        pass
+    if not under_modules:
+        try:
+            rel = path.relative_to(TESTS_DIR)
+        except ValueError:
+            return False
+        if rel.parts[0] in ("tools", "vendor"):
+            return False
     if "fixture" in str(path).lower():
         return False
     return not _is_network_test_file(path)
@@ -223,7 +244,7 @@ def _extract_test_blocks(content: str) -> list[tuple[int, str]]:
 def test_no_production_communicate_calls_in_normal_tests() -> None:
     violations: list[str] = []
 
-    for cpp in sorted(TESTS_DIR.rglob("*.cpp")):
+    for cpp in _all_test_cpp_files():
         if not _is_normal_test_file(cpp):
             continue
         content = read(cpp)
@@ -266,12 +287,15 @@ def _strip_comments(content: str) -> str:
 def test_network_gate_files_have_network_in_name() -> None:
     violations: list[str] = []
 
-    for cpp in sorted(TESTS_DIR.rglob("*.cpp")):
+    for cpp in _all_test_cpp_files():
+        # Skip tools/vendor within tests/
+        under_tests = False
         try:
             rel = cpp.relative_to(TESTS_DIR)
+            under_tests = True
         except ValueError:
-            continue
-        if rel.parts[0] in ("tools", "vendor"):
+            pass
+        if under_tests and rel.parts[0] in ("tools", "vendor"):
             continue
         # Files already identified as network test files by location (tests/network/)
         # or name (*Network*.cpp) are compliant — skip them.

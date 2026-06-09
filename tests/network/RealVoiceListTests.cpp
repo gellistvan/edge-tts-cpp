@@ -28,14 +28,14 @@
 //
 // Reference: reference/edge-tts/src/edge_tts/voices.py list_voices()
 
-#include "edge_tts/communication/EdgeServiceConfig.hpp"
-#include "edge_tts/communication/EdgeTokenProvider.hpp"
-#include "edge_tts/communication/HttpClient.hpp"
-#include "edge_tts/communication/VoiceService.hpp"
-#include "edge_tts/common/Clock.hpp"
-#include "edge_tts/common/IdGenerator.hpp"
-#include "edge_tts/core/Voice.hpp"
-#include "edge_tts/serialization/VoiceJsonParser.hpp"
+#include "communication/EdgeServiceConfig.hpp"
+#include "communication/EdgeTokenProvider.hpp"
+#include "communication/HttpClient.hpp"
+#include "communication/VoiceService.hpp"
+#include "common/Clock.hpp"
+#include "common/IdGenerator.hpp"
+#include "core/Voice.hpp"
+#include "serialization/VoiceJsonParser.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <cstdlib>
