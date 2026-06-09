@@ -1,7 +1,7 @@
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -14,8 +14,8 @@
 #include <string>
 #include <vector>
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::cli::EdgeTtsArgumentParser;
 using edge_tts::cli::EdgeTtsArguments;
@@ -95,12 +95,12 @@ static Voice make_voice(std::string short_name,
     return v;
 }
 
-// Factory that creates a Communicate with a fixed response.
-static EdgeTtsCommandDispatcher::CommunicateFactory
+// Factory that creates a SpeechSynthesizer with a fixed response.
+static EdgeTtsCommandDispatcher::SynthesizerFactory
 make_factory(std::vector<TtsChunk> chunks) {
     return [chunks = std::move(chunks)](
-               std::string text, TtsConfig cfg, CommunicateOptions opts) {
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+               std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [chunks](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
@@ -109,11 +109,11 @@ make_factory(std::vector<TtsChunk> chunks) {
 }
 
 // Factory that injects a synthesis error.
-static EdgeTtsCommandDispatcher::CommunicateFactory
+static EdgeTtsCommandDispatcher::SynthesizerFactory
 make_failing_factory(ErrorCode code, std::string msg) {
     return [code, msg = std::move(msg)](
-               std::string text, TtsConfig cfg, CommunicateOptions opts) {
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+               std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [code, msg](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
@@ -272,9 +272,9 @@ TEST(EdgeTtsCommandDispatcher, ListVoicesServiceErrorDoesNotPrintToStdout) {
 
 TEST(EdgeTtsCommandDispatcher, TextSynthesisCallsFactory) {
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -306,9 +306,9 @@ TEST(EdgeTtsCommandDispatcher, FileSynthesisLoadsFile) {
     { std::ofstream f(p); f << "from file"; }
 
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -566,14 +566,14 @@ TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorIncludesFilenameInStderr) {
 }
 
 // ---------------------------------------------------------------------------
-// proxy is forwarded into CommunicateOptions
+// proxy is forwarded into SynthesisOptions
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, ProxyIsForwardedToFactory) {
-    CommunicateOptions received_opts;
-    auto factory = [&received_opts](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+    SynthesisOptions received_opts;
+    auto factory = [&received_opts](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         received_opts = opts;
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -593,11 +593,11 @@ TEST(EdgeTtsCommandDispatcher, ProxyIsForwardedToFactory) {
 }
 
 TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
-    CommunicateOptions received_opts;
+    SynthesisOptions received_opts;
     received_opts.proxy = "should-be-cleared";
-    auto factory = [&received_opts](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+    auto factory = [&received_opts](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         received_opts = opts;
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -621,8 +621,8 @@ TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
 TEST(EdgeTtsCommandDispatcher, ProxyUnsupportedYieldsExitCode1AndErrorOnStderr) {
     // When the synthesizer returns unsupported (proxy rejected by the transport
     // layer), the dispatcher must propagate it: exit code 1, message on stderr.
-    auto factory = [](std::string text, TtsConfig cfg, CommunicateOptions opts) {
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+    auto factory = [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>
             {
@@ -647,8 +647,8 @@ TEST(EdgeTtsCommandDispatcher, ProxyIsNotSilentlyIgnored) {
     // The dispatcher must return non-zero when the proxy causes a failure.
     bool synthesizer_ran = false;
     auto factory = [&synthesizer_ran](std::string text, TtsConfig cfg,
-                                     CommunicateOptions opts) {
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+                                     SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [&synthesizer_ran](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>
             {
@@ -852,14 +852,14 @@ TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenCheckFnIsEmpty) {
 // TTS config (voice, rate, volume, pitch) forwarded to factory
 //
 // dispatch_synthesize() builds a TtsConfig from the CLI arguments and passes
-// it to the CommunicateFactory.  Each field must be forwarded without mutation.
+// it to the SynthesizerFactory.  Each field must be forwarded without mutation.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, VoiceForwardedToFactory) {
     TtsConfig received_cfg;
-    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_cfg = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -879,9 +879,9 @@ TEST(EdgeTtsCommandDispatcher, VoiceForwardedToFactory) {
 
 TEST(EdgeTtsCommandDispatcher, RateForwardedToFactory) {
     TtsConfig received_cfg;
-    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_cfg = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -901,9 +901,9 @@ TEST(EdgeTtsCommandDispatcher, RateForwardedToFactory) {
 
 TEST(EdgeTtsCommandDispatcher, VolumeForwardedToFactory) {
     TtsConfig received_cfg;
-    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_cfg = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -923,9 +923,9 @@ TEST(EdgeTtsCommandDispatcher, VolumeForwardedToFactory) {
 
 TEST(EdgeTtsCommandDispatcher, PitchForwardedToFactory) {
     TtsConfig received_cfg;
-    auto factory = [&received_cfg](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_cfg](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_cfg = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -1048,9 +1048,9 @@ TEST(EdgeTtsCommandDispatcher, WriteSubtitlesFileErrorIncludesFilenameInStderr) 
 
 TEST(EdgeTtsCommandDispatcher, FileDashReadsFromStdin) {
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -1074,9 +1074,9 @@ TEST(EdgeTtsCommandDispatcher, FileDashReadsFromStdin) {
 
 TEST(EdgeTtsCommandDispatcher, FileDevStdinReadsFromStdin) {
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -1129,8 +1129,8 @@ TEST(EdgeTtsCommandDispatcher, ListVoicesEmptyListSucceeds) {
 TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
     // Inject an error whose context is a proxy URL with embedded credentials.
     // The dispatcher must strip "secretpassword" before printing.
-    auto factory = [](std::string text, TtsConfig cfg, CommunicateOptions opts) {
-        return Communicate(std::move(text), std::move(cfg), std::move(opts),
+    auto factory = [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::fail(

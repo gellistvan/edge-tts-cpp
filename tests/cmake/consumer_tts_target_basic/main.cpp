@@ -1,17 +1,17 @@
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
 int main() {
-    // Construct a TtsConfig and CommunicateOptions — no network I/O.
+    // Construct a TtsConfig and SynthesisOptions — no network I/O.
     edge_tts::core::TtsConfig cfg;
     cfg.voice = "en-US-EmmaMultilingualNeural";
 
-    edge_tts::api::CommunicateOptions opts;
+    edge_tts::api::SynthesisOptions opts;
 
-    // Construct Communicate — the public API entry point.
+    // Construct SpeechSynthesizer — the public API entry point.
     // No network call happens at construction time.
-    edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
+    edge_tts::api::SpeechSynthesizer c("Hello, world!", std::move(cfg), std::move(opts));
     (void)c;
     return 0;
 }

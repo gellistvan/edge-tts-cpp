@@ -5,13 +5,13 @@ Network hygiene tests for edge-tts-cpp.
 Verifies that the default C++ test suite cannot accidentally contact external
 network services:
 
-  1. Normal test files must not call stream_sync()/save() on Communicate
+  1. Normal test files must not call synthesize()/save() on SpeechSynthesizer
      objects that were constructed WITHOUT a synthesizer-injection argument.
-     The production 2-arg and 3-arg (text+config+CommunicateOptions) constructors
+     The production 2-arg and 3-arg (text+config+SynthesisOptions) constructors
      wire a real WebSocketClient that will attempt TLS connections on
-     stream_sync()/save().  Detection uses argument-level analysis:
+     synthesize()/save().  Detection uses argument-level analysis:
        - 2-arg (text, config) → always production
-       - 3-arg (text, config, CommunicateOptions/opts) → production options form
+       - 3-arg (text, config, SynthesisOptions/opts) → production options form
        - 3-arg (text, config, <synthesizer>) → injection, safe
        - 4-arg (text, config, opts, <synthesizer>) → injection, safe
 
@@ -86,7 +86,7 @@ def _is_normal_test_file(path: pathlib.Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Argument-level Communicate constructor analysis
+# Argument-level SpeechSynthesizer constructor analysis
 # ---------------------------------------------------------------------------
 
 def _split_top_level_args(args_str: str) -> list[str]:
@@ -111,7 +111,7 @@ def _split_top_level_args(args_str: str) -> list[str]:
 
 def _extract_communicate_ctor_args(block: str) -> list[str] | None:
     """
-    Find the first `Communicate varname(...)` declaration in `block` and
+    Find the first `SpeechSynthesizer varname(...)` declaration in `block` and
     return its constructor arguments as a list.  Returns None if not found.
     """
     m = re.search(r"\bCommunicate\s+\w+\s*\(", block)
@@ -139,7 +139,7 @@ def _extract_communicate_ctor_args(block: str) -> list[str] | None:
 
 def _third_arg_is_options(arg: str) -> bool:
     """
-    True if the 3rd constructor argument looks like a CommunicateOptions
+    True if the 3rd constructor argument looks like a SynthesisOptions
     (production form) rather than a synthesizer (injection form).
     """
     # Explicit type name
@@ -154,8 +154,8 @@ def _third_arg_is_options(arg: str) -> bool:
 def _block_is_production_communicate_with_network_call(block: str) -> bool:
     """
     True when a test block:
-      (a) constructs a Communicate with the production (non-injection) constructor,
-      (b) calls .stream_sync() or .save( on it.
+      (a) constructs a SpeechSynthesizer with the production (non-injection) constructor,
+      (b) calls .synthesize() or .save( on it.
     """
     # (b) must call stream_sync or save
     if not re.search(r"\.(stream_sync|save)\s*\(", block):
@@ -175,7 +175,7 @@ def _block_is_production_communicate_with_network_call(block: str) -> bool:
 
     if n == 3:
         # (text, config, X):
-        #   X = CommunicateOptions → production 3-arg form
+        #   X = SynthesisOptions → production 3-arg form
         #   X = synthesizer        → injection 3-arg form (safe)
         return _third_arg_is_options(args[2])
 
@@ -217,7 +217,7 @@ def _extract_test_blocks(content: str) -> list[tuple[int, str]]:
 
 
 # ---------------------------------------------------------------------------
-# 1. Normal tests must not call stream_sync()/save() on production Communicate
+# 1. Normal tests must not call synthesize()/save() on production SpeechSynthesizer
 # ---------------------------------------------------------------------------
 
 def test_no_production_communicate_calls_in_normal_tests() -> None:
@@ -227,7 +227,7 @@ def test_no_production_communicate_calls_in_normal_tests() -> None:
         if not _is_normal_test_file(cpp):
             continue
         content = read(cpp)
-        if "Communicate" not in content:
+        if "SpeechSynthesizer" not in content:
             continue
 
         for lineno, block in _extract_test_blocks(content):
@@ -238,15 +238,15 @@ def test_no_production_communicate_calls_in_normal_tests() -> None:
 
     if violations:
         fail(
-            "Normal test files contain Communicate objects that call stream_sync() or "
+            "Normal test files contain SpeechSynthesizer objects that call synthesize() or "
             "save() WITHOUT a synthesizer-injection argument.\n"
             "These tests will attempt real TLS connections and must be moved to a "
             "network-gated file (e.g. *NetworkTests.cpp).\n\n"
             "Violations:\n" + "\n\n".join(violations)
         )
     ok(
-        "No normal test file calls stream_sync()/save() on a "
-        "production-constructed Communicate"
+        "No normal test file calls synthesize()/save() on a "
+        "production-constructed SpeechSynthesizer"
     )
 
 

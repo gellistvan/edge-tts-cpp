@@ -53,19 +53,19 @@ ctest --test-dir build -R edge_tts_core_tests
 **Unit tests** cover one module at a time with fakes for their dependencies.
 No outbound connections, no file I/O beyond temp files.
 
-**Offline integration tests** wire the full `api::Communicate` stack end-to-end
+**Offline integration tests** wire the full `api::SpeechSynthesizer` stack end-to-end
 using `FakeWebSocketClient` — deterministic, no outbound connections, always run in CI.
-All `Communicate` objects in normal tests are constructed with the `SynthesizerFn`
+All `SpeechSynthesizer` objects in normal tests are constructed with the `SynthesizerFn`
 injection constructor; the production 2/3-arg constructors (which create a real
 `WebSocketClient`) are tested only via structural assertions that do not call
-`stream_sync()` or `save()`.
+`synthesize()` or `save()`.
 
 The three offline integration source files cover complementary areas:
 
 | Source | Focus |
 |--------|-------|
-| `CommunicateEndToEndTests.cpp` | Happy-path output: MP3 bytes, SRT content, XML escaping, UTF-8, long text, one-shot guarantee |
-| `CommunicateProductionWiringTests.cpp` | Production constructor wiring: lazy construction, no placeholder error, save() through fake transport, XML/UTF-8 regressions |
+| `SpeechSynthesizerEndToEndTests.cpp` | Happy-path output: MP3 bytes, SRT content, XML escaping, UTF-8, long text, one-shot guarantee |
+| `SpeechSynthesizerWiringTests.cpp` | Production constructor wiring: lazy construction, no placeholder error, save() through fake transport, XML/UTF-8 regressions |
 | `OfflineIntegrationTests.cpp` | Frame-level protocol verification: sent frame structure, exact escaping, offset compensation, error propagation, no-audio error |
 
 `OfflineIntegrationTests.cpp` specifically verifies:
@@ -89,8 +89,8 @@ no internet access.
 These rules are enforced by `tests/tools/test_network_hygiene.py` (run as
 `edge_tts_network_hygiene_tests` in the default `ctest` suite):
 
-1. **No production Communicate in normal tests.** A normal test file must not
-   call `stream_sync()` or `save()` on a `Communicate` object that was constructed
+1. **No production `SpeechSynthesizer` in normal tests.** A normal test file must not
+   call `synthesize()` or `save()` on a `SpeechSynthesizer` object that was constructed
    without a `SynthesizerFn` injection argument.  The production 2-arg and 3-arg
    constructors wire a real `WebSocketClient` and would attempt TLS connections.
 
@@ -244,7 +244,7 @@ the skip contract.
 | CTest target | Source files | Labels | What it verifies |
 |---|---|---|---|
 | `edge_tts_communication_network_tests` | `tests/communication/HttpClientNetworkTests.cpp`, `WebSocketClientNetworkTests.cpp` | `network`, `integration` | `HttpClient` GET voices returns HTTP 200; `VoiceService` parses non-empty list; `SynthesisSession` synthesis: non-empty audio, `turn.end`, word-boundary metadata |
-| `edge_tts_api_network_tests` | `tests/api/CommunicateNetworkTests.cpp` | `network`, `integration` | `api::Communicate` end-to-end: `stream_sync()` returns audio, `save()` writes non-empty MP3, SRT written with word-boundary mode, proxy option forwarded |
+| `edge_tts_api_network_tests` | `tests/api/SpeechSynthesizerNetworkTests.cpp` | `network`, `integration` | `api::SpeechSynthesizer` end-to-end: `synthesize()` returns audio, `save()` writes non-empty MP3, SRT written with word-boundary mode, proxy option forwarded |
 | `edge_tts_network_smoke_tests` | `tests/network/RealVoiceListTests.cpp`, `RealSynthesisSmokeTests.cpp` | `network`, `integration` | **Dedicated smoke tests**: voice-list field completeness (ShortName, Gender, Locale); default voice presence; locale/gender filters; short-phrase synthesis; word-boundary chunks and SRT; alternative voice accepted; temp-file cleanup |
 
 ### Dedicated smoke-test files (`tests/network/`)
@@ -261,10 +261,10 @@ the skip contract.
 `tests/network/RealSynthesisSmokeTests.cpp` covers:
 - `SynthesisSession` + `WebSocketClient` direct synthesis: audio bytes, non-zero size, `turn.end` termination
 - Word-boundary mode: `BoundaryChunk` events, non-empty text, non-negative offsets
-- `api::Communicate` production constructor wires real stack (not a stub)
+- `api::SpeechSynthesizer` production constructor wires real stack (not a stub)
 - `save()` writes non-empty MP3
 - `save()` with word-boundary writes non-empty SRT
-- `stream_sync()` returns both `AudioChunk` and `BoundaryChunk`
+- `synthesize()` returns both `AudioChunk` and `BoundaryChunk`
 - Alternative voice (`en-GB-RyanNeural`) accepted by service
 
 Do not enable in CI unless the environment has reliable outbound TLS access to
@@ -296,13 +296,13 @@ injection in `EdgeTtsCommandDispatcher`:
 | Seam | Test injection | Production value |
 |------|---------------|-----------------|
 | `VoiceServiceFn` | Lambda returning a fixed `vector<Voice>` or error | `VoiceService::list_voices()` |
-| `CommunicateFactory` | Lambda creating `Communicate` with a fake `SynthesizerFn` | `Communicate{text, cfg, opts}` |
+| `CommunicateFactory` | Lambda creating `SpeechSynthesizer` with a fake `SynthesizerFn` | `Communicate{text, cfg, opts}` |
 | `std::ostream& out` | `std::ostringstream` | `std::cout` |
 | `std::ostream& err` | `std::ostringstream` | `std::cerr` |
 | `std::istream& in` | `std::istringstream` | `std::cin` |
 | `TtyCheckFn` | Lambda returning `true` or `false` | `isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)` |
 
-The fake `Communicate` is created via the `SynthesizerFn` injection constructor:
+The fake `SpeechSynthesizer` is created via the `SynthesizerFn` injection constructor:
 ```cpp
 Communicate(text, cfg, opts,
     [chunks](const TtsConfig&, std::span<const std::string>)
@@ -396,7 +396,7 @@ Both parser and dispatcher tests live in `PlaybackCommandDispatcherTests.cpp`
 | `--mpv` rejection | `MpvFlagReturnsErrorWithClearMessage` |
 | Synthesis text | `SynthesisCalledWithCorrectText`, `FileDashReadsFromStdin` |
 | TTS config forwarding | `VoiceForwardedToFactory`, `RateForwardedToFactory`, `VolumeForwardedToFactory`, `PitchForwardedToFactory` |
-| Proxy forwarding | `ProxyReachesCommunicateOptions`, `NoProxyLeavesOptionEmpty` |
+| Proxy forwarding | `ProxyReachesSynthesisOptions`, `NoProxyLeavesOptionEmpty` |
 | Playback invoked | `PlaybackIsCalled`, `PlaybackReceivesCorrectTempPath` |
 | MP3 temp file lifecycle | `TempFileCleanedOnSuccess`, `TempFileCleanedOnPlaybackError`, `TempFileAbsentOnSynthesisError`, `TempFileKeptWhenKeepTempTrue`, `CustomMp3PathFromProviderIsUsed` |
 | SRT temp file lifecycle | `SrtTempFileCleanedOnSuccess`, `SrtTempFileKeptWhenKeepTempTrue`, `NoSrtWhenProviderReturnsNullopt` |

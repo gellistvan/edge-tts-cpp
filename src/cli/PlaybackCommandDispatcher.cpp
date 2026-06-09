@@ -40,14 +40,14 @@ static std::string format_error(const common::Error& e) {
 }
 
 PlaybackCommandDispatcher::PlaybackCommandDispatcher(
-    CommunicateFactory      communicate_factory,
+    SynthesizerFactory      synthesizer_factory,
     media::IAudioConverter& converter,
     TempFileProvider        temp_provider,
     bool                    keep_temp,
     std::ostream&           out,
     std::ostream&           err,
     std::istream&           in)
-    : communicate_factory_(std::move(communicate_factory))
+    : synthesizer_factory_(std::move(synthesizer_factory))
     , converter_(converter)
     , temp_provider_(std::move(temp_provider))
     , keep_temp_(keep_temp)
@@ -109,9 +109,9 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     config.pitch  = args.pitch;
 
     // 4. Build transport options.
-    //    Proxy flows into CommunicateOptions::proxy.  The ixwebsocket backend
+    //    Proxy flows into SynthesisOptions::proxy.  The ixwebsocket backend
     //    returns ErrorCode::unsupported if proxy is set — same as edge-tts.
-    api::CommunicateOptions options;
+    api::SynthesisOptions options;
     options.proxy = args.proxy;
 
     // 5. Obtain temp file paths for the synthesized media and optional subtitle.
@@ -144,15 +144,13 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     } guard{tmp_mp3, srt_opt, keep_temp_};
 
     // 6. Synthesize to the temp MP3 (and optionally SRT) file.
-    //    Reference: _run_edge_tts(mp3_fname, srt_fname, ...) writes both files.
-    api::Communicate communicate = communicate_factory_(*text, config, options);
-    if (auto r = communicate.save(tmp_mp3, srt_opt); !r) {
+    api::SpeechSynthesizer synthesizer = synthesizer_factory_(*text, config, options);
+    if (auto r = synthesizer.save(tmp_mp3, srt_opt); !r) {
         err_ << "error: " << format_error(r.error()) << '\n';
         return 1;
     }
 
     // 7. Play the temp MP3 file.
-    //    Reference: _play_media(use_mpv, mp3_fname, srt_fname)
     if (auto r = converter_.play_mp3(tmp_mp3); !r) {
         err_ << "error: " << format_error(r.error()) << '\n';
         return 1;

@@ -1,5 +1,5 @@
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/communication/WebSocketClient.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::communication::WebSocketClientOptions;
 using edge_tts::core::TtsConfig;
@@ -22,64 +22,64 @@ using edge_tts::core::TtsChunk;
 static TtsConfig valid_config() { return TtsConfig::defaults(); }
 
 // ---------------------------------------------------------------------------
-// CommunicateOptions — default values
+// SynthesisOptions — default values
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateOptions, DefaultProxyIsAbsent) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, DefaultProxyIsAbsent) {
+    SynthesisOptions opts;
     EXPECT_FALSE(opts.proxy.has_value());
 }
 
-TEST(CommunicateOptions, DefaultWsConnectTimeoutIs10s) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, DefaultWsConnectTimeoutIs10s) {
+    SynthesisOptions opts;
     EXPECT_EQ(opts.ws_connect_timeout.count(), 10'000);
 }
 
-TEST(CommunicateOptions, DefaultWsReadTimeoutIs60s) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, DefaultWsReadTimeoutIs60s) {
+    SynthesisOptions opts;
     EXPECT_EQ(opts.ws_read_timeout.count(), 60'000);
 }
 
-TEST(CommunicateOptions, DefaultHttpTimeoutIs30s) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, DefaultHttpTimeoutIs30s) {
+    SynthesisOptions opts;
     EXPECT_EQ(opts.http_timeout.count(), 30'000);
 }
 
-TEST(CommunicateOptions, DefaultTimeoutsMatchWebSocketClientDefaults) {
-    // The CommunicateOptions defaults must match WebSocketClientOptions defaults
+TEST(SynthesisOptions, DefaultTimeoutsMatchWebSocketClientDefaults) {
+    // The SynthesisOptions defaults must match WebSocketClientOptions defaults
     // so that constructing a real session without explicit options produces
     // identical timeout behavior.
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     WebSocketClientOptions ws_opts;
     EXPECT_EQ(opts.ws_connect_timeout, ws_opts.connect_timeout);
     EXPECT_EQ(opts.ws_read_timeout,    ws_opts.read_timeout);
 }
 
 // ---------------------------------------------------------------------------
-// Communicate — options constructor stores options, does not alter TtsConfig
+// SpeechSynthesizer — options constructor stores options, does not alter TtsConfig
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateOptions, ProductionConstructorStoresOptions) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, ProductionConstructorStoresOptions) {
+    SynthesisOptions opts;
     opts.proxy              = "http://proxy.example.com:8080";
     opts.ws_connect_timeout = std::chrono::milliseconds{5'000};
     opts.ws_read_timeout    = std::chrono::milliseconds{45'000};
 
-    Communicate c("hello", valid_config(), opts);
+    SpeechSynthesizer c("hello", valid_config(), opts);
 
     EXPECT_EQ(c.options().proxy,              opts.proxy);
     EXPECT_EQ(c.options().ws_connect_timeout, opts.ws_connect_timeout);
     EXPECT_EQ(c.options().ws_read_timeout,    opts.ws_read_timeout);
 }
 
-TEST(CommunicateOptions, ProductionConstructorDoesNotAlterTtsConfig) {
+TEST(SynthesisOptions, ProductionConstructorDoesNotAlterTtsConfig) {
     TtsConfig cfg = valid_config();
     cfg.voice = "en-GB-RyanNeural";
 
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://proxy:8080";
 
-    Communicate c("hello", cfg, opts);
+    SpeechSynthesizer c("hello", cfg, opts);
 
     // Proxy must be in options, not in TtsConfig.
     EXPECT_EQ(c.config().voice, "en-GB-RyanNeural");
@@ -90,15 +90,15 @@ TEST(CommunicateOptions, ProductionConstructorDoesNotAlterTtsConfig) {
     EXPECT_EQ(c.config().pitch,  cfg.pitch);
 }
 
-TEST(CommunicateOptions, DefaultConstructorHasDefaultOptions) {
+TEST(SynthesisOptions, DefaultConstructorHasDefaultOptions) {
     // The 2-arg (text, config) constructor must produce default-valued options.
-    Communicate c("hello", valid_config());
+    SpeechSynthesizer c("hello", valid_config());
     EXPECT_FALSE(c.options().proxy.has_value());
     EXPECT_EQ(c.options().ws_connect_timeout.count(), 10'000);
     EXPECT_EQ(c.options().ws_read_timeout.count(),    60'000);
 }
 
-TEST(CommunicateOptions, SynthesizerInjectionConstructorHasDefaultOptions) {
+TEST(SynthesisOptions, SynthesizerInjectionConstructorHasDefaultOptions) {
     // The 3-arg SynthesizerFn constructor must also produce default-valued options.
     SynthesizerFn syn = [](const TtsConfig&, std::span<const std::string>)
         -> edge_tts::common::Result<std::vector<TtsChunk>>
@@ -106,23 +106,23 @@ TEST(CommunicateOptions, SynthesizerInjectionConstructorHasDefaultOptions) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("hello", valid_config(), std::move(syn));
+    SpeechSynthesizer c("hello", valid_config(), std::move(syn));
     EXPECT_FALSE(c.options().proxy.has_value());
     EXPECT_EQ(c.options().ws_connect_timeout.count(), 10'000);
     EXPECT_EQ(c.options().ws_read_timeout.count(),    60'000);
 }
 
 // ---------------------------------------------------------------------------
-// Communicate — options+synthesizer constructor (seam test)
+// SpeechSynthesizer — options+synthesizer constructor (seam test)
 // ---------------------------------------------------------------------------
 //
 // The 4-arg constructor (text, config, options, synthesizer) is the injection
 // seam that lets tests verify options flow into the synthesizer path.
-// In production, the real SynthesisSession reads Communicate::options_ and
+// In production, the real SynthesisSession reads SpeechSynthesizer::options_ and
 // builds WebSocketClientOptions from it; this test simulates that mapping.
 
-TEST(CommunicateOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
+    SynthesisOptions opts;
     opts.proxy              = "http://proxy.example.com:8080";
     opts.ws_connect_timeout = std::chrono::milliseconds{3'000};
     opts.ws_read_timeout    = std::chrono::milliseconds{20'000};
@@ -131,8 +131,8 @@ TEST(CommunicateOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
     WebSocketClientOptions captured;
     bool synthesizer_ran = false;
 
-    // Simulates how the real production synthesizer will translate
-    // CommunicateOptions → WebSocketClientOptions when networking is wired.
+    
+    
     SynthesizerFn syn = [&opts, &captured, &synthesizer_ran](
                             const TtsConfig&,
                             std::span<const std::string>)
@@ -145,8 +145,8 @@ TEST(CommunicateOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("hello world", valid_config(), opts, std::move(syn));
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("hello world", valid_config(), opts, std::move(syn));
+    auto result = c.synthesize();
 
     EXPECT_TRUE(result.has_value());
     EXPECT_TRUE(synthesizer_ran);
@@ -156,10 +156,10 @@ TEST(CommunicateOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
     EXPECT_EQ(captured.read_timeout,    opts.ws_read_timeout);
 }
 
-TEST(CommunicateOptions, NoProxyLeavesWebSocketOptionsProxyAbsent) {
-    // Default CommunicateOptions (no proxy) must translate to absent proxy
+TEST(SynthesisOptions, NoProxyLeavesWebSocketOptionsProxyAbsent) {
+    // Default SynthesisOptions (no proxy) must translate to absent proxy
     // in WebSocketClientOptions.
-    CommunicateOptions opts;  // proxy not set
+    SynthesisOptions opts;  // proxy not set
 
     WebSocketClientOptions captured;
 
@@ -174,14 +174,14 @@ TEST(CommunicateOptions, NoProxyLeavesWebSocketOptionsProxyAbsent) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("hello", valid_config(), opts, std::move(syn));
-    (void)c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), opts, std::move(syn));
+    (void)c.synthesize();
 
     EXPECT_FALSE(captured.proxy.has_value());
 }
 
-TEST(CommunicateOptions, OptionsAccessorReturnsStoredOptionsInSeamConstructor) {
-    CommunicateOptions opts;
+TEST(SynthesisOptions, OptionsAccessorReturnsStoredOptionsInSeamConstructor) {
+    SynthesisOptions opts;
     opts.proxy = "http://p:9999";
 
     SynthesizerFn syn = [](const TtsConfig&, std::span<const std::string>)
@@ -190,7 +190,7 @@ TEST(CommunicateOptions, OptionsAccessorReturnsStoredOptionsInSeamConstructor) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("text", valid_config(), opts, std::move(syn));
+    SpeechSynthesizer c("text", valid_config(), opts, std::move(syn));
     EXPECT_EQ(c.options().proxy, opts.proxy);
 }
 
@@ -198,7 +198,7 @@ TEST(CommunicateOptions, OptionsAccessorReturnsStoredOptionsInSeamConstructor) {
 // Existing SynthesizerFn injection behavior is unaffected
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateOptions, ExistingInjectionConstructorStillWorks) {
+TEST(SynthesisOptions, ExistingInjectionConstructorStillWorks) {
     // The 3-arg (text, config, SynthesizerFn) constructor must still work
     // exactly as before — this is a regression guard.
     bool ran = false;
@@ -209,17 +209,17 @@ TEST(CommunicateOptions, ExistingInjectionConstructorStillWorks) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("hello", valid_config(), std::move(syn));
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), std::move(syn));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(ran);
 }
 
-TEST(CommunicateOptions, ProxyRejectionPropagatesFromSynthesizer) {
+TEST(SynthesisOptions, ProxyRejectionPropagatesFromSynthesizer) {
     // Prove that when the underlying transport rejects a proxy (returning
-    // unsupported), stream_sync() propagates the error rather than hiding it.
+    // unsupported), synthesize()() propagates the error rather than hiding it.
     // This verifies the API layer does not swallow transport-level proxy errors.
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://proxy.example.com:8080";
 
     SynthesizerFn syn = [](const TtsConfig&, std::span<const std::string>)
@@ -231,19 +231,19 @@ TEST(CommunicateOptions, ProxyRejectionPropagatesFromSynthesizer) {
                 "proxy is not supported by this build"});
     };
 
-    Communicate c("hello", valid_config(), opts, std::move(syn));
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), opts, std::move(syn));
+    auto result = c.synthesize();
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
 }
 
-TEST(CommunicateOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
+TEST(SynthesisOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
     TtsConfig cfg = valid_config();
     cfg.voice = "en-AU-NatashaNeural";
     cfg.rate  = "+10%";
 
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://proxy:3128";
 
     SynthesizerFn syn = [](const TtsConfig&, std::span<const std::string>)
@@ -252,8 +252,8 @@ TEST(CommunicateOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
-    Communicate c("hello", cfg, opts, std::move(syn));
-    (void)c.stream_sync();
+    SpeechSynthesizer c("hello", cfg, opts, std::move(syn));
+    (void)c.synthesize();
 
     // Config must be unchanged after synthesis.
     EXPECT_EQ(c.config().voice, "en-AU-NatashaNeural");
@@ -261,12 +261,11 @@ TEST(CommunicateOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI proxy path: CommunicateOptions wires --proxy to CommunicateFactory
 // ---------------------------------------------------------------------------
 //
-// These tests verify that the CLI factory (EdgeTtsCommandDispatcher::CommunicateFactory)
-// receives the proxy that was parsed from --proxy, and that it reaches the
-// Communicate object's options.
+
+
+// SpeechSynthesizer object's options.
 
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
@@ -274,18 +273,18 @@ TEST(CommunicateOptions, TtsConfigRemainsUnchangedAfterStreamWithOptions) {
 using edge_tts::cli::EdgeTtsArgumentParser;
 using edge_tts::cli::EdgeTtsCommandDispatcher;
 
-TEST(CommunicateOptions, CliProxyPassedToCommunicateFactory) {
-    // Verify the dispatcher builds CommunicateOptions with the proxy from
+TEST(SynthesisOptions, CliProxyPassedToCommunicateFactory) {
+    // Verify the dispatcher builds SynthesisOptions with the proxy from
     // the parsed --proxy argument and passes it to the factory.
 
     std::optional<std::string> captured_proxy;
 
-    EdgeTtsCommandDispatcher::CommunicateFactory factory =
-        [&captured_proxy](std::string text, TtsConfig cfg, CommunicateOptions opts)
+    EdgeTtsCommandDispatcher::SynthesizerFactory factory =
+        [&captured_proxy](std::string text, TtsConfig cfg, SynthesisOptions opts)
     {
         captured_proxy = opts.proxy;
-        // Return a Communicate that will succeed.
-        return Communicate(
+        // Return a SpeechSynthesizer that will succeed.
+        return SpeechSynthesizer(
             std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>
@@ -317,15 +316,15 @@ TEST(CommunicateOptions, CliProxyPassedToCommunicateFactory) {
     EXPECT_EQ(*captured_proxy, "http://myproxy:8080");
 }
 
-TEST(CommunicateOptions, CliNoProxyPassesAbsentProxy) {
-    // When --proxy is not given, CommunicateOptions::proxy must be nullopt.
+TEST(SynthesisOptions, CliNoProxyPassesAbsentProxy) {
+    // When --proxy is not given, SynthesisOptions::proxy must be nullopt.
     std::optional<std::optional<std::string>> captured;
 
-    EdgeTtsCommandDispatcher::CommunicateFactory factory =
-        [&captured](std::string text, TtsConfig cfg, CommunicateOptions opts)
+    EdgeTtsCommandDispatcher::SynthesizerFactory factory =
+        [&captured](std::string text, TtsConfig cfg, SynthesisOptions opts)
     {
         captured = opts.proxy;
-        return Communicate(
+        return SpeechSynthesizer(
             std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>

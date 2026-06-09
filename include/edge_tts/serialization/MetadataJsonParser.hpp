@@ -11,7 +11,6 @@ namespace edge_tts::serialization {
 // Parses the JSON body of an Edge TTS audio.metadata WebSocket text frame into
 // a list of BoundaryChunk values.
 //
-// Reference: communicate.py Communicate.__parse_metadata()
 //
 // Wire JSON shape:
 //   {
@@ -32,8 +31,8 @@ namespace edge_tts::serialization {
 //
 // Behaviour:
 //   - "WordBoundary" and "SentenceBoundary" items are parsed into BoundaryChunks.
-//   - "SessionEnd" items are silently skipped (reference uses continue).
-//   - Any other Type returns parse_error (reference raises UnknownResponse).
+//   - "SessionEnd" items are silently skipped .
+//   - Any other Type returns parse_error .
 //   - Offset and Duration are returned as raw 100 ns ticks; offset compensation
 //     is NOT applied here — that belongs in the communication layer.
 //   - The "Text" field is XML-unescaped (reference: xml.sax.saxutils.unescape).

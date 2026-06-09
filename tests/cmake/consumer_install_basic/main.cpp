@@ -3,7 +3,7 @@
 int main() {
     edge_tts::core::TtsConfig cfg;
     (void)cfg;
-    edge_tts::api::CommunicateOptions opts;
+    edge_tts::api::SynthesisOptions opts;
     (void)opts;
     return 0;
 }

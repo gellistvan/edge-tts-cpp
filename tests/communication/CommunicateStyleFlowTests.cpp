@@ -1,11 +1,11 @@
 // Communication-level integration tests.
 //
-// These tests verify a "Communicate-style flow" — the same sequence of operations
-// that api::Communicate uses in production — entirely within the communication
+// These tests verify a "SpeechSynthesizer-style flow" — the same sequence of operations
+// that api::SpeechSynthesizer uses in production — entirely within the communication
 // layer using FakeWebSocketClient.  No real network calls are made.
 //
-// Flow mirrors api::Communicate::run_synthesis():
-//   1. TTS config validation (done by Communicate before calling synthesizer)
+// Flow mirrors api::SpeechSynthesizer::run_synthesis():
+//   1. TTS config validation (done by SpeechSynthesizer before calling synthesizer)
 //   2. Text already chunked + XML-escaped (by TextChunker)
 //   3. SynthesisSession::synthesize(config, chunks) → audio + boundary chunks
 
@@ -77,7 +77,7 @@ struct SessionFixture {
 static TtsConfig valid_config() { return TtsConfig::defaults(); }
 
 // ---------------------------------------------------------------------------
-// Full Communicate-style flow: text → chunk → session → audio
+// Full SpeechSynthesizer-style flow: text → chunk → session → audio
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateStyleFlow, SingleChunkTextProducesAudio) {
@@ -88,7 +88,7 @@ TEST(CommunicateStyleFlow, SingleChunkTextProducesAudio) {
 
     auto session = fix.make_session(fake_ws);
 
-    // Simulate what api::Communicate does: chunk + escape the input text.
+    // Simulate what api::SpeechSynthesizer does: chunk + escape the input text.
     TextChunker chunker;
     auto chunks = chunker.chunk("Hello world.");
     ASSERT_TRUE(chunks.has_value());
@@ -191,7 +191,7 @@ TEST(CommunicateStyleFlow, MultipleChunksEachProduceAudio) {
 }
 
 TEST(CommunicateStyleFlow, EmptyTextProducesNoChunksNoSession) {
-    // api::Communicate returns early for empty text before calling the synthesizer.
+    // api::SpeechSynthesizer returns early for empty text before calling the synthesizer.
     // At the communication level, if synthesize() is called with zero chunks,
     // it should return an empty result without touching the WebSocket.
     SessionFixture fix;

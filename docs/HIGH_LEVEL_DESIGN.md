@@ -16,8 +16,8 @@ protocol details from assumptions — consult `REFERENCE_BEHAVIOR.md` first.
 | `edge_tts::common` | `src/common` | `include/edge_tts/common` | `edge_tts::common` | `Exception` hierarchy (`Errors.hpp`), value-type `Error` + `ErrorCode` (`Error.hpp`), `Result<T>` / `Result<void>` (`Result.hpp`), `Expected<T,E>`, and UTF-8 utilities. Must not depend on other modules. |
 | `edge_tts::core` | `src/core` | `include/edge_tts/core` | `edge_tts::core` | Domain value types and pure business rules: `TtsConfig`, `Voice`/`VoiceGender`, `Chunk.hpp` types (`BoundaryType`, `AudioChunk`, `BoundaryChunk`, `TtsChunk`). No networking, filesystem, process execution, or protocol transport. |
 | `edge_tts::serialization` | `src/serialization` | `include/edge_tts/serialization` | `edge_tts::serialization` | Edge protocol serialization and parsing: SSML, speech config payloads, protocol headers, token and connection metadata. May depend on `core` and `common`. |
-| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | WebSocket transport infrastructure and synthesis orchestration: `IWebSocketClient`, `EdgeProtocol` (frame builders + incoming parser), `SynthesisSession`, voice service, token provider. Depends on `common`, `core`, `serialization` only — no `subtitle` or `media`. Does NOT own the public `Communicate` facade — that belongs in `api`. |
-| `edge_tts::api` | `src/api` | `include/edge_tts/api` | `edge_tts::api` | **Public synthesis facade.** `Communicate` — the only class end-users and the CLI layer should import. Orchestrates `SynthesisSession`, `serialization::TextChunker`, `SubMaker`, and media I/O. `FileWriter` handles binary media and UTF-8 text file writes for `save()`. Sits above `communication` so the transport layer stays clean. |
+| `edge_tts::communication` | `src/communication` | `include/edge_tts/communication` | `edge_tts::communication` | WebSocket transport infrastructure and synthesis orchestration: `IWebSocketClient`, `EdgeProtocol` (frame builders + incoming parser), `SynthesisSession`, voice service, token provider. Depends on `common`, `core`, `serialization` only — no `subtitle` or `media`. Does NOT own the public `SpeechSynthesizer` facade — that belongs in `api`. |
+| `edge_tts::api` | `src/api` | `include/edge_tts/api` | `edge_tts::api` | **Public synthesis facade.** `SpeechSynthesizer` — the only class end-users and the CLI layer should import. Orchestrates `SynthesisSession`, `serialization::TextChunker`, `SubMaker`, and media I/O. `FileWriter` handles binary media and UTF-8 text file writes for `save()`. Sits above `communication` so the transport layer stays clean. |
 | `edge_tts::media` | `src/media` | `include/edge_tts/media` | `edge_tts::media` | Audio conversion and playback integration. Owns the `ffmpeg`/`ffplay` process boundary. Must not parse protocol messages or own TTS configuration rules. **Platform note:** `ProcessRunner` (POSIX fork/exec) is excluded from the Windows build by CMake; `FakeProcessRunner` (test-support only, `tests/support/`) and the `IAudioConverter` interface compile everywhere. `media` is not part of the core synthesis pipeline — TTS, networking, and voice listing work without it. |
 | `edge_tts::subtitles` | `src/subtitles` | `include/edge_tts/subtitles` | `edge_tts::subtitles` | Subtitle cue modeling, boundary-to-cue conversion, and SRT composition. May depend on `core` for boundary chunks. |
 
@@ -79,8 +79,8 @@ occurs **exactly once** across the full pipeline and never produces `&amp;amp;`.
 Headers are grouped by module:
 
 ```cpp
-#include "edge_tts/api/Communicate.hpp"        // public TTS facade
-#include "edge_tts/api/CommunicateOptions.hpp" // transport / proxy options
+#include "edge_tts/api/SpeechSynthesizer.hpp"        // public TTS facade
+#include "edge_tts/api/SynthesisOptions.hpp" // transport / proxy options
 #include "edge_tts/core/TtsConfig.hpp"
 #include "edge_tts/subtitles/SrtComposer.hpp"
 ```
@@ -92,7 +92,7 @@ Avoid adding new public headers at `include/edge_tts/` root unless they are deli
 `core::TtsConfig` is **speech-only**: voice, rate, volume, pitch.  It must
 never hold transport settings (proxy URL, timeouts).
 
-`api::CommunicateOptions` is **transport-only**: proxy URL, WebSocket connect/
+`api::SynthesisOptions` is **transport-only**: proxy URL, WebSocket connect/
 read timeouts, HTTP timeout.  It must never hold speech settings.
 
 The separation keeps `TtsConfig` serializable into SSML without any network
@@ -101,32 +101,32 @@ knowledge, and lets transport configuration evolve independently.
 | What | Type | Field |
 |------|------|-------|
 | Voice, rate, volume, pitch | `core::TtsConfig` | `voice`, `rate`, `volume`, `pitch` |
-| HTTP/WebSocket proxy | `api::CommunicateOptions` | `proxy` (**parsed and validated; currently rejected at runtime** — ixwebsocket has no client-side proxy API; returns `unsupported`) |
-| WS connect timeout | `api::CommunicateOptions` | `ws_connect_timeout` (default 10 s) |
-| WS read timeout | `api::CommunicateOptions` | `ws_read_timeout` (default 60 s) |
-| HTTP timeout | `api::CommunicateOptions` | `http_timeout` (default 30 s) |
+| HTTP/WebSocket proxy | `api::SynthesisOptions` | `proxy` (**parsed and validated; currently rejected at runtime** — ixwebsocket has no client-side proxy API; returns `unsupported`) |
+| WS connect timeout | `api::SynthesisOptions` | `ws_connect_timeout` (default 10 s) |
+| WS read timeout | `api::SynthesisOptions` | `ws_read_timeout` (default 60 s) |
+| HTTP timeout | `api::SynthesisOptions` | `http_timeout` (default 30 s) |
 
-### `Communicate` constructor matrix
+### `SpeechSynthesizer` constructor matrix
 
 | Constructor | Purpose |
 |-------------|---------|
-| `Communicate(text, config = {})` | Production; default options; real networking stack |
-| `Communicate(text, config, CommunicateOptions)` | Production with explicit proxy/timeouts |
-| `Communicate(text, config, SynthesizerFn)` | Test injection; default options |
-| `Communicate(text, config, CommunicateOptions, SynthesizerFn)` | Test injection with options (seam test) |
+| `SpeechSynthesizer(text, config = {})` | Production; default options; real networking stack |
+| `SpeechSynthesizer(text, config, SynthesisOptions)` | Production with explicit proxy/timeouts |
+| `SpeechSynthesizer(text, config, SynthesizerFn)` | Test injection; default options |
+| `SpeechSynthesizer(text, config, SynthesisOptions, SynthesizerFn)` | Test injection with options (seam test) |
 
 The two production constructors own a heap-allocated `ProductionSynthesizer`
 that composes the full networking stack at construction time:
 `SystemClock → IdGenerator → EdgeServiceConfig → EdgeTokenProvider →
 EdgeProtocol → ConnectionMetadataFactory → WebSocketClient → SynthesisSession`.
 No network work is performed in the constructor — synthesis is deferred to
-`stream_sync()` / `save()` call time.
+`synthesize()` / `save()` call time.
 
 ## C++ usage example
 
 ```cpp
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 
 // Build speech configuration.
@@ -135,25 +135,25 @@ cfg.voice = "en-US-EmmaMultilingualNeural";
 cfg.rate  = "+0%";
 
 // Build transport options (optional — defaults match Python reference).
-edge_tts::api::CommunicateOptions opts;
+edge_tts::api::SynthesisOptions opts;
 // opts.proxy = "http://proxy.example.com:8080";
 // NOTE: the ixwebsocket backend does not support client-side proxy.
-// Setting proxy returns ErrorCode::unsupported from stream_sync()/save().
+// Setting proxy returns ErrorCode::unsupported from synthesize()/save().
 opts.ws_connect_timeout = std::chrono::milliseconds{10'000};
 opts.ws_read_timeout    = std::chrono::milliseconds{60'000};
 
 // Synthesize text — speech config and transport options are separate.
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
+edge_tts::api::SpeechSynthesizer c("Hello, world!", std::move(cfg), std::move(opts));
 
-// Save audio and optional SRT subtitles — reference: Communicate.save().
+// Save audio and optional SRT subtitles.
 auto result = c.save("hello.mp3", "hello.srt");
 if (!result) {
     std::cerr << result.error().what() << '\n';
 }
 
-// OR stream chunks for custom processing — reference: Communicate.stream().
-edge_tts::api::Communicate c2("Hello again!");
-auto chunks = c2.stream_sync();
+// OR stream chunks for custom processing.
+edge_tts::api::SpeechSynthesizer c2("Hello again!");
+auto chunks = c2.synthesize();
 if (chunks) {
     for (const auto& chunk : *chunks) {
         if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
@@ -162,8 +162,7 @@ if (chunks) {
 }
 ```
 
-**Note:** `stream_sync()` and `save()` are each single-use (reference:
-`Communicate.stream()` raises `RuntimeError` on a second call). Calling either
+**Note:** `synthesize()` and `save()` are each single-use. Calling either
 a second time returns `ErrorCode::invalid_state`. Inject a `SynthesizerFn` for
 unit testing without a live service connection.
 
@@ -232,7 +231,7 @@ proxy) are `Result::fail`.  Service-level interpretation — mapping HTTP 403 to
 DRM retry or HTTP 5xx to `service_error` — is the responsibility of the caller
 (`VoiceService`), not the transport.
 
-**No exceptions across the public API** — `stream_sync()`, `save()`, and all `VoiceService` methods return `Result<T>` for all recoverable failures. The only exceptions are `BadResultAccess` (programmer error: accessing a failed `Result<T>`) and `ConfigurationError` (programmer error: invalid `TtsConfig`).
+**No exceptions across the public API** — `synthesize()`, `save()`, and all `VoiceService` methods return `Result<T>` for all recoverable failures. The only exceptions are `BadResultAccess` (programmer error: accessing a failed `Result<T>`) and `ConfigurationError` (programmer error: invalid `TtsConfig`).
 
 See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 
@@ -313,7 +312,7 @@ OfflineIntegrationTests.cpp         — protocol layer: frame structure, error p
 
 1. **Frame structure**: the client sends `speech.config` (with `Path:speech.config` and `Content-Type:application/json`) then `ssml` (with `Path:ssml` and a 32-char hex `X-RequestId`) for every chunk.
 2. **Escaping correctness**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;` / `&lt;` / `&gt;` — never double-escaped, never raw.
-3. **Multi-chunk offset compensation**: a 5000-byte input splits into two chunks; boundaries from chunk 2 have their `offset_ticks` shifted by `N_audio_bytes * 8 * 10_000_000 / 48_000` (Python reference formula), verified both via `stream_sync()` chunk values and via the SRT timestamp in `save()` output.
+3. **Multi-chunk offset compensation**: a 5000-byte input splits into two chunks; boundaries from chunk 2 have their `offset_ticks` shifted by `N_audio_bytes * 8 * 10_000_000 / 48_000` (Python reference formula), verified both via `synthesize()` chunk values and via the SRT timestamp in `save()` output.
 4. **Error propagation**: an unknown `Path` header returns `protocol_error`; a transport drop injected via `set_receive_error` returns `network_error`; `turn.end` with no preceding audio returns `service_error` with a message mentioning "audio".
 
 ## Current implementation status
@@ -325,5 +324,5 @@ OfflineIntegrationTests.cpp         — protocol layer: frame structure, error p
 | `serialization` | `XmlEscaper.hpp`, `TextNormalizer.hpp`, `TextChunker.hpp` (Edge SSML chunker: normalize → XML-escape → split at 4096-byte escaped limit), `SsmlBuilder.hpp` implemented |
 | `subtitles` | `SubtitleTime`, `SubtitleCue`, `SrtComposer`, `SubMaker` implemented |
 | `communication` | `EdgeServiceConfig`, `EdgeTokenProvider`, `ConnectionMetadataFactory`, `EdgeRequestHeaders`, `EdgeProtocol` (frame builder + parser), `RetryPolicy`, `IHttpClient` / `HttpClient` (ixwebsocket impl, Pimpl), `IWebSocketClient` / `WebSocketClient` (ixwebsocket impl, Pimpl), `VoiceService`, `SynthesisSession` (per-chunk WebSocket lifecycle, 403 retry) — fully implemented. Test doubles (`FakeHttpClient`, `FakeWebSocketClient`) live in `tests/support/`. |
-| `api` | `Communicate` facade implemented: validate → chunk → synthesize (via `SynthesizerFn`) → stream/save; `FileWriter` (binary + UTF-8 text writes) implemented |
+| `api` | `SpeechSynthesizer` facade implemented: validate → chunk → synthesize (via `SynthesizerFn`) → stream/save; `FileWriter` (binary + UTF-8 text writes) implemented |
 | `media` | `ProcessRunner` (fork/execvp/waitpid, POSIX-only), `FfmpegAudioConverter` (ffmpeg/ffplay via `IProcessRunner`), `ExecutableDiscovery`, `IAudioConverter` — fully implemented |

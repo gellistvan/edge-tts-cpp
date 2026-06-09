@@ -19,8 +19,6 @@ namespace edge_tts::communication {
 
 // Orchestrates one complete synthesis session against the Edge TTS service.
 //
-// Reference: communicate.py Communicate.stream() + __stream()
-//
 // Session lifecycle per text chunk:
 //   1. Generate ConnectionMetadata (connection_id + request_id)
 //   2. Obtain Sec-MS-GEC token from EdgeTokenProvider
@@ -36,8 +34,8 @@ namespace edge_tts::communication {
 //        turn_end  → break (chunk complete)
 //        ignored   → continue
 //        error     → close WebSocket, propagate error
-//   8. Check audio was received (reference: NoAudioReceived)
-//   9. Close WebSocket (always — reference: context manager exit)
+//   8. Verify audio was received
+//   9. Close WebSocket (always)
 //  10. Repeat from 1 for the next text chunk
 //
 // No text chunking, no subtitle generation — both are caller responsibilities.
@@ -61,8 +59,7 @@ public:
     // EdgeProtocol::build_ssml_frame, which embeds it verbatim.  Passing raw
     // (unescaped) text will produce malformed SSML.
     //
-    // Each chunk opens a new WebSocket connection (matching the Python reference
-    // which calls __stream() per chunk, each opening its own ws_connect()).
+    // Each text chunk opens a new WebSocket connection.
     //
     // Returns all accumulated TtsChunk events (AudioChunk + BoundaryChunk) in
     // the order they arrived from the service.
@@ -73,10 +70,10 @@ public:
     //   - send failure             → network_error
     //   - receive failure          → network_error
     //   - parse_incoming failure   → protocol_error
-    //   - no audio received        → service_error (reference: NoAudioReceived)
+    //   - no audio received        → service_error
     //
-    // On any error, the WebSocket is closed before returning (matching Python's
-    // context manager semantics). Close errors are silently ignored.
+    // On any error, the WebSocket is closed before returning.
+    // Close errors are silently ignored.
     [[nodiscard]] common::Result<std::vector<core::TtsChunk>> synthesize(
         const core::TtsConfig&           tts_config,
         std::span<const std::string>     text_chunks);

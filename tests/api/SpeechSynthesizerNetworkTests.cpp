@@ -1,4 +1,4 @@
-// Real-network integration tests for api::Communicate.
+// Real-network integration tests for api::SpeechSynthesizer.
 //
 // These tests call the live Microsoft Edge TTS service.  They are disabled by
 // default and must NOT run in standard CI.
@@ -25,8 +25,8 @@
 // TLS requirement: ixwebsocket must be built with TLS support (USE_TLS=ON,
 // the default).  Requires a system OpenSSL installation.
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
@@ -39,8 +39,8 @@
 
 namespace fs = std::filesystem;
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::TtsConfig;
@@ -68,14 +68,14 @@ struct TempFileN {
 };
 
 // ---------------------------------------------------------------------------
-// Smoke test: stream_sync() returns non-empty audio
+// Smoke test: synthesize()() returns non-empty audio
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateNetwork, StreamSyncReturnsNonEmptyAudio) {
+TEST(CommunicateNetwork, SynthesizeReturnsNonEmptyAudio) {
     if (!network_enabled()) return;
 
-    Communicate c("Hi.", TtsConfig::defaults());
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("Hi.", TtsConfig::defaults());
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     ASSERT_FALSE(result->empty());
@@ -98,7 +98,7 @@ TEST(CommunicateNetwork, SaveWritesMp3File) {
     if (!network_enabled()) return;
 
     TempFileN mp3{"save", ".mp3"};
-    Communicate c("Test.", TtsConfig::defaults());
+    SpeechSynthesizer c("Test.", TtsConfig::defaults());
     ASSERT_TRUE(c.save(mp3.path).has_value());
 
     EXPECT_TRUE(fs::exists(mp3.path));
@@ -117,7 +117,7 @@ TEST(CommunicateNetwork, SaveWithWordBoundaryWritesSrtFile) {
 
     TtsConfig cfg = TtsConfig::defaults();
     cfg.boundary_type = edge_tts::core::BoundaryType::word;
-    Communicate c("Hello world.", cfg);
+    SpeechSynthesizer c("Hello world.", cfg);
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
     EXPECT_TRUE(fs::exists(mp3.path));
@@ -127,16 +127,16 @@ TEST(CommunicateNetwork, SaveWithWordBoundaryWritesSrtFile) {
 }
 
 // ---------------------------------------------------------------------------
-// stream_sync() with word-boundary config returns boundary chunks
+// synthesize()() with word-boundary config returns boundary chunks
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateNetwork, StreamSyncWithWordBoundaryReturnsBoundaryChunks) {
+TEST(CommunicateNetwork, SynthesizeWithWordBoundaryReturnsBoundaryChunks) {
     if (!network_enabled()) return;
 
     TtsConfig cfg = TtsConfig::defaults();
     cfg.boundary_type = edge_tts::core::BoundaryType::word;
-    Communicate c("Hello world.", cfg);
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("Hello world.", cfg);
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
 
@@ -158,10 +158,10 @@ TEST(CommunicateNetwork, StreamSyncWithWordBoundaryReturnsBoundaryChunks) {
 TEST(CommunicateNetwork, BogusProxyYieldsNetworkError) {
     if (!network_enabled()) return;
 
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://127.0.0.1:1";  // nothing listening on port 1
-    Communicate c("Hello.", TtsConfig::defaults(), opts);
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("Hello.", TtsConfig::defaults(), opts);
+    auto result = c.synthesize();
 
     // A real proxy attempt will fail at the transport level.
     // We just verify it is NOT an invalid_state or protocol_error (which would
@@ -185,8 +185,8 @@ TEST(CommunicateNetwork, ProductionConstructorCanSynthesizeWithRealStack) {
     // (not a stub), by verifying synthesis completes with non-empty audio.
     if (!network_enabled()) return;
 
-    Communicate c("Hi.", TtsConfig::defaults());
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("Hi.", TtsConfig::defaults());
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     bool has_audio = false;
@@ -200,15 +200,15 @@ TEST(CommunicateNetwork, ProductionConstructorCanSynthesizeWithRealStack) {
 }
 
 TEST(CommunicateNetwork, ProductionConstructorWithOptionsForwardsProxy) {
-    // Proves the 3-arg production constructor forwards CommunicateOptions to
+    // Proves the 3-arg production constructor forwards SynthesisOptions to
     // the transport layer.  A bogus proxy must cause a transport-level failure,
     // not an invalid_state or stub error.
     if (!network_enabled()) return;
 
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://127.0.0.1:1";
-    Communicate c("Hi.", TtsConfig::defaults(), opts);
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("Hi.", TtsConfig::defaults(), opts);
+    auto result = c.synthesize();
 
     // The call must fail with a transport error, proving the proxy was forwarded.
     // If it somehow succeeds (port 1 was open), that is also acceptable evidence.

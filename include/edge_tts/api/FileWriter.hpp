@@ -10,8 +10,7 @@ namespace edge_tts::api {
 
 // Writes media and subtitle files to disk.
 //
-// Reference: communicate.py Communicate.save() — opens audio in binary write
-// mode ("wb") and subtitle files in UTF-8 text mode ("w", encoding="utf-8").
+
 // Existing files are truncated; if the parent directory is absent the write
 // fails with an io_error Result whose context contains the path.
 //

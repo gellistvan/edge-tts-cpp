@@ -175,7 +175,7 @@ def test_installed_header_selfcontainment(
 
     failures: list[tuple[str, str]] = []
     for h in headers:
-        # e.g. edge_tts/api/Communicate.hpp
+        # e.g. edge_tts/api/SpeechSynthesizer.hpp
         rel = str(h.relative_to(include_dir))
 
         # safe filename: edge_tts_api_Communicate_hpp.cpp

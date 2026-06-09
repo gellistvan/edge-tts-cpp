@@ -13,7 +13,7 @@
 // Do not enable in CI unless the environment has reliable outbound TLS access to
 //   wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
 //
-// Reference: communicate.py Communicate.__stream() — complete per-chunk lifecycle:
+// Reference: communicate.py SpeechSynthesizer.__stream() — complete per-chunk lifecycle:
 //   1. ws_connect(url, headers=WSS_HEADERS)
 //   2. send speech.config frame
 //   3. send SSML frame
@@ -94,7 +94,6 @@ static WebSocketClientOptions make_edge_tts_options()
 
 TEST(WebSocketClientNetwork, ShortSynthesisReturnsNonEmptyAudio) {
     if (!network_enabled()) return;
-    // Reference: communicate.py Communicate.stream() with a short text.
     // One chunk → one WebSocket connection → audio frames → turn.end → close.
 
     auto cfg = default_edge_service_config();

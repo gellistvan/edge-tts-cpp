@@ -1,7 +1,7 @@
-// Tests for the production synthesizer wiring introduced in Communicate.cpp.
+// Tests for the production synthesizer wiring introduced in SpeechSynthesizer.cpp.
 //
 // These tests verify that:
-//   1. The api::Communicate production constructors call the real communication
+//   1. The api::SpeechSynthesizer production constructors call the real communication
 //      stack (SynthesisSession) rather than a stub.
 //   2. The full production composition (all real objects except the WebSocket
 //      transport) works end-to-end: text → TextChunker → SynthesisSession →
@@ -9,13 +9,13 @@
 //   3. The old hardcoded "WebSocket transport not yet implemented" error is gone.
 //
 // The seam used here is the existing SynthesizerFn injection constructor:
-//   Communicate(text, config, CommunicateOptions, SynthesizerFn)
+//   SpeechSynthesizer(text, config, SynthesisOptions, SynthesizerFn)
 // This constructor is also used internally by production constructors.
 // We wire all real production objects into the SynthesizerFn but replace
 // WebSocketClient with FakeWebSocketClient so no network calls are made.
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
@@ -40,8 +40,8 @@
 #include <variant>
 #include <vector>
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::communication::ConnectionMetadataFactory;
 using edge_tts::communication::EdgeProtocol;
@@ -72,7 +72,7 @@ static void push_session(FakeWebSocketClient& ws, const std::string& audio_data)
 //
 // Wires all real production objects (SystemClock, IdGenerator,
 // EdgeTokenProvider, EdgeProtocol, ConnectionMetadataFactory, SynthesisSession)
-// but substitutes FakeWebSocketClient for WebSocketClient.  Calls Communicate
+// but substitutes FakeWebSocketClient for WebSocketClient.  Calls SpeechSynthesizer
 // API and verifies audio chunks arrive.
 // ---------------------------------------------------------------------------
 
@@ -92,15 +92,15 @@ TEST(CommunicateProductionWiring, FullCompositionProducesAudioChunks) {
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
-    // Inject via the SynthesizerFn seam — same path Communicate uses internally.
-    Communicate c("hello world", valid_config(), CommunicateOptions{},
+    // Inject via the SynthesizerFn seam — same path SpeechSynthesizer uses internally.
+    SpeechSynthesizer c("hello world", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(result->empty());
@@ -123,14 +123,14 @@ TEST(CommunicateProductionWiring, FullCompositionAudioBytesCorrect) {
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
-    Communicate c("test text", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("test text", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
     ASSERT_FALSE(result->empty());
 
@@ -161,14 +161,14 @@ TEST(CommunicateProductionWiring, MultiChunkTextProducesAudioPerChunk) {
 
     // 5000 bytes exceeds the 4096-byte limit → at least two chunks.
     std::string long_text(5000, 'x');
-    Communicate c(long_text, valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
 
     // Both chunks should have produced audio.
@@ -179,7 +179,7 @@ TEST(CommunicateProductionWiring, MultiChunkTextProducesAudioPerChunk) {
 }
 
 TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
-    // Verify CommunicateOptions::proxy is stored and accessible when the
+    // Verify SynthesisOptions::proxy is stored and accessible when the
     // synthesizer seam is used.  The real SynthesisSession cannot inspect proxy
     // (it's owned by the WebSocketClient below it), but this confirms the options
     // are present when the synthesizer runs.
@@ -195,10 +195,10 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.proxy = "http://proxy.test:3128";
 
-    Communicate c("hello", valid_config(), opts,
+    SpeechSynthesizer c("hello", valid_config(), opts,
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
@@ -206,7 +206,7 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
         });
 
     EXPECT_EQ(c.options().proxy, opts.proxy);
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
 }
 
@@ -214,8 +214,8 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
 // Structural offline tests for the production 2-arg and 3-arg constructors.
 //
 // These tests verify the structural behavior of the production constructors
-// WITHOUT calling stream_sync() or save().  Calling either of those on a
-// production-constructed Communicate would attempt a real network connection,
+// WITHOUT calling synthesize()() or save().  Calling either of those on a
+// production-constructed SpeechSynthesizer would attempt a real network connection,
 // making the test environment-dependent.
 //
 // The actual "production constructor synthesizes correctly via the real stack"
@@ -226,35 +226,35 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
 TEST(CommunicateProductionWiring, ProductionConstructorStoresTextAndConfig) {
     // Constructing with the 2-arg form must not crash or throw, and must
     // preserve the text and config that were passed in.
-    Communicate c("hello world", valid_config());
+    SpeechSynthesizer c("hello world", valid_config());
     EXPECT_EQ(c.text(), "hello world");
     EXPECT_EQ(c.config().voice, TtsConfig::defaults().voice);
 }
 
 TEST(CommunicateProductionWiring, ProductionConstructorWithOptionsStoresOptions) {
     // The 3-arg form (text, config, options) must store options correctly.
-    // Verifies CommunicateOptions is preserved without making network calls.
-    CommunicateOptions opts;
+    // Verifies SynthesisOptions is preserved without making network calls.
+    SynthesisOptions opts;
     opts.proxy = "http://proxy.test:3128";
-    Communicate c("hello", valid_config(), opts);
+    SpeechSynthesizer c("hello", valid_config(), opts);
     EXPECT_EQ(c.options().proxy, opts.proxy);
     EXPECT_EQ(c.text(), "hello");
 }
 
 TEST(CommunicateProductionWiring, ProductionConstructorDefaultOptionsAreEmpty) {
-    Communicate c("hello", valid_config());
+    SpeechSynthesizer c("hello", valid_config());
     EXPECT_FALSE(c.options().proxy.has_value());
 }
 
 TEST(CommunicateProductionWiring, ProductionConstructorPreservesVoice) {
     TtsConfig cfg = TtsConfig::defaults();
     cfg.voice = "en-GB-RyanNeural";
-    Communicate c("test", cfg);
+    SpeechSynthesizer c("test", cfg);
     EXPECT_EQ(c.config().voice, "en-GB-RyanNeural");
 }
 
 // ---------------------------------------------------------------------------
-// Construction is lazy: no network I/O before stream_sync()/save()
+// Construction is lazy: no network I/O before synthesize()()/save()
 //
 // These tests prove that calling the production constructors — even the ones
 // that build the full real networking stack — does not open any connection.
@@ -266,21 +266,21 @@ TEST(CommunicateProductionWiring, ConstructionIsLazy_TextAccessibleWithoutNetwor
     // If the constructor attempted a real network call it would fail
     // (no live service reachable in offline tests) — the fact that this
     // returns "hello world" without error proves construction is lazy.
-    Communicate c("hello world", valid_config());
+    SpeechSynthesizer c("hello world", valid_config());
     EXPECT_EQ(c.text(), "hello world");
 }
 
 TEST(CommunicateProductionWiring, ConstructionIsLazy_ConfigAccessibleWithoutNetwork) {
     TtsConfig cfg = valid_config();
     cfg.rate = "+20%";
-    Communicate c("text", cfg);
+    SpeechSynthesizer c("text", cfg);
     EXPECT_EQ(c.config().rate, "+20%");
 }
 
 TEST(CommunicateProductionWiring, ConstructionIsLazy_OptionsAccessibleWithoutNetwork) {
-    CommunicateOptions opts;
+    SynthesisOptions opts;
     opts.ws_connect_timeout = std::chrono::milliseconds{5'000};
-    Communicate c("text", valid_config(), opts);
+    SpeechSynthesizer c("text", valid_config(), opts);
     EXPECT_EQ(c.options().ws_connect_timeout, std::chrono::milliseconds{5'000});
 }
 
@@ -311,8 +311,8 @@ TEST(CommunicateProductionWiring, NoPlaceholderError_FakeStackReturnsRealResult)
             {TtsChunk{ac}});
     };
 
-    Communicate c("hello", valid_config(), CommunicateOptions{}, std::move(syn));
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), SynthesisOptions{}, std::move(syn));
+    auto result = c.synthesize();
 
     EXPECT_TRUE(synthesizer_ran);
     ASSERT_TRUE(result.has_value());
@@ -355,7 +355,7 @@ TEST(CommunicateProductionWiring, SaveWritesAudioBytesViaFakeStack) {
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     TempFileW mp3{"save_audio", ".mp3"};
-    Communicate c("hello", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
@@ -381,7 +381,7 @@ TEST(CommunicateProductionWiring, SaveWritesNonEmptyMp3File) {
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     TempFileW mp3{"save_nonempty", ".mp3"};
-    Communicate c("test", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("test", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
@@ -407,7 +407,7 @@ TEST(CommunicateProductionWiring, SaveIsOneShotViaFakeStack) {
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
 
     TempFileW mp3{"save_oneshot", ".mp3"};
-    Communicate c("hello", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
@@ -437,14 +437,14 @@ TEST(CommunicateProductionWiring, AmpersandEscapedInSsmlOnWire) {
     push_session(fake_ws, "AUDIO");
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
-    Communicate c("cats & dogs", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("cats & dogs", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
     // Index 0 = speech.config, index 1 = SSML frame
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -465,14 +465,14 @@ TEST(CommunicateProductionWiring, AngleBracketsEscapedInSsmlOnWire) {
     push_session(fake_ws, "AUDIO");
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
-    Communicate c("a < b > c", valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c("a < b > c", valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
     EXPECT_NE(msgs[1].find("&lt;"), std::string::npos);
@@ -499,14 +499,14 @@ TEST(CommunicateProductionWiring, MultiByteUtf8PreservedInSsml) {
     // "こんにちは" — each kana character is 3 bytes in UTF-8
     const std::string japanese =
         "\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf";
-    Communicate c(japanese, valid_config(), CommunicateOptions{},
+    SpeechSynthesizer c(japanese, valid_config(), SynthesisOptions{},
         [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
             return session.synthesize(cfg, chunks);
         });
 
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
     // The UTF-8 bytes must appear verbatim in the SSML frame

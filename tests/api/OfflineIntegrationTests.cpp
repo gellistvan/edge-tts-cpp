@@ -1,4 +1,4 @@
-// Offline end-to-end integration tests: Communicate → SynthesisSession →
+// Offline end-to-end integration tests: SpeechSynthesizer → SynthesisSession →
 // EdgeProtocol → FakeWebSocketClient → FileWriter.
 //
 // These tests complement CommunicateEndToEndTests.cpp.  Where that file
@@ -9,16 +9,16 @@
 //     then ssml, with correct Path headers and well-formed X-RequestId.
 //   - Escaping correctness: "Tom & Jerry <test>" is escaped exactly once
 //     (not double-escaped on a second pass).
-//   - Multi-chunk offset compensation at the Communicate level (the second
+//   - Multi-chunk offset compensation at the SpeechSynthesizer level (the second
 //     chunk's word-boundary ticks are shifted by the audio duration of the
 //     first chunk).
 //   - Error propagation: protocol errors and no-audio responses from the
-//     fake server surface as the correct ErrorCode at the Communicate API.
+//     fake server surface as the correct ErrorCode at the SpeechSynthesizer API.
 //
 // All tests use FakeWebSocketClient — no real network, no live service.
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
@@ -45,8 +45,8 @@
 
 namespace fs = std::filesystem;
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::communication::ConnectionMetadataFactory;
 using edge_tts::communication::EdgeProtocol;
@@ -154,9 +154,9 @@ TEST(OfflineIntegration, ShortTextProducesOneAudioChunk) {
     push_session(ws, "AUDIODATA");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     int audio_count = 0;
@@ -171,9 +171,9 @@ TEST(OfflineIntegration, ShortTextAudioBytesMatchFakePayload) {
     push_session(ws, "HELLO_BYTES");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     ASSERT_FALSE(result->empty());
@@ -193,9 +193,9 @@ TEST(OfflineIntegration, SpeechConfigFrameHasSpeechConfigPath) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = ws.sent_messages();
     // Two frames per chunk: speech.config at index 0, ssml at index 1.
@@ -209,9 +209,9 @@ TEST(OfflineIntegration, SpeechConfigFrameHasContentTypeJson) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 1u);
@@ -224,9 +224,9 @@ TEST(OfflineIntegration, SsmlFrameHasSsmlPath) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -239,9 +239,9 @@ TEST(OfflineIntegration, SsmlFrameHasXRequestIdHeader) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -254,9 +254,9 @@ TEST(OfflineIntegration, SsmlFrameRequestIdIs32CharHex) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& ssml = ws.sent_messages()[1];
     const std::string key = "X-RequestId:";
@@ -281,9 +281,9 @@ TEST(OfflineIntegration, SsmlFrameBodyContainsSpeakTag) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& ssml = ws.sent_messages()[1];
     EXPECT_NE(ssml.find("<speak"), std::string::npos);
@@ -300,9 +300,9 @@ TEST(OfflineIntegration, TomAndJerryAmpersandEscapedOnce) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("Tom & Jerry <test>", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("Tom & Jerry <test>", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& ssml = ws.sent_messages()[1];
     // Must appear once-escaped: &amp; for &
@@ -317,9 +317,9 @@ TEST(OfflineIntegration, TomAndJerryAngleBracketsEscapedOnce) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("Tom & Jerry <test>", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("Tom & Jerry <test>", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& ssml = ws.sent_messages()[1];
     EXPECT_NE(ssml.find("&lt;"), std::string::npos);
@@ -338,9 +338,9 @@ TEST(OfflineIntegration, TomAndJerryRawAmpersandAbsentFromSsml) {
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("Tom & Jerry", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("Tom & Jerry", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& ssml = ws.sent_messages()[1];
     // The literal " & " (space-ampersand-space) must not appear in the frame.
@@ -362,9 +362,9 @@ TEST(OfflineIntegration, JapaneseTextPreservedVerbatimInSsml) {
         "\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf"  // こんにちは
         "\xe4\xb8\x96\xe7\x95\x8c";                                       // 世界
 
-    Communicate c(text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     EXPECT_NE(ws.sent_messages()[1].find(text), std::string::npos);
 }
@@ -378,9 +378,9 @@ TEST(OfflineIntegration, ArabicTextPreservedVerbatimInSsml) {
     // "مرحبا" — Arabic (each codepoint is 2 bytes in UTF-8)
     const std::string text = "\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7";
 
-    Communicate c(text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     EXPECT_NE(ws.sent_messages()[1].find(text), std::string::npos);
 }
@@ -398,9 +398,9 @@ TEST(OfflineIntegration, LongTextSendsTwoSpeechConfigFrames) {
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     // 2 chunks × 2 frames = 4 sent messages.
     const auto& msgs = ws.sent_messages();
@@ -419,16 +419,16 @@ TEST(OfflineIntegration, LongTextConnectsWebSocketTwice) {
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     // SynthesisSession opens one connection per text chunk.
     EXPECT_EQ(ws.connect_count(), 2);
 }
 
 // ---------------------------------------------------------------------------
-// 6. Multi-chunk offset compensation at the Communicate API level
+// 6. Multi-chunk offset compensation at the SpeechSynthesizer API level
 //
 // Reference: communicate.py __compensate_offset():
 //   offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
@@ -436,11 +436,11 @@ TEST(OfflineIntegration, LongTextConnectsWebSocketTwice) {
 // Using N = 6000 audio bytes in chunk 1:
 //   compensation = 6000 * 8 * 10_000_000 / 48_000 = 10_000_000 ticks (1 s)
 //
-// A boundary at raw offset 0 in chunk 2 must arrive at the Communicate API
+// A boundary at raw offset 0 in chunk 2 must arrive at the SpeechSynthesizer API
 // with offset_ticks == 10_000_000.
 // ---------------------------------------------------------------------------
 
-TEST(OfflineIntegration, MultiChunkOffsetCompensatedInStreamSync) {
+TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSynthesize) {
     constexpr std::size_t N = 6000;
     constexpr std::int64_t expected_comp =
         static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;  // = 10_000_000
@@ -458,9 +458,9 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInStreamSync) {
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
 
     // Locate the BoundaryChunk that came from chunk 2 (the only one).
@@ -493,7 +493,7 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSrtTimestamp) {
     TempFile srt{"comp_srt", ".srt"};
 
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
@@ -512,9 +512,9 @@ TEST(OfflineIntegration, FirstChunkBoundaryOffsetUnchanged) {
 
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
 
     for (const auto& chunk : *result) {
@@ -525,13 +525,13 @@ TEST(OfflineIntegration, FirstChunkBoundaryOffsetUnchanged) {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Protocol error from fake server propagates to Communicate caller
+// 7. Protocol error from fake server propagates to SpeechSynthesizer caller
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, UnknownPathFrameReturnsProtocolError) {
     // The fake server sends a text frame with an unknown Path — EdgeProtocol
     // must reject it with protocol_error, which bubbles up through
-    // SynthesisSession to Communicate::stream_sync().
+    // SynthesisSession to SpeechSynthesizer::synthesize()().
     Wire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_audio_frame("SOME_AUDIO"));
@@ -540,9 +540,9 @@ TEST(OfflineIntegration, UnknownPathFrameReturnsProtocolError) {
 
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code(), ErrorCode::protocol_error);
@@ -556,9 +556,9 @@ TEST(OfflineIntegration, ReceiveErrorPropagatesAsNetworkError) {
 
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code(), ErrorCode::network_error);
@@ -574,7 +574,7 @@ TEST(OfflineIntegration, ProtocolErrorPropagatesFromSave) {
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     TempFile mp3{"proto_err", ".mp3"};
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     auto result = c.save(mp3.path);
 
@@ -595,9 +595,9 @@ TEST(OfflineIntegration, NoAudioResponseReturnsServiceError) {
 
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code(), ErrorCode::service_error);
@@ -611,7 +611,7 @@ TEST(OfflineIntegration, NoAudioResponseFromSaveReturnsServiceError) {
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     TempFile mp3{"no_audio", ".mp3"};
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     auto result = c.save(mp3.path);
 
@@ -626,9 +626,9 @@ TEST(OfflineIntegration, NoAudioErrorMessageMentionsAudio) {
 
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_FALSE(result.has_value());
     // Error message must mention "audio" (reference: "No audio was received").

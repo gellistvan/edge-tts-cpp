@@ -10,9 +10,7 @@ namespace edge_tts::common {
 // Used by EdgeTokenProvider to generate the Sec-MS-GEC token.
 [[nodiscard]] std::string sha256_hex(std::string_view data);
 
-// Same as sha256_hex but returns uppercase hex — matches Python's
-//   hashlib.sha256(s.encode("ascii")).hexdigest().upper()
-// used in drm.py DRM.generate_sec_ms_gec().
+// Same as sha256_hex but returns uppercase hex.
 [[nodiscard]] std::string sha256_hex_upper(std::string_view data);
 
 } // namespace edge_tts::common

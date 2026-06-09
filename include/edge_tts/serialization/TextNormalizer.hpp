@@ -9,8 +9,6 @@ namespace edge_tts::serialization {
 
 // Normalizes raw text for safe passage into the Edge TTS pipeline.
 //
-// Python reference: remove_incompatible_characters() in communicate.py
-// (called before xml_escape at communicate.py line 350)
 //
 // Normalisation steps (in order):
 //   1. Validate UTF-8.  Returns an error for any invalid byte sequence.

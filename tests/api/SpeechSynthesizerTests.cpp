@@ -1,4 +1,4 @@
-#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/common/Clock.hpp"
@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-using edge_tts::api::Communicate;
+using edge_tts::api::SpeechSynthesizer;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::communication::ConnectionMetadata;
 using edge_tts::communication::EdgeProtocol;
@@ -125,15 +125,15 @@ struct FileGuard {
 // Constructor / accessors
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, ConstructorStoresText) {
-    Communicate c("hello world", valid_config(), make_fake({}));
+TEST(SpeechSynthesizer, ConstructorStoresText) {
+    SpeechSynthesizer c("hello world", valid_config(), make_fake({}));
     EXPECT_EQ(c.text(), "hello world");
 }
 
-TEST(Communicate, ConstructorStoresConfig) {
+TEST(SpeechSynthesizer, ConstructorStoresConfig) {
     TtsConfig cfg = valid_config();
     cfg.voice = "en-GB-RyanNeural";
-    Communicate c("hello", cfg, make_fake({}));
+    SpeechSynthesizer c("hello", cfg, make_fake({}));
     EXPECT_EQ(c.config().voice, "en-GB-RyanNeural");
 }
 
@@ -141,17 +141,17 @@ TEST(Communicate, ConstructorStoresConfig) {
 // Invalid config
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, InvalidConfigReturnsErrorOnStream) {
-    Communicate c("hello", invalid_config(), make_fake({}));
-    auto r = c.stream_sync();
+TEST(SpeechSynthesizer, InvalidConfigReturnsErrorOnStream) {
+    SpeechSynthesizer c("hello", invalid_config(), make_fake({}));
+    auto r = c.synthesize();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
 }
 
-TEST(Communicate, InvalidConfigReturnsErrorOnSave) {
+TEST(SpeechSynthesizer, InvalidConfigReturnsErrorOnSave) {
     const fs::path p = tmp_path("inv_cfg_save.mp3");
     FileGuard g{p};
-    Communicate c("hello", invalid_config(), make_fake({}));
+    SpeechSynthesizer c("hello", invalid_config(), make_fake({}));
     auto r = c.save(p);
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
@@ -161,17 +161,17 @@ TEST(Communicate, InvalidConfigReturnsErrorOnSave) {
 // Empty text
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, EmptyTextReturnsEmptyChunks) {
-    // Reference: empty texts generator → stream yields nothing.
-    Communicate c("", valid_config(), make_fake({{make_audio("audio")}}));
-    auto r = c.stream_sync();
+TEST(SpeechSynthesizer, EmptyTextReturnsEmptyChunks) {
+    // Empty text produces no audio chunks.
+    SpeechSynthesizer c("", valid_config(), make_fake({{make_audio("audio")}}));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(r->empty());
 }
 
-TEST(Communicate, WhitespaceOnlyTextReturnsEmptyChunks) {
-    Communicate c("   \n\t  ", valid_config(), make_fake({{make_audio("audio")}}));
-    auto r = c.stream_sync();
+TEST(SpeechSynthesizer, WhitespaceOnlyTextReturnsEmptyChunks) {
+    SpeechSynthesizer c("   \n\t  ", valid_config(), make_fake({{make_audio("audio")}}));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(r->empty());
 }
@@ -180,29 +180,29 @@ TEST(Communicate, WhitespaceOnlyTextReturnsEmptyChunks) {
 // Text chunking
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, ShortTextProducesSingleChunk) {
+TEST(SpeechSynthesizer, ShortTextProducesSingleChunk) {
     CapturingSynthesizer cap;
-    Communicate c("Hello world.", valid_config(), cap.make());
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("Hello world.", valid_config(), cap.make());
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(cap.received_chunks.size(), 1u);
 }
 
-TEST(Communicate, LongTextIsChunked) {
+TEST(SpeechSynthesizer, LongTextIsChunked) {
     // Build text that exceeds the 4096-byte chunk limit so it must be split.
     std::string long_text(5000, 'A');
     CapturingSynthesizer cap;
-    Communicate c(long_text, valid_config(), cap.make());
-    auto r = c.stream_sync();
+    SpeechSynthesizer c(long_text, valid_config(), cap.make());
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(cap.received_chunks.size() > 1u);
 }
 
-TEST(Communicate, ChunksAreXmlEscaped) {
+TEST(SpeechSynthesizer, ChunksAreXmlEscaped) {
     // Text containing XML-special chars must be escaped before reaching the synthesizer.
     CapturingSynthesizer cap;
-    Communicate c("hello & world", valid_config(), cap.make());
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("hello & world", valid_config(), cap.make());
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_FALSE(cap.received_chunks.empty());
     // The chunk must contain &amp; not &
@@ -210,13 +210,13 @@ TEST(Communicate, ChunksAreXmlEscaped) {
     EXPECT_NE(chunk.find("&amp;"), std::string::npos);
 }
 
-TEST(Communicate, PreEscapedChunksProduceNoDoubleEscapingInSsml) {
-    // Full pipeline regression: Communicate → TextChunker → EdgeProtocol.
+TEST(SpeechSynthesizer, PreEscapedChunksProduceNoDoubleEscapingInSsml) {
+    // Full pipeline regression: SpeechSynthesizer → TextChunker → EdgeProtocol.
     // "Tom & Jerry" must appear as "&amp;" exactly once in the final SSML,
     // never as "&amp;amp;" (which would indicate double-escaping).
     CapturingSynthesizer cap;
-    Communicate c("Tom & Jerry", valid_config(), cap.make());
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("Tom & Jerry", valid_config(), cap.make());
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     ASSERT_EQ(cap.received_chunks.size(), 1u);
 
@@ -241,39 +241,38 @@ TEST(Communicate, PreEscapedChunksProduceNoDoubleEscapingInSsml) {
 }
 
 // ---------------------------------------------------------------------------
-// stream_sync returns audio and boundary chunks
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, StreamReturnsAudioChunks) {
+TEST(SpeechSynthesizer, StreamReturnsAudioChunks) {
     std::vector<TtsChunk> fake{make_audio("mp3data")};
-    Communicate c("hello", valid_config(), make_fake(fake));
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(r->size(), 1u);
     EXPECT_TRUE(edge_tts::core::is_audio(r->at(0)));
 }
 
-TEST(Communicate, StreamReturnsBoundaryChunks) {
+TEST(SpeechSynthesizer, StreamReturnsBoundaryChunks) {
     std::vector<TtsChunk> fake{
         make_audio("mp3data"),
         TtsChunk{make_boundary("hello")}};
-    Communicate c("hello", valid_config(), make_fake(fake));
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(r->size(), 2u);
     EXPECT_TRUE(edge_tts::core::is_audio(r->at(0)));
     EXPECT_TRUE(edge_tts::core::is_boundary(r->at(1)));
 }
 
-TEST(Communicate, StreamReturnsMixedChunksInOrder) {
+TEST(SpeechSynthesizer, StreamReturnsMixedChunksInOrder) {
     std::vector<TtsChunk> fake{
         TtsChunk{make_audio("first")},
         TtsChunk{make_boundary("word1", 0, 5'000'000)},
         TtsChunk{make_audio("second")},
         TtsChunk{make_boundary("word2", 5'000'000, 5'000'000)},
     };
-    Communicate c("some text", valid_config(), make_fake(fake));
-    auto r = c.stream_sync();
+    SpeechSynthesizer c("some text", valid_config(), make_fake(fake));
+    auto r = c.synthesize();
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(r->size(), 4u);
     EXPECT_TRUE(edge_tts::core::is_audio(r->at(0)));
@@ -286,7 +285,7 @@ TEST(Communicate, StreamReturnsMixedChunksInOrder) {
 // save() — media file
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, SaveWritesMediaBytesInOrder) {
+TEST(SpeechSynthesizer, SaveWritesMediaBytesInOrder) {
     // Two audio chunks: bytes must be concatenated in arrival order.
     std::vector<TtsChunk> fake{
         TtsChunk{make_audio("PART1")},
@@ -296,7 +295,7 @@ TEST(Communicate, SaveWritesMediaBytesInOrder) {
     const fs::path mp = tmp_path("save_media.mp3");
     FileGuard gm{mp};
 
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     auto r = c.save(mp);
     EXPECT_TRUE(r.has_value());
 
@@ -305,7 +304,7 @@ TEST(Communicate, SaveWritesMediaBytesInOrder) {
     EXPECT_EQ(content, "PART1PART2");
 }
 
-TEST(Communicate, SaveNoSubtitlePathSkipsSubtitleFile) {
+TEST(SpeechSynthesizer, SaveNoSubtitlePathSkipsSubtitleFile) {
     std::vector<TtsChunk> fake{TtsChunk{make_audio("audio")}};
     const fs::path mp = tmp_path("save_no_srt.mp3");
     FileGuard gm{mp};
@@ -314,7 +313,7 @@ TEST(Communicate, SaveNoSubtitlePathSkipsSubtitleFile) {
     const fs::path srt_path = tmp_path("save_no_srt.srt");
     fs::remove(srt_path);
 
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     auto r = c.save(mp);
     EXPECT_TRUE(r.has_value());
     EXPECT_FALSE(fs::exists(srt_path));
@@ -324,7 +323,7 @@ TEST(Communicate, SaveNoSubtitlePathSkipsSubtitleFile) {
 // save() — subtitle file
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, SaveWritesSubtitleFileWhenPathGiven) {
+TEST(SpeechSynthesizer, SaveWritesSubtitleFileWhenPathGiven) {
     // Feed a boundary chunk so SubMaker has something to write.
     std::vector<TtsChunk> fake{
         TtsChunk{make_audio("mp3bytes")},
@@ -336,7 +335,7 @@ TEST(Communicate, SaveWritesSubtitleFileWhenPathGiven) {
     FileGuard gm{mp};
     FileGuard gs{srt};
 
-    Communicate c("Hello world", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("Hello world", valid_config(), make_fake(fake));
     auto r = c.save(mp, srt);
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(fs::exists(srt));
@@ -347,7 +346,7 @@ TEST(Communicate, SaveWritesSubtitleFileWhenPathGiven) {
     EXPECT_NE(content.find("-->"), std::string::npos);
 }
 
-TEST(Communicate, SaveWithNoBoundariesProducesEmptySrt) {
+TEST(SpeechSynthesizer, SaveWithNoBoundariesProducesEmptySrt) {
     // Audio only; SubMaker produces an empty (or minimal) SRT.
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3bytes")}};
 
@@ -356,7 +355,7 @@ TEST(Communicate, SaveWithNoBoundariesProducesEmptySrt) {
     FileGuard gm{mp};
     FileGuard gs{srt};
 
-    Communicate c("Hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("Hello", valid_config(), make_fake(fake));
     auto r = c.save(mp, srt);
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(fs::exists(srt));
@@ -366,40 +365,40 @@ TEST(Communicate, SaveWithNoBoundariesProducesEmptySrt) {
 // Error propagation
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, SessionErrorPropagatesFromStream) {
-    Communicate c("hello", valid_config(),
+TEST(SpeechSynthesizer, SessionErrorPropagatesFromStream) {
+    SpeechSynthesizer c("hello", valid_config(),
                   make_failing(ErrorCode::network_error, "connection refused"));
-    auto r = c.stream_sync();
+    auto r = c.synthesize();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::network_error);
 }
 
-TEST(Communicate, SessionErrorPropagatesFromSave) {
+TEST(SpeechSynthesizer, SessionErrorPropagatesFromSave) {
     const fs::path mp = tmp_path("sess_err_save.mp3");
-    Communicate c("hello", valid_config(),
+    SpeechSynthesizer c("hello", valid_config(),
                   make_failing(ErrorCode::service_error, "no audio received"));
     auto r = c.save(mp);
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::service_error);
 }
 
-TEST(Communicate, FileErrorPropagatesFromSave) {
+TEST(SpeechSynthesizer, FileErrorPropagatesFromSave) {
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3bytes")}};
     // Write to a path whose parent directory does not exist.
     const fs::path bad_mp = tmp_path("no_such_dir/comm.mp3");
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     auto r = c.save(bad_mp);
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::io_error);
 }
 
-TEST(Communicate, SubtitleFileErrorPropagatesFromSave) {
+TEST(SpeechSynthesizer, SubtitleFileErrorPropagatesFromSave) {
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3bytes")}};
     const fs::path mp     = tmp_path("srt_err.mp3");
     const fs::path bad_srt = tmp_path("no_such_dir/sub.srt");
     FileGuard gm{mp};
 
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     auto r = c.save(mp, bad_srt);
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::io_error);
@@ -409,24 +408,24 @@ TEST(Communicate, SubtitleFileErrorPropagatesFromSave) {
 // Single-use stream behavior
 // ---------------------------------------------------------------------------
 
-TEST(Communicate, StreamSyncIsSingleUse) {
-    // Reference: Communicate.stream() raises RuntimeError on second call.
-    Communicate c("hello", valid_config(), make_fake({{make_audio("mp3")}}));
-    auto r1 = c.stream_sync();
+TEST(SpeechSynthesizer, SynthesizeIsSingleUse) {
+    // synthesize() is single-use.
+    SpeechSynthesizer c("hello", valid_config(), make_fake({{make_audio("mp3")}}));
+    auto r1 = c.synthesize();
     EXPECT_TRUE(r1.has_value());
 
-    auto r2 = c.stream_sync();
+    auto r2 = c.synthesize();
     EXPECT_FALSE(r2.has_value());
     EXPECT_EQ(r2.error().code(), ErrorCode::invalid_state);
 }
 
-TEST(Communicate, SaveIsSingleUse) {
+TEST(SpeechSynthesizer, SaveIsSingleUse) {
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3")}};
     const fs::path mp1 = tmp_path("single_use1.mp3");
     const fs::path mp2 = tmp_path("single_use2.mp3");
     FileGuard g1{mp1};
 
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     auto r1 = c.save(mp1);
     EXPECT_TRUE(r1.has_value());
 
@@ -435,15 +434,15 @@ TEST(Communicate, SaveIsSingleUse) {
     EXPECT_EQ(r2.error().code(), ErrorCode::invalid_state);
 }
 
-TEST(Communicate, SaveThenStreamIsSingleUse) {
+TEST(SpeechSynthesizer, SaveThenStreamIsSingleUse) {
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3")}};
     const fs::path mp = tmp_path("save_then_stream.mp3");
     FileGuard g{mp};
 
-    Communicate c("hello", valid_config(), make_fake(fake));
+    SpeechSynthesizer c("hello", valid_config(), make_fake(fake));
     (void)c.save(mp);
 
-    auto r = c.stream_sync();
+    auto r = c.synthesize();
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_state);
 }

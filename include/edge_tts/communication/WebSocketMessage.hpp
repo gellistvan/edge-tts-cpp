@@ -8,7 +8,6 @@ namespace edge_tts::communication {
 
 // A raw incoming WebSocket message, classified by frame type.
 //
-// Reference: communicate.py __stream() — aiohttp.WSMsgType.TEXT / BINARY
 //
 // The parser only deals with text and binary; ERROR frames are surfaced by
 // the transport layer before calling parse_incoming().

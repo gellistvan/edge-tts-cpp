@@ -70,8 +70,8 @@ def test_umbrella_has_pragma_once() -> None:
 
 REQUIRED_INCLUDES = [
     ("edge_tts/version.hpp",              "version macros and constexpr values"),
-    ("edge_tts/api/Communicate.hpp",      "synthesis facade"),
-    ("edge_tts/api/CommunicateOptions.hpp", "transport options"),
+    ("edge_tts/api/SpeechSynthesizer.hpp",      "synthesis facade"),
+    ("edge_tts/api/SynthesisOptions.hpp", "transport options"),
     ("edge_tts/core/TtsConfig.hpp",       "speech configuration"),
     ("edge_tts/common/Error.hpp",         "error types"),
     ("edge_tts/common/Result.hpp",        "result propagation"),

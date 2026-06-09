@@ -1,6 +1,5 @@
 // Tests for RetryPolicy and its integration with SynthesisSession.
 //
-// Reference: communicate.py Communicate.stream() try/except block:
 //   - Only ClientResponseError(status=403) triggers a retry.
 //   - Exactly one retry per chunk.
 //   - All other errors propagate immediately.

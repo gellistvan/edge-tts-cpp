@@ -527,7 +527,7 @@ Key invariants:
 **XML-escaping contract across the pipeline:**
 
 ```
-api::Communicate::run_synthesis()
+api::SpeechSynthesizer::run_pipeline()
   → serialization::TextChunker::chunk()     ← normalize + xml_escape + split
       → text_chunks (XML-escaped strings)
   → SynthesisSession::synthesize(tts_config, text_chunks)

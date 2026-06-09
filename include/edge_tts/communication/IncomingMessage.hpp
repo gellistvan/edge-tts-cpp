@@ -8,7 +8,6 @@ namespace edge_tts::communication {
 
 // Classifies a parsed incoming Edge TTS WebSocket message.
 //
-// Reference: communicate.py __stream() yield paths
 //
 //   audio     → binary frame with Path:audio, Content-Type:audio/mpeg
 //   boundary  → text frame with Path:audio.metadata (word/sentence boundary)

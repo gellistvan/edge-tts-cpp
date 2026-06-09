@@ -12,7 +12,6 @@ namespace edge_tts::subtitles {
 
 // Accumulates BoundaryChunk events into SubtitleCue values and produces SRT text.
 //
-// Reference: submaker.py SubMaker
 //
 // Behaviour:
 //   - feed() accepts WordBoundary and SentenceBoundary chunks.
@@ -21,7 +20,7 @@ namespace edge_tts::subtitles {
 //   - The SubtitleCue time range is [offset_ticks, offset_ticks + duration_ticks)
 //     converted via SubtitleTime::from_edge_ticks().
 //   - The cue text is stored verbatim — MetadataJsonParser has already
-//     XML-unescaped it (reference: unescape() in communicate.py).
+//     XML-unescaped it.
 //   - to_srt() delegates to SrtComposer::compose(); it does NOT reset state.
 //     Calling feed() after to_srt() continues to accumulate new cues (reference
 //     behaviour: get_srt() is idempotent with respect to the cue list).

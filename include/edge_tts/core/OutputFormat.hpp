@@ -9,10 +9,8 @@ namespace edge_tts::core {
 
 // The audio output format sent in the WebSocket speech.config message.
 //
-// Python reference behavior (communicate.py line 438):
 //   "outputFormat":"audio-24khz-48kbitrate-mono-mp3"
 //
-// The format is hardcoded in the Python reference — no CLI flag, no
 // constructor parameter.  from_string() therefore accepts only values from the
 // known supported set and rejects everything else.
 //
@@ -20,7 +18,7 @@ namespace edge_tts::core {
 // OutputFormat::known_formats() and documented in REFERENCE_BEHAVIOR.md.
 class OutputFormat {
 public:
-    // Returns the default format used by the Python reference:
+    // Returns the default output format:
     // "audio-24khz-48kbitrate-mono-mp3"
     [[nodiscard]] static OutputFormat default_format();
 
