@@ -67,6 +67,7 @@ what "ready to release" means for each capability area.
 | Consumer examples | **Done** — `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build and link correctly; verified by `edge_tts_consumer_examples_tests` in CTest |
 | Package versioning | **Done** — `project(edge_tts_cpp VERSION 0.1.0)` is the single source of truth; `version.hpp` generated at configure time with `EDGE_TTS_CPP_VERSION_*` macros and `edge_tts::version_*` constexpr values; `SameMajorVersion` CMake compatibility; `edge_tts_package_version_tests` CTest validates macros, find_package version requests, and README consistency |
 | Linkage mode | **Static-only (documented)** — all `edge_tts_*` modules use explicit `STATIC` in `add_library()`; `BUILD_SHARED_LIBS=ON` is ignored; `edge_tts_linkage_mode_tests` CTest verifies static artifacts, BUILD_SHARED_LIBS override behavior, and both add_subdirectory and find_package consumers; documented in `docs/CONSUMING.md` and `docs/DEPENDENCIES.md`; shared library support not provided (no symbol-visibility infrastructure, no Windows DLL CI) |
+| Dependency-consumer readiness | **Done** — both add_subdirectory and find_package integration modes are fully tested; all 7 consumer user stories (submodule link, install+find_package, umbrella header, no-CLI synthesis, no-fakes-in-install, offline tests, proxy error) verified by `edge_tts_consumer_readiness_tests` CTest; dependency surface is clean (`edge_tts::tts` → `edge_tts::api` only, no cli/media/test-support leakage); consumer examples tested end-to-end; README has a dedicated "Use as a dependency" section |
 
 ---
 
@@ -87,6 +88,7 @@ Before tagging a release:
 7d. Verify consumer examples: `python3 tests/cmake/test_consumer_examples.py` passes — both `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build cleanly.
 7e. Verify package versioning: `python3 tests/cmake/test_package_version.py` passes — version.hpp macros match CMake version, find_package version constraints work, README mentions the version.
 7f. Verify linkage mode: `python3 tests/cmake/test_linkage_mode.py` passes — static archives produced by default and with BUILD_SHARED_LIBS=ON; consumer add_subdirectory and find_package builds link correctly.
+7g. Verify dependency-consumer readiness: `python3 tests/tools/test_consumer_readiness.py` passes — all 7 user stories covered, dependency surface clean, documentation cross-references valid, all test scripts registered.
 8. Update version in `CMakeLists.txt` `project()` call and `README.md` version badge.
 9. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
 

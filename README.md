@@ -6,6 +6,66 @@ A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Py
 
 Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
 
+## Use as a dependency
+
+edge-tts-cpp is ready to consume as a C++ library.  Two integration paths are
+supported and both are fully tested:
+
+### Option A — add_subdirectory (vendored submodule)
+
+```cmake
+# Set options before add_subdirectory:
+set(EDGE_TTS_INSTALL    OFF CACHE BOOL "" FORCE)
+set(EDGE_TTS_BUILD_APPS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(path/to/edge-tts-cpp ${CMAKE_CURRENT_BINARY_DIR}/edge-tts-cpp EXCLUDE_FROM_ALL)
+
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+Initialize nested submodules first (or set `EDGE_TTS_FETCH_DEPS=ON`):
+
+```bash
+git submodule update --init --recursive path/to/edge-tts-cpp
+```
+
+### Option B — install + find_package
+
+```bash
+cmake -S path/to/edge-tts-cpp -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build && cmake --install build
+```
+
+```cmake
+find_package(edge_tts_cpp CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+### In C++
+
+```cpp
+#include <edge_tts/edge_tts.hpp>   // umbrella header — full stable API
+
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+
+edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), {});
+auto result = tts.save("hello.mp3", "hello.srt");
+if (!result) std::cerr << result.error().what() << '\n';
+```
+
+`edge_tts::tts` carries all transitive link dependencies (static archives,
+ixwebsocket, C++20 feature requirement, include paths).  No need to list any
+of them manually.
+
+> **Note:** proxy support is not functional — the ixwebsocket backend returns
+> `ErrorCode::unsupported` if `CommunicateOptions::proxy` is set.
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration guide,
+and [`examples/`](examples/) for ready-to-copy project templates.
+
+---
+
 ## Goals
 
 - Modern C++20/23 style.

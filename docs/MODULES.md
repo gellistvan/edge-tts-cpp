@@ -438,6 +438,23 @@ Stable headers additionally must:
 
 ## Public consumer targets
 
+### Quick reference
+
+| CMake target | `#include` | What it gives you | Exported? |
+|---|---|---|---|
+| `edge_tts::tts` | `<edge_tts/edge_tts.hpp>` | **Recommended entry point.** Carries all synthesis deps transitively. | Yes |
+| `edge_tts::api` | `<edge_tts/api/Communicate.hpp>` | `Communicate`, `FileWriter`, `CommunicateOptions`. | Yes |
+| `edge_tts::core` | `<edge_tts/core/TtsConfig.hpp>` | `TtsConfig`, `Voice`, `TtsChunk`. | Yes |
+| `edge_tts::common` | `<edge_tts/common/Result.hpp>` | `Result<T>`, `ErrorCode`, utilities. | Yes |
+| `edge_tts::subtitle` | `<edge_tts/subtitles/SubMaker.hpp>` | `SubMaker`, SRT types. | Yes |
+| `edge_tts::communication` | `<edge_tts/communication/>` | WebSocket/HTTP transport (advanced). | Yes |
+| `edge_tts::serialization` | `<edge_tts/serialization/>` | Protocol framing, SSML (advanced). | Yes |
+| `edge_tts::cli` | — | CLI argument parsing. **Not exported.** App-layer only. | No |
+| `edge_tts::media` | — | ffmpeg/ffplay runner. **Not exported.** App-layer only. | No |
+
+Consumers should link only `edge_tts::tts` unless they have a specific reason
+to depend on a lower-level module.
+
 ### Umbrella header
 
 The recommended way to use edge-tts-cpp as a dependency is through the single
