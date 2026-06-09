@@ -15,7 +15,7 @@ what "ready to release" means for each capability area.
 
 | Label | Meaning |
 |-------|---------|
-| **Implemented** | Feature exists, has tests, matches the Python reference. |
+| **Implemented** | Feature exists and has tests. |
 | **Tested offline** | Deterministic tests run in the default `ctest` suite with no live service. |
 | **Tested live** | Network tests exist and pass under `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`. |
 | **Integration-ready** | Public API is stable; breaking changes require a semver bump. |
@@ -27,18 +27,18 @@ what "ready to release" means for each capability area.
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| Text-to-speech synthesis (`Communicate`) | **Implemented · Tested offline** | `api::Communicate` mirrors Python `Communicate`. Offline tests in `edge_tts_api_tests`. |
-| Streaming audio chunks (`stream_sync`) | **Implemented · Tested offline** | |
+| Text-to-speech synthesis (`SpeechSynthesizer`) | **Implemented · Tested offline** | `api::SpeechSynthesizer`. Offline tests in `edge_tts_api_tests`. |
+| Streaming audio chunks (`synthesize`) | **Implemented · Tested offline** | |
 | Save to file (`save`) | **Implemented · Tested offline** | MP3 + SRT written atomically. |
-| Subtitle generation (SRT) | **Implemented · Tested offline** | `SubMaker` + `SrtComposer` match Python reference output. |
+| Subtitle generation (SRT) | **Implemented · Tested offline** | `SubMaker` + `SrtComposer`. |
 | Voice list (`VoiceService`) | **Implemented · Tested offline** | Fetches and parses Edge TTS voice list; client-side filtering. |
 | Voice list filtering | **Implemented · Tested offline** | `VoiceFilter` supports locale, gender, short_name. |
 | DRM token (`Sec-MS-GEC`) | **Implemented · Tested offline** | `EdgeTokenProvider` — SHA-256, 5-minute rounding, Windows epoch. |
-| DRM 403 retry | **Implemented · Tested offline** | One retry with clock-skew correction, matching Python behavior. |
+| DRM 403 retry | **Implemented · Tested offline** | One retry with clock-skew correction. |
 | Multi-chunk long text | **Implemented · Tested offline** | `serialization::TextChunker` normalizes, XML-escapes, and splits at the 4096-byte escaped-length limit. |
 | `edge-tts` CLI | **Implemented · Tested offline** | Matches Python `edge-tts` option surface (see `docs/CLI_COMPATIBILITY.md`). |
 | `edge-playback` CLI | **Implemented · Tested offline** | Temp-file lifecycle, proxy forwarding, error on unsupported options. |
-| Proxy support | **Partial** | `CommunicateOptions::proxy` is parsed and validated at the CLI/API layer; the ixwebsocket backend has no client-side proxy API and explicitly returns `ErrorCode::unsupported` if a proxy is set. Proxy is not functional end-to-end. |
+| Proxy support | **Partial** | `SynthesisOptions::proxy` is parsed and validated at the CLI/API layer; the ixwebsocket backend has no client-side proxy API and explicitly returns `ErrorCode::unsupported` if a proxy is set. Proxy is not functional end-to-end. |
 | ffmpeg integration | **Implemented · Tested offline** | `FfmpegAudioConverter` via injected `IProcessRunner`; real invocations not run in CI. |
 | Windows build | **Partial** | CMake guards POSIX `ProcessRunner`; `FakeProcessRunner` and protocol code compile. Full Windows CI not yet in place. |
 | Live network tests | **Tested live** | Gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`; not run in default CI. |
@@ -97,6 +97,6 @@ Before tagging a release:
 ## Known limitations
 
 - **Windows:** `ProcessRunner` (POSIX fork/exec) is excluded. `edge-playback` cannot spawn `ffplay` on Windows without a Win32 `CreateProcess` implementation. Everything else compiles.
-- **Proxy:** Recognized and validated at parse time, propagated into `CommunicateOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
+- **Proxy:** Recognized and validated at parse time, propagated into `SynthesisOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
 - **Rate limiting:** No client-side rate limiter; matches Python behavior (no limiter there either).
 - **Static-only builds:** Shared library builds (`BUILD_SHARED_LIBS=ON`) are explicitly unsupported. All `edge_tts_*` modules are always compiled as static archives. No symbol-visibility (`EDGE_TTS_API`) infrastructure exists, and Windows DLL export/import has not been tested. `BUILD_SHARED_LIBS=ON` is silently ignored — static archives are produced regardless.

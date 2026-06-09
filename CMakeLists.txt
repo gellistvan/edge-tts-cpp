@@ -125,7 +125,7 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME api
     SOURCES
-        src/api/Communicate.cpp
+        src/api/SpeechSynthesizer.cpp
         src/api/FileWriter.cpp
     PUBLIC_DEPS
         edge_tts::communication

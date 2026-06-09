@@ -150,8 +150,8 @@ def test_story3_umbrella_header() -> None:
 
     # Must include stable API headers.
     required_includes = [
-        "edge_tts/api/Communicate.hpp",
-        "edge_tts/api/CommunicateOptions.hpp",
+        "edge_tts/api/SpeechSynthesizer.hpp",
+        "edge_tts/api/SynthesisOptions.hpp",
         "edge_tts/core/TtsConfig.hpp",
         "edge_tts/common/Result.hpp",
         "edge_tts/common/Error.hpp",
@@ -340,13 +340,13 @@ def test_story5_no_fakes_in_install() -> None:
 def test_story6_offline_consumer_tests() -> None:
     """A developer can run offline consumer tests without live Edge services."""
 
-    # Consumer example main.cpp files must not call save() or stream_sync()
+    # Consumer example main.cpp files must not call save() or synthesize()
     # unconditionally (network calls should be commented out or guarded).
     for example_dir in ("consumer_add_subdirectory", "consumer_find_package"):
         main_cpp = REPO / "examples" / example_dir / "main.cpp"
         content = read(main_cpp)
         # The real calls should be inside commented-out blocks.
-        # Find uncommented calls to save() or stream_sync().
+        # Find uncommented calls to save() or synthesize().
         # Strip block comments and line comments, then check.
         # Simple heuristic: lines that start with // are comments.
         active_lines = [
@@ -356,11 +356,11 @@ def test_story6_offline_consumer_tests() -> None:
         active_code = "\n".join(active_lines)
         if ".save(" in active_code or ".stream_sync(" in active_code:
             fail(
-                f"examples/{example_dir}/main.cpp calls save() or stream_sync() "
+                f"examples/{example_dir}/main.cpp calls save() or synthesize() "
                 "outside a commented block. Consumer examples must not make live "
                 "network calls during automated testing."
             )
-    ok("Story 6: consumer example main.cpp files do not call save()/stream_sync() unconditionally")
+    ok("Story 6: consumer example main.cpp files do not call save()/synthesize() unconditionally")
 
     # Consumer test scripts disable apps (which need networking).
     for script_name in (
@@ -403,20 +403,20 @@ def test_story6_offline_consumer_tests() -> None:
 def test_story7_proxy_error() -> None:
     """A developer gets a clear error when using unsupported proxy behavior."""
 
-    # CommunicateOptions.hpp must declare the proxy field.
-    opts_header = REPO / "include" / "edge_tts" / "api" / "CommunicateOptions.hpp"
+    # SynthesisOptions.hpp must declare the proxy field.
+    opts_header = REPO / "include" / "edge_tts" / "api" / "SynthesisOptions.hpp"
     content = read(opts_header)
     if "proxy" not in content:
-        fail("CommunicateOptions.hpp does not have a proxy field")
-    ok("Story 7: CommunicateOptions.hpp declares proxy field")
+        fail("SynthesisOptions.hpp does not have a proxy field")
+    ok("Story 7: SynthesisOptions.hpp declares proxy field")
 
     # The proxy field documentation must mention unsupported / ErrorCode::unsupported.
     if "unsupported" not in content:
         fail(
-            "CommunicateOptions.hpp proxy documentation does not mention 'unsupported'.\n"
+            "SynthesisOptions.hpp proxy documentation does not mention 'unsupported'.\n"
             "Consumers must be warned that proxy returns ErrorCode::unsupported."
         )
-    ok("Story 7: CommunicateOptions.hpp documents proxy as unsupported at runtime")
+    ok("Story 7: SynthesisOptions.hpp documents proxy as unsupported at runtime")
 
     # CONSUMING.md has a proxy section.
     consuming = read(REPO / "docs" / "CONSUMING.md")

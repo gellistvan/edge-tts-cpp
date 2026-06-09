@@ -125,7 +125,6 @@ TEST(SynthesisSession, ConnectsTwiceForTwoChunks) {
 
 // ---------------------------------------------------------------------------
 // Sends speech.config before SSML for each chunk
-// Reference: send_command_request() then send_ssml_request()
 // ---------------------------------------------------------------------------
 
 TEST(SynthesisSession, SendsSpeechConfigBeforeSsml) {
@@ -424,7 +423,6 @@ TEST(SynthesisSession, MalformedIncomingPropagatesError) {
 
 // ---------------------------------------------------------------------------
 // No audio before turn.end produces service_error
-// Reference: communicate.py raise NoAudioReceived(...)
 // ---------------------------------------------------------------------------
 
 TEST(SynthesisSession, NoAudioBeforeTurnEndProducesServiceError) {
@@ -442,7 +440,6 @@ TEST(SynthesisSession, NoAudioBeforeTurnEndProducesServiceError) {
 
 // ---------------------------------------------------------------------------
 // WebSocket URL contains ConnectionId from metadata
-// Reference: f"{WSS_URL}&ConnectionId={connect_id()}..."
 // ---------------------------------------------------------------------------
 
 TEST(SynthesisSession, ConnectUrlContainsConnectionId) {
@@ -489,7 +486,6 @@ TEST(SynthesisSession, EmptyChunksReturnsEmpty) {
 // ---------------------------------------------------------------------------
 // Offset compensation across multiple chunks
 //
-// Reference: communicate.py __compensate_offset()
 //   offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
 //
 // Boundaries in the first chunk get compensation = 0.
@@ -708,8 +704,6 @@ TEST(OffsetCompensation, ThreeChunksCumulativeCompensation) {
 // ---------------------------------------------------------------------------
 // 403 DRM retry behavior
 //
-// Reference: communicate.py Communicate.stream():
-//   except aiohttp.ClientResponseError as e:
 //       if e.status != 403: raise
 //       DRM.handle_client_response_error(e)   # parse Date, adjust skew
 //       async for message in self.__stream():  # single retry
@@ -795,7 +789,6 @@ TEST(DrmRetry, NetworkErrorDoesNotRetry) {
 
 TEST(DrmRetry, SendFailureAfterConnectDoesNotRetry) {
     // Connect succeeds; first send_text fails.
-    // Post-connect errors are never retried (Python only retries the connect).
     FakeWebSocketClient fake;
     fake.set_send_error(Error{ErrorCode::network_error, "send failed"});
     auto session = make_session(fake);

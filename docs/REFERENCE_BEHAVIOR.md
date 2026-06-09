@@ -48,7 +48,7 @@ __version__, __version_info__
 
 | Python symbol | C++ target |
 |---------------|-----------|
-| `Communicate` | `edge_tts::api::Communicate` |
+| `SpeechSynthesizer` | `edge_tts::api::SpeechSynthesizer` |
 | `SubMaker` | `edge_tts::subtitles::SubMaker` |
 | `list_voices()` | `edge_tts::communication::VoiceService::list_voices()` |
 | `VoicesManager.find()` | `edge_tts::communication::VoiceFilter` (passed to `VoiceService::list_voices`) |
@@ -373,7 +373,7 @@ are **preserved**.
 The replacement is performed **before** XML escaping with
 `xml.sax.saxutils.escape()` and before chunking.
 
-The `text` argument to `Communicate` must be `str`; passing anything else raises
+The `text` argument to `SpeechSynthesizer` must be `str`; passing anything else raises
 `TypeError`.
 
 **Match exactly:** Yes — same replacement ranges.
@@ -695,7 +695,7 @@ with `offset_compensation` before yielding.
 
 **`stream()` is single-use:** calling it twice raises `RuntimeError`.
 
-**C++ single-use behavior (`api::Communicate`):** `stream_sync()` and `save()`
+**C++ single-use behavior (`api::SpeechSynthesizer`):** `synthesize()` and `save()`
 are both single-use. Calling either a second time (or calling one after the
 other) returns `ErrorCode::invalid_state` — matching the Python `RuntimeError`.
 `save()` calls the synthesis pipeline internally, so both methods consume the
@@ -896,7 +896,7 @@ a best-effort port; the `--mpv` flag must be supported.
 
 **Source:** `reference/edge-tts/src/edge_tts/communicate.py`, `reference/edge-tts/src/edge_tts/voices.py`
 
-A proxy URL string is accepted by both `Communicate` (for WebSocket) and
+A proxy URL string is accepted by both `SpeechSynthesizer` (for WebSocket) and
 `list_voices()` (for HTTPS).  The value is passed directly to `aiohttp`.
 
 Proxy support is not validated or parsed by the Python library; any string
@@ -927,7 +927,7 @@ without modification.
 is propagated.
 
 **Clock skew is global state:** `DRM.clock_skew_seconds` is a class variable
-shared across all `Communicate` and `list_voices` calls in the same process.
+shared across all `SpeechSynthesizer` and `list_voices` calls in the same process.
 
 **C++ implementation status:** Implemented.
 

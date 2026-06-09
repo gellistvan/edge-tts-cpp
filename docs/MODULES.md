@@ -140,8 +140,8 @@ Two error propagation styles are used:
 | `TtsChunk.hpp` | Compatibility shim — `#include`s `Chunk.hpp`. |
 | `TtsConfig.hpp` | `TtsConfig` struct (voice, rate, volume, pitch, boundary). `validate()` normalizes the voice field and throws `ConfigurationError` on invalid syntax. `normalize_voice_name(string_view)` free function. |
 | `Voice.hpp` | `VoiceGender` enum (`Female`, `Male`, `Unknown`). `Voice` struct (name, short_name, gender, locale, styles) with `operator==`/`operator!=`. |
-| `OutputFormat.hpp` | `OutputFormat` — validated audio format type. `default_format()` returns `"audio-24khz-48kbitrate-mono-mp3"` (the only format used by the Python reference). `from_string()` rejects empty strings and unknown formats. No arbitrary format strings permitted. |
-| `Voice.hpp` | `VoiceGender {unknown, female, male}`, `Voice` struct (all fields from Python `Voice` TypedDict: `name`, `short_name`, `gender`, `locale`, `friendly_name`, `status`, `suggested_codec`, `content_categories`, `voice_personalities`, `language`). `voice_gender_from_string()` parses `"Female"`/`"Male"` (case-sensitive). `to_string(VoiceGender)` returns exact Python wire strings. |
+| `OutputFormat.hpp` | `OutputFormat` — validated audio format type. `default_format()` returns `"audio-24khz-48kbitrate-mono-mp3"`. `from_string()` rejects empty strings and unknown formats. No arbitrary format strings permitted. |
+| `Voice.hpp` | `VoiceGender {unknown, female, male}`, `Voice` struct (`name`, `short_name`, `gender`, `locale`, `friendly_name`, `status`, `suggested_codec`, `content_categories`, `voice_personalities`, `language`). `voice_gender_from_string()` parses `"Female"`/`"Male"` (case-sensitive). `to_string(VoiceGender)` returns the wire strings. |
 
 **Allowed dependencies:** `edge_tts::common`.
 
@@ -275,7 +275,7 @@ spawning system executables — no direct linking to FFmpeg libraries.
 **Headers:** `include/edge_tts/communication/`
 
 WebSocket transport infrastructure, voice-list service, and synthesis
-orchestration.  Does NOT own the public `Communicate` facade — that lives
+orchestration.  Does NOT own the public `SpeechSynthesizer` facade — that lives
 in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 
 | File | Description |
@@ -299,7 +299,7 @@ in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 **Forbidden:** `subtitle`, `media` — `communication` is pure transport
 orchestration (WebSocket/HTTP framing, session lifecycle, DRM token).  Subtitle
 accumulation and audio conversion are `api`-layer concerns.  The public
-`Communicate` facade lives in `api`, above `communication`.
+`SpeechSynthesizer` facade lives in `api`, above `communication`.
 
 ---
 
@@ -315,9 +315,9 @@ the CLI layer should depend on for synthesis.
 
 | File | Description |
 |------|-------------|
-| `Communicate.hpp` | `Communicate` — public synthesis facade. Mirrors the Python `Communicate` class from `communicate.py`. Orchestrates `serialization::TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `stream_sync()` or `save()` is called. |
+| `SpeechSynthesizer.hpp` | `SpeechSynthesizer` — public synthesis facade. Orchestrates `serialization::TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `synthesize()` or `save()` is called. |
 
-**Rationale for a separate module:** `Communicate` needs `SynthesisSession` from
+**Rationale for a separate module:** `SpeechSynthesizer` needs `SynthesisSession` from
 `communication`, `SubMaker` from `subtitle`, and `media` for audio saving.
 Placing it above `communication` keeps the transport infrastructure clean and
 avoids a fat `communication` module that also owns public API semantics.
@@ -340,8 +340,7 @@ avoids a fat `communication` module that also owns public API semantics.
 
 CLI argument parsing and application-level plumbing shared between the
 `edge-tts` and `edge-playback` executables.  Uses a hand-rolled token
-parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) that mirrors the
-Python `argparse` option surface exactly.
+parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`).
 
 **Allowed dependencies (PUBLIC):** `edge_tts::api`, `edge_tts::media`
 (PlaybackCommandDispatcher public header exposes `IAudioConverter`).
@@ -443,7 +442,7 @@ Stable headers additionally must:
 | CMake target | `#include` | What it gives you | Exported? |
 |---|---|---|---|
 | `edge_tts::tts` | `<edge_tts/edge_tts.hpp>` | **Recommended entry point.** Carries all synthesis deps transitively. | Yes |
-| `edge_tts::api` | `<edge_tts/api/Communicate.hpp>` | `Communicate`, `FileWriter`, `CommunicateOptions`. | Yes |
+| `edge_tts::api` | `<edge_tts/api/SpeechSynthesizer.hpp>` | `SpeechSynthesizer`, `FileWriter`, `SynthesisOptions`. | Yes |
 | `edge_tts::core` | `<edge_tts/core/TtsConfig.hpp>` | `TtsConfig`, `Voice`, `TtsChunk`. | Yes |
 | `edge_tts::common` | `<edge_tts/common/Result.hpp>` | `Result<T>`, `ErrorCode`, utilities. | Yes |
 | `edge_tts::subtitle` | `<edge_tts/subtitles/SubMaker.hpp>` | `SubMaker`, SRT types. | Yes |
@@ -465,11 +464,11 @@ umbrella header:
 ```
 
 `include/edge_tts/edge_tts.hpp` exposes the complete stable public API:
-`Communicate`, `CommunicateOptions`, `FileWriter`, `TtsConfig`, `Voice`,
+`SpeechSynthesizer`, `SynthesisOptions`, `FileWriter`, `TtsConfig`, `Voice`,
 `Result<T>`, and `ErrorCode`.  It does NOT pull in CLI, media/playback,
 internal transport, or test utilities.
 
-Direct includes of individual headers (`edge_tts/api/Communicate.hpp`, etc.)
+Direct includes of individual headers (`edge_tts/api/SpeechSynthesizer.hpp`, etc.)
 are also supported for consumers who need finer granularity.
 
 ### `edge_tts::tts` (recommended)

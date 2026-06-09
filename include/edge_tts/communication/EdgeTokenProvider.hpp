@@ -10,12 +10,12 @@ namespace edge_tts::communication {
 
 // Generates the Sec-MS-GEC token and returns the Sec-MS-GEC-Version string.
 //
-// Algorithm (reference: drm.py DRM.generate_sec_ms_gec()):
-//   1. Get UTC Unix timestamp (seconds, float) from the injected IClock.
-//   2. Add Windows file time epoch offset: 11644473600 (WIN_EPOCH in drm.py).
+// Token generation algorithm:
+//   1. Get UTC Unix timestamp from the injected IClock.
+//   2. Add Windows file time epoch offset: 11644473600.
 //   3. Round DOWN to the nearest 300-second boundary (5 minutes).
 //   4. Convert to 100-nanosecond intervals: multiply by 1e9 / 100 = 1e7.
-//   5. Format as integer with "%.0f" (same as Python's f"{ticks:.0f}").
+//   5. Format as integer with "%.0f" (.
 //   6. Concatenate with TRUSTED_CLIENT_TOKEN from config.
 //   7. SHA-256 hash the ASCII string.
 //   8. Return uppercase hex digest.
@@ -36,7 +36,6 @@ public:
     [[nodiscard]] std::string sec_ms_gec_version() const;
 
     // Accumulate a clock skew correction in seconds.
-    // Reference: drm.py DRM.adj_clock_skew_seconds(skew_seconds)
     // Called when a 403 response Date header reveals client/server time drift.
     void adjust_clock_skew(double seconds) noexcept;
 

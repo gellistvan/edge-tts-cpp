@@ -8,8 +8,7 @@
 
 namespace edge_tts::serialization {
 
-// Builds a single SSML document for one text chunk, matching the exact string
-// produced by the Python reference mkssml() in communicate.py.
+// Builds a single SSML document for one text chunk.
 //
 // Reference template (all on one line, single-quoted attributes):
 //   <speak version='1.0'

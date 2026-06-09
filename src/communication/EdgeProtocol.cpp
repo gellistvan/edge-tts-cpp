@@ -102,7 +102,7 @@ common::Result<std::string> EdgeProtocol::build_ssml_frame(
     //   ssml_headers_plus_data(connect_id(), date_to_string(), mkssml(...))
     //
     // text_chunk arrives pre-escaped from serialization::TextChunker (via
-    // api::Communicate → SynthesisSession).  build_from_escaped_text embeds it
+    // api::SpeechSynthesizer → SynthesisSession).  build_from_escaped_text embeds it
     // verbatim so escaping happens exactly once across the full pipeline.
     serialization::SsmlBuilder builder;
     auto ssml_result = builder.build_from_escaped_text(config, text_chunk);

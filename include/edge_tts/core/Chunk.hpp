@@ -60,7 +60,7 @@ struct BoundaryChunk {
 
 // A single unit of output from the TTS pipeline: either raw MP3 audio or a
 // timing/boundary annotation.  Corresponds to one yielded item from
-// Communicate.stream() in the Python reference.
+// SpeechSynthesizer.stream() in the Python reference.
 using TtsChunk = std::variant<AudioChunk, BoundaryChunk>;
 
 // Returns true when chunk holds an AudioChunk.

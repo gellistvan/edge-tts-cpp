@@ -1,4 +1,4 @@
-#include "edge_tts/api/Communicate.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
 #include "edge_tts/api/FileWriter.hpp"
 #include "edge_tts/common/Clock.hpp"
 #include "edge_tts/common/Error.hpp"
@@ -43,7 +43,7 @@ struct ProductionSynthesizer {
     communication::WebSocketClient           websocket;          // owns WS options
     communication::SynthesisSession          session;            // holds refs: all above
 
-    explicit ProductionSynthesizer(const CommunicateOptions& opts);
+    explicit ProductionSynthesizer(const SynthesisOptions& opts);
 
     // Non-copyable, non-movable — members hold references to each other.
     ProductionSynthesizer(const ProductionSynthesizer&)            = delete;
@@ -52,11 +52,11 @@ struct ProductionSynthesizer {
     ProductionSynthesizer& operator=(ProductionSynthesizer&&)      = delete;
 };
 
-// Build WebSocketClientOptions from CommunicateOptions + service config.
+// Build WebSocketClientOptions from SynthesisOptions + service config.
 // Separate function so it can be called safely in the member-initializer list
 // after service_config and ids have been initialized.
 static communication::WebSocketClientOptions make_ws_options(
-    const CommunicateOptions&                opts,
+    const SynthesisOptions&                  opts,
     const communication::EdgeServiceConfig&  svc_cfg,
     common::IdGenerator&                     ids)
 {
@@ -69,7 +69,7 @@ static communication::WebSocketClientOptions make_ws_options(
     return ws;
 }
 
-ProductionSynthesizer::ProductionSynthesizer(const CommunicateOptions& opts)
+ProductionSynthesizer::ProductionSynthesizer(const SynthesisOptions& opts)
     : clock{}
     , ids{}
     , service_config{communication::default_edge_service_config()}
@@ -81,12 +81,12 @@ ProductionSynthesizer::ProductionSynthesizer(const CommunicateOptions& opts)
 {}
 
 // Build the production SynthesizerFn that drives the real communication stack.
-// No network work is performed here — synthesis is deferred to stream_sync()/save().
-static SynthesizerFn make_production_synthesizer(const CommunicateOptions& opts)
+// No network work is performed here — synthesis is deferred to synthesize()/save().
+static SynthesizerFn make_production_synthesizer(const SynthesisOptions& opts)
 {
     auto synth = std::make_shared<ProductionSynthesizer>(opts);
-    return [synth](const core::TtsConfig&          cfg,
-                   std::span<const std::string>    chunks)
+    return [synth](const core::TtsConfig&       cfg,
+                   std::span<const std::string> chunks)
                -> common::Result<std::vector<core::TtsChunk>>
     {
         return synth->session.synthesize(cfg, chunks);
@@ -97,31 +97,31 @@ static SynthesizerFn make_production_synthesizer(const CommunicateOptions& opts)
 // Construction
 // ---------------------------------------------------------------------------
 
-Communicate::Communicate(std::string text, core::TtsConfig config)
+SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config)
     : text_(std::move(text))
     , config_(std::move(config))
     , options_{}
     , synthesizer_(make_production_synthesizer(options_))
 {}
 
-Communicate::Communicate(std::string text, core::TtsConfig config,
-                         CommunicateOptions options)
+SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
+                                     SynthesisOptions options)
     : text_(std::move(text))
     , config_(std::move(config))
     , options_(std::move(options))
     , synthesizer_(make_production_synthesizer(options_))
 {}
 
-Communicate::Communicate(std::string text, core::TtsConfig config,
-                         SynthesizerFn synthesizer)
+SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
+                                     SynthesizerFn synthesizer)
     : text_(std::move(text))
     , config_(std::move(config))
     , options_{}
     , synthesizer_(std::move(synthesizer))
 {}
 
-Communicate::Communicate(std::string text, core::TtsConfig config,
-                         CommunicateOptions options, SynthesizerFn synthesizer)
+SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
+                                     SynthesisOptions options, SynthesizerFn synthesizer)
     : text_(std::move(text))
     , config_(std::move(config))
     , options_(std::move(options))
@@ -132,23 +132,21 @@ Communicate::Communicate(std::string text, core::TtsConfig config,
 // Accessors
 // ---------------------------------------------------------------------------
 
-const std::string&        Communicate::text()    const noexcept { return text_; }
-const core::TtsConfig&    Communicate::config()  const noexcept { return config_; }
-const CommunicateOptions& Communicate::options() const noexcept { return options_; }
+const std::string&      SpeechSynthesizer::text()    const noexcept { return text_; }
+const core::TtsConfig&  SpeechSynthesizer::config()  const noexcept { return config_; }
+const SynthesisOptions& SpeechSynthesizer::options() const noexcept { return options_; }
 
 // ---------------------------------------------------------------------------
 // Internal synthesis pipeline
 // ---------------------------------------------------------------------------
 
-common::Result<std::vector<core::TtsChunk>> Communicate::run_synthesis()
+common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::run_pipeline()
 {
     // 1. Validate TTS configuration.
-    //    Reference: communicate.py TTSConfig.__init__ validates on construction.
     if (auto r = core::validate_tts_config(config_); !r)
         return common::Result<std::vector<core::TtsChunk>>::fail(r.error());
 
     // 2. Normalize, XML-escape, and split text into service-safe chunks.
-    //    Reference: escape(remove_incompatible_characters(text)) → split_text_by_byte_length(…, 4096)
     serialization::TextChunker chunker;
     auto chunk_result = chunker.chunk(text_);
     if (!chunk_result)
@@ -156,7 +154,7 @@ common::Result<std::vector<core::TtsChunk>> Communicate::run_synthesis()
 
     const std::vector<std::string>& text_chunks = *chunk_result;
 
-    // 3. Empty input: no text chunks → no audio (Python yields nothing from empty generator).
+    // 3. Empty input: no text chunks → no audio.
     if (text_chunks.empty())
         return common::Result<std::vector<core::TtsChunk>>::ok({});
 
@@ -168,39 +166,33 @@ common::Result<std::vector<core::TtsChunk>> Communicate::run_synthesis()
 // Public API
 // ---------------------------------------------------------------------------
 
-common::Result<std::vector<core::TtsChunk>> Communicate::stream_sync()
+common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::synthesize()
 {
-    // Reference: Communicate.stream() raises RuntimeError if called a second time.
-    if (stream_called_)
+    if (called_)
         return common::Result<std::vector<core::TtsChunk>>::fail(
             common::Error{common::ErrorCode::invalid_state,
-                          "stream can only be called once"});
-    stream_called_ = true;
-    return run_synthesis();
+                          "synthesize can only be called once"});
+    called_ = true;
+    return run_pipeline();
 }
 
-common::Result<void> Communicate::save(
+common::Result<void> SpeechSynthesizer::save(
     const std::filesystem::path& media_path,
     std::optional<std::filesystem::path> subtitles_path)
 {
-    // Reference: Communicate.save() calls self.stream() internally, so both
-    // stream() and save() consume the single-use stream.
-    if (stream_called_)
+    if (called_)
         return common::Result<void>::fail(
             common::Error{common::ErrorCode::invalid_state,
-                          "stream can only be called once"});
-    stream_called_ = true;
+                          "synthesize can only be called once"});
+    called_ = true;
 
-    auto synthesis = run_synthesis();
+    auto synthesis = run_pipeline();
     if (!synthesis)
         return common::Result<void>::fail(synthesis.error());
 
     const auto& chunks = *synthesis;
 
     // Collect audio bytes and feed boundary events to SubMaker.
-    // Reference: communicate.py save():
-    //   audio    → audio.write(chunk["data"])
-    //   boundary → submaker.feed(chunk) then submaker.get_srt()
     std::vector<std::byte> audio_bytes;
     subtitles::SubMaker submaker;
 
@@ -216,13 +208,12 @@ common::Result<void> Communicate::save(
         }
     }
 
-    // Write media file (binary, reference: open(audio_fname, "wb")).
+    // Write media file (binary).
     FileWriter writer;
     if (auto r = writer.write_binary(media_path, audio_bytes); !r)
         return r;
 
     // Write subtitle file if requested (UTF-8 text).
-    // Reference: open(metadata_fname, "w", encoding="utf-8")
     if (subtitles_path.has_value()) {
         auto srt = submaker.to_srt();
         if (!srt)

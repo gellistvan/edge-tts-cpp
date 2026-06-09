@@ -24,14 +24,14 @@
 //   - Word-boundary metadata frames are received when WordBoundary is enabled.
 //   - save() writes a non-empty MP3 file to a temp path.
 //   - SRT content is written when word-boundary mode is on.
-//   - api::Communicate production constructor wires the full real stack.
+//   - api::SpeechSynthesizer production constructor wires the full real stack.
 //
 // Reference:
-//   reference/edge-tts/src/edge_tts/communicate.py Communicate.__stream()
+//   reference/edge-tts/src/edge_tts/communicate.py SpeechSynthesizer.__stream()
 //   reference/edge-tts/src/edge_tts/constants.py WSS_HEADERS, WSS_URL
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/communication/EdgeRequestHeaders.hpp"
@@ -54,8 +54,8 @@
 
 namespace fs = std::filesystem;
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::communication::ConnectionMetadataFactory;
 using edge_tts::communication::EdgeProtocol;
 using edge_tts::communication::EdgeServiceConfig;
@@ -300,16 +300,16 @@ TEST(RealSynthesis, WordBoundaryChunksHavePositiveOffsetTicks) {
 }
 
 // ---------------------------------------------------------------------------
-// api::Communicate production constructor (real networking stack)
+// api::SpeechSynthesizer production constructor (real networking stack)
 // ---------------------------------------------------------------------------
 
 TEST(RealSynthesis, CommunicateProductionConstructorSynthesizes) {
-    // Proves the 2-arg Communicate constructor wires a real SynthesisSession
+    // Proves the 2-arg SpeechSynthesizer constructor wires a real SynthesisSession
     // (not a stub). If the stub returned an error the test would fail.
     if (!network_enabled()) return;
 
-    Communicate c(kTestPhrase, TtsConfig::defaults());
-    auto result = c.stream_sync();
+    SpeechSynthesizer c(kTestPhrase, TtsConfig::defaults());
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     bool has_audio = false;
@@ -326,7 +326,7 @@ TEST(RealSynthesis, CommunicateSaveWritesNonEmptyMp3) {
     if (!network_enabled()) return;
 
     NetTempFile mp3{"save", ".mp3"};
-    Communicate c(kTestPhrase, TtsConfig::defaults());
+    SpeechSynthesizer c(kTestPhrase, TtsConfig::defaults());
     auto r = c.save(mp3.path);
 
     ASSERT_TRUE(r.has_value());
@@ -343,7 +343,7 @@ TEST(RealSynthesis, CommunicateSaveWritesSrtWhenWordBoundaryEnabled) {
 
     TtsConfig cfg = TtsConfig::defaults();
     cfg.boundary_type = edge_tts::core::BoundaryType::word;
-    Communicate c("hello world", cfg);
+    SpeechSynthesizer c("hello world", cfg);
     auto r = c.save(mp3.path, srt.path);
 
     ASSERT_TRUE(r.has_value());
@@ -353,13 +353,13 @@ TEST(RealSynthesis, CommunicateSaveWritesSrtWhenWordBoundaryEnabled) {
     EXPECT_TRUE(fs::file_size(srt.path) > 0u);
 }
 
-TEST(RealSynthesis, CommunicateStreamSyncReturnsBothChunkTypes) {
+TEST(RealSynthesis, CommunicateSynthesizeReturnsBothChunkTypes) {
     if (!network_enabled()) return;
 
     TtsConfig cfg = TtsConfig::defaults();
     cfg.boundary_type = edge_tts::core::BoundaryType::word;
-    Communicate c("hello world", cfg);
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("hello world", cfg);
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     bool has_audio    = false;
@@ -383,8 +383,8 @@ TEST(RealSynthesis, AlternativeVoiceRyanProducesAudio) {
 
     TtsConfig cfg = TtsConfig::defaults();
     cfg.voice = "en-GB-RyanNeural";
-    Communicate c("hi", cfg);
-    auto result = c.stream_sync();
+    SpeechSynthesizer c("hi", cfg);
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     bool has_audio = false;

@@ -23,7 +23,7 @@ target_link_libraries(my_app PRIVATE edge_tts::tts)
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 
-edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), {});
+edge_tts::api::SpeechSynthesizer tts("Hello, world!", std::move(cfg), {});
 auto result = tts.save("hello.mp3", "hello.srt");
 if (!result) {
     std::cerr << result.error().what() << '\n';
@@ -48,19 +48,19 @@ It exposes the complete stable public API:
 
 | Symbol | Purpose |
 |--------|---------|
-| `edge_tts::api::Communicate` | Synthesize text to audio |
-| `edge_tts::api::CommunicateOptions` | Transport options (timeouts) |
+| `edge_tts::api::SpeechSynthesizer` | Synthesize text to audio |
+| `edge_tts::api::SynthesisOptions` | Transport options (timeouts) |
 | `edge_tts::api::FileWriter` | Write audio/subtitle files |
 | `edge_tts::core::TtsConfig` | Voice, rate, volume, pitch |
 | `edge_tts::core::Voice` | Voice listing type |
-| `edge_tts::core::AudioChunk` | Raw MP3 bytes from `stream_sync()` |
+| `edge_tts::core::AudioChunk` | Raw MP3 bytes from `synthesize()` |
 | `edge_tts::core::BoundaryChunk` | Word/sentence boundary event |
 | `edge_tts::core::is_audio(chunk)` | `true` for `AudioChunk` variants |
 | `edge_tts::common::Result<T>` | Error propagation (no exceptions for runtime errors) |
 | `edge_tts::common::ErrorCode` | Error category enum |
 
 Individual headers remain available for finer-grained includes:
-`edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`, etc.
+`edge_tts/api/SpeechSynthesizer.hpp`, `edge_tts/core/TtsConfig.hpp`, etc.
 
 ### Stable public headers
 
@@ -72,8 +72,8 @@ compile as the first (and only) project include in a translation unit.
 
 | Header | Key types |
 |--------|-----------|
-| `edge_tts/api/Communicate.hpp` | `Communicate` — single-use synthesis object |
-| `edge_tts/api/CommunicateOptions.hpp` | `CommunicateOptions` — transport options |
+| `edge_tts/api/SpeechSynthesizer.hpp` | `SpeechSynthesizer` — single-use synthesis object |
+| `edge_tts/api/SynthesisOptions.hpp` | `SynthesisOptions` — transport options |
 | `edge_tts/api/FileWriter.hpp` | `FileWriter` — write MP3 + SRT |
 
 #### `edge_tts/core/` — data types
@@ -171,8 +171,8 @@ transitive link dependencies automatically.
 
 The ixwebsocket backend has no client-side CONNECT-tunnel proxy API.
 
-- Setting `CommunicateOptions::proxy` is **validated** at the API layer.
-- Any call to `save()` or `stream_sync()` with a proxy set **returns
+- Setting `SynthesisOptions::proxy` is **validated** at the API layer.
+- Any call to `save()` or `synthesize()` with a proxy set **returns
   `ErrorCode::unsupported` immediately** — no network connection is attempted.
 - The CLI propagates this as exit code 1.
 
@@ -252,7 +252,7 @@ int main() {
     edge_tts::core::TtsConfig cfg;
     cfg.voice = "en-US-EmmaMultilingualNeural";
 
-    edge_tts::api::Communicate c("Hello world", std::move(cfg), {});
+    edge_tts::api::SpeechSynthesizer c("Hello world", std::move(cfg), {});
     auto result = c.save("hello.mp3");
     return result ? 0 : 1;
 }
@@ -338,7 +338,7 @@ exported and must never be linked by consumers.
 | Target | Description | Use when |
 |--------|-------------|----------|
 | `edge_tts::tts` | **Recommended entry point.** INTERFACE target that links the full TTS API. | Almost always |
-| `edge_tts::api` | Synthesis facade (`Communicate`, `FileWriter`). | When you need the API type names at compile time |
+| `edge_tts::api` | Synthesis facade (`SpeechSynthesizer`, `FileWriter`). | When you need the API type names at compile time |
 | `edge_tts::communication` | WebSocket/HTTP transport. | Advanced: custom session control |
 | `edge_tts::serialization` | SSML building and protocol framing. | Advanced: custom protocol work |
 | `edge_tts::subtitle` | SRT subtitle generation. | Advanced: subtitle-only consumers |

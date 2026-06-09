@@ -2,7 +2,7 @@
 
 **Version: 0.1.0** (pre-1.0 — API may change between minor versions; see [Versioning](#versioning))
 
-A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Python `edge-tts` project.
+A modern C++20 Microsoft Edge TTS client library and CLI.
 
 Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
 
@@ -49,7 +49,7 @@ target_link_libraries(my_app PRIVATE edge_tts::tts)
 edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 
-edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), {});
+edge_tts::api::SpeechSynthesizer tts("Hello, world!", std::move(cfg), {});
 auto result = tts.save("hello.mp3", "hello.srt");
 if (!result) std::cerr << result.error().what() << '\n';
 ```
@@ -59,7 +59,7 @@ ixwebsocket, C++20 feature requirement, include paths).  No need to list any
 of them manually.
 
 > **Note:** proxy support is not functional — the ixwebsocket backend returns
-> `ErrorCode::unsupported` if `CommunicateOptions::proxy` is set.
+> `ErrorCode::unsupported` if `SynthesisOptions::proxy` is set.
 
 See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration guide,
 and [`examples/`](examples/) for ready-to-copy project templates.
@@ -82,7 +82,7 @@ include/edge_tts/
   common/          shared errors, Expected<T,E>, and UTF-8 utilities
   core/            pure domain types: TtsConfig, Voice, Chunk, TextChunker
   serialization/   SSML, Edge protocol payloads, token metadata
-  communication/   Communicate facade, HTTP/WebSocket transport boundary
+  communication/   synthesis facade, HTTP/WebSocket transport boundary
   media/           external process integration: IAudioConverter, FfmpegAudioConverter (ffmpeg/ffplay via IProcessRunner, no library linking), ExecutableDiscovery, ProcessRunner
   subtitles/       subtitle cues and SRT composition
   cli/             CLI argument parsing and dispatch (EdgeTtsArgumentParser, EdgeTtsArguments,
@@ -125,7 +125,7 @@ in CLI argument parsing, playback infrastructure, or test utilities.
 | Target | Alias | Purpose | Stability |
 |--------|-------|---------|-----------|
 | `edge_tts_tts` | `edge_tts::tts` | **Recommended consumer target.** Links the TTS API and all transitive deps. No CLI, no playback, no tests. | Stable public API |
-| `edge_tts_api` | `edge_tts::api` | Public synthesis facade (`Communicate`, `FileWriter`). | Stable public API |
+| `edge_tts_api` | `edge_tts::api` | Public synthesis facade (`SpeechSynthesizer`, `FileWriter`). | Stable public API |
 | `edge_tts_communication` | `edge_tts::communication` | WebSocket/HTTP transport, DRM tokens, voice service. | Advanced use |
 | `edge_tts_serialization` | `edge_tts::serialization` | SSML building, protocol framing, JSON parsing. | Advanced use |
 | `edge_tts_subtitle` | `edge_tts::subtitle` | SRT subtitle generation. | Advanced use |
@@ -141,7 +141,7 @@ ownership details.
 
 ## CLI compatibility
 
-The `edge-tts` and `edge-playback` commands are designed to match the Python
+The `edge-tts` and `edge-playback` commands implement the same CLI interface as the
 `edge-tts` v7.2.8 CLI exactly, with intentional differences explicitly documented.
 
 See [`docs/CLI_COMPATIBILITY.md`](docs/CLI_COMPATIBILITY.md) for the full
@@ -360,19 +360,19 @@ cfg.voice = "en-US-EmmaMultilingualNeural";
 
 // Transport options — timeouts (no speech settings).
 // NOTE: proxy is not supported by the ixwebsocket backend.
-// Setting opts.proxy will cause stream_sync()/save() to return unsupported.
-edge_tts::api::CommunicateOptions opts;
+// Setting opts.proxy will cause synthesize()/save() to return unsupported.
+edge_tts::api::SynthesisOptions opts;
 
-// Save audio and optional SRT subtitles (reference: Communicate.save()).
-edge_tts::api::Communicate c("Hello, world!", std::move(cfg), std::move(opts));
+// Save audio and optional SRT subtitles.
+edge_tts::api::SpeechSynthesizer c("Hello, world!", std::move(cfg), std::move(opts));
 auto result = c.save("hello.mp3", "hello.srt");
 if (!result) {
     std::cerr << result.error().what() << '\n';
 }
 
 // Without a proxy — the 2-arg form uses default options.
-edge_tts::api::Communicate c2("Hello again!");
-auto chunks = c2.stream_sync();
+edge_tts::api::SpeechSynthesizer c2("Hello again!");
+auto chunks = c2.synthesize();
 if (chunks) {
     for (const auto& chunk : *chunks) {
         if (edge_tts::core::is_audio(chunk)) { /* write audio bytes */ }
@@ -385,17 +385,17 @@ if (chunks) {
 target_link_libraries(my_app PRIVATE edge_tts::tts)
 ```
 
-Both `stream_sync()` and `save()` are single-use — a second call returns
-`ErrorCode::invalid_state`, matching Python's `RuntimeError`.
+Both `synthesize()` and `save()` are single-use — a second call returns
+`ErrorCode::invalid_state`.
 
-Individual headers (`edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`,
+Individual headers (`edge_tts/api/SpeechSynthesizer.hpp`, `edge_tts/core/TtsConfig.hpp`,
 etc.) remain available for consumers who need finer-grained includes.
 
 Inject a `SynthesizerFn` for testing without a live service connection.
 
 ## Applications
 
-The CLI is wired end-to-end via `EdgeTtsCommandDispatcher`, which routes parsed arguments to the right handler with injectable dependencies (voice service, Communicate factory, streams):
+The CLI is wired end-to-end via `EdgeTtsCommandDispatcher`, which routes parsed arguments to the right handler with injectable dependencies (voice service, synthesizer factory, streams):
 
 ```
 edge-tts --text "Hello" --write-media hello.mp3 --write-subtitles hello.srt
@@ -404,7 +404,7 @@ edge-tts --help
 edge-tts --version
 ```
 
-The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — matching Python `argparse` and `sys.exit()` behavior.
+The dispatcher exits 0 on success, 1 on runtime errors (service/synthesis/file I/O), and 2 on argument errors — using standard POSIX exit code conventions.
 
 `edge-playback` synthesizes speech to a temp MP3, plays it through `ffplay`, and cleans up. Usage:
 
@@ -531,11 +531,11 @@ When `EDGE_TTS_RUN_NETWORK_TESTS` is unset every network test returns early with
 
 ### Offline integration coverage
 
-`edge_tts_api_tests` includes deterministic end-to-end integration tests that exercise the complete path — `Communicate → SynthesisSession → EdgeProtocol → FakeWebSocketClient → FileWriter` — with no real network or live service required.  These tests always run in the default `ctest` suite and cover:
+`edge_tts_api_tests` includes deterministic end-to-end integration tests that exercise the complete path — `SpeechSynthesizer → SynthesisSession → EdgeProtocol → FakeWebSocketClient → FileWriter` — with no real network or live service required.  These tests always run in the default `ctest` suite and cover:
 
 - **Frame structure**: verifies that `speech.config` and `ssml` frames have the correct `Path:` headers, `Content-Type`, and a 32-char hex `X-RequestId`.
 - **Escaping**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;`/`&lt;`/`&gt;` — exactly once, never double-escaped.
-- **Multi-chunk offset compensation**: long text split into two chunks; boundaries from chunk 2 are shifted by the audio duration of chunk 1, verified via both `stream_sync()` chunk values and `save()` SRT timestamps.
+- **Multi-chunk offset compensation**: long text split into two chunks; boundaries from chunk 2 are shifted by the audio duration of chunk 1, verified via both `synthesize()` chunk values and `save()` SRT timestamps.
 - **Error propagation**: unknown `Path` header → `protocol_error`; transport drop → `network_error`; no audio before `turn.end` → `service_error`.
 
 See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy and [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for the tested data flow.
@@ -549,7 +549,7 @@ Integrated dependencies:
 - `nlohmann/json` (`submodules/json`) — voice-list and protocol JSON parsing.
 - `ixwebsocket` (`submodules/ixwebsocket`) — WebSocket + HTTP client for synthesis and voice listing.
 
-Not used: `googletest` (replaced by `minigtest`, a self-contained single-header), `CLI11` (replaced by a hand-rolled parser that mirrors Python `argparse` behavior exactly).
+Not used: `googletest` (replaced by `minigtest`, a self-contained single-header), `CLI11` (replaced by a self-contained argument parser).
 
 Boost is intentionally not required.
 

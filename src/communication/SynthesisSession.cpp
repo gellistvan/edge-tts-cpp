@@ -35,13 +35,11 @@ SynthesisSession::SynthesisSession(
 // Appends results to out_chunks.  Does NOT close the websocket.
 //
 // offset_compensation: ticks to add to each BoundaryChunk.offset_ticks.
-//   Reference: communicate.py __parse_metadata() adds offset_compensation.
 //   Value is computed from cumulative audio bytes of all previous chunks.
 //   For the first chunk this is 0.
 //
 // out_audio_bytes: populated with the total audio bytes received this chunk.
 //   Caller uses this to update the cumulative count for the next compensation.
-//   Reference: communicate.py state["chunk_audio_bytes"] += len(data).
 // -------------------------------------------------------------------------
 static common::Result<void> run_one_chunk(
     IWebSocketClient&            websocket,
@@ -74,7 +72,6 @@ static common::Result<void> run_one_chunk(
         return common::Result<void>::fail(send2.error());
 
     // --- Receive loop --------------------------------------------------------
-    // Reference: async for received in websocket:  (break on turn.end)
     bool audio_received = false;
 
     while (true) {
@@ -92,7 +89,6 @@ static common::Result<void> run_one_chunk(
             case IncomingMessageKind::audio: {
                 audio_received = true;
                 // Count bytes before moving the chunk.
-                // Reference: state["chunk_audio_bytes"] += len(data)
                 const auto& ac = std::get<core::AudioChunk>(*msg.chunk);
                 out_audio_bytes += static_cast<std::int64_t>(ac.data.size());
                 out_chunks.push_back(std::move(*msg.chunk));
@@ -100,7 +96,6 @@ static common::Result<void> run_one_chunk(
             }
             case IncomingMessageKind::boundary: {
                 // Apply offset compensation before yielding.
-                // Reference: communicate.py __parse_metadata():
                 //   current_offset = meta_obj["Data"]["Offset"] + offset_compensation
                 auto bc = std::get<core::BoundaryChunk>(std::move(*msg.chunk));
                 bc.offset_ticks += offset_compensation;
@@ -118,7 +113,6 @@ static common::Result<void> run_one_chunk(
         if (done) break;
     }
 
-    // Reference: if not audio_was_received: raise NoAudioReceived(...)
     if (!audio_received)
         return common::Result<void>::fail(
             common::Error{common::ErrorCode::service_error,
@@ -138,16 +132,12 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
     std::vector<core::TtsChunk> all_chunks;
 
     // Cumulative audio bytes across all completed chunks.
-    // Reference: communicate.py state["cumulative_audio_bytes"]
     std::int64_t cumulative_audio_bytes = 0;
 
     for (const auto& text : text_chunks) {
         // Compute offset compensation for boundaries in this chunk.
-        // Reference: communicate.py __compensate_offset():
         //   offset_compensation = cumulative_audio_bytes * 8 * TICKS_PER_SECOND
         //                         // MP3_BITRATE_BPS
-        // TICKS_PER_SECOND = 10_000_000 (100-ns ticks), MP3_BITRATE_BPS = 48_000
-        // Integer division (floor for non-negative values — matches Python //).
         const std::int64_t offset_compensation =
             cumulative_audio_bytes * 8LL * 10'000'000LL / 48'000LL;
 
@@ -159,7 +149,6 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             auto metadata = metadata_factory_.create_for_request();
 
             // --- Build WebSocket URL -----------------------------------------
-            // Reference: f"{WSS_URL}&ConnectionId={connect_id()}"
             //            f"&Sec-MS-GEC={DRM.generate_sec_ms_gec()}"
             //            f"&Sec-MS-GEC-Version={SEC_MS_GEC_VERSION}"
             // Token is regenerated each attempt; if adjust_clock_skew() was
@@ -177,11 +166,7 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             // --- Connect -----------------------------------------------------
             auto conn = websocket_.connect(url);
             if (!conn) {
-                // Reference: `if e.status != 403: raise` — only drm_error retries.
                 if (retry_policy_.should_retry(conn.error(), attempt)) {
-                    // Reference: drm.py DRM.handle_client_response_error()
-                    // If the 403 response carries a Date header (via error context),
-                    // compute skew = server_time - effective_client_time and correct
                     // the token provider before retrying.
                     if (conn.error().has_context()) {
                         auto server_ts = parse_http_date(conn.error().context());
@@ -200,8 +185,6 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             }
 
             // --- Run chunk (send + receive); always close after --------------
-            // Reference: context manager ensures close on success and error.
-            // Post-connect errors are NOT retried (Python only catches ws_connect errors).
             std::int64_t chunk_audio_bytes = 0;
             auto chunk_result = run_one_chunk(
                 websocket_, protocol_, tts_config, text, metadata,
@@ -214,7 +197,6 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
                     chunk_result.error());
 
             // Update cumulative bytes after a successful chunk.
-            // Reference: __compensate_offset() adds chunk_audio_bytes to
             // cumulative_audio_bytes before computing the next compensation.
             cumulative_audio_bytes += chunk_audio_bytes;
             break;  // chunk done, move to next

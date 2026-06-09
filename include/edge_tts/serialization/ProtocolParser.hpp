@@ -9,7 +9,6 @@ namespace edge_tts::serialization {
 
 // Parses an Edge TTS WebSocket text frame into a ProtocolMessage.
 //
-// Reference: communicate.py get_headers_and_data() + the __stream() handler.
 //
 // Frame format:
 //   Name:Value\r\n

@@ -53,13 +53,13 @@ static std::string format_error(const common::Error& e) {
 
 EdgeTtsCommandDispatcher::EdgeTtsCommandDispatcher(
     VoiceServiceFn     voice_service,
-    CommunicateFactory communicate_factory,
+    SynthesizerFactory synthesizer_factory,
     std::ostream&      out,
     std::ostream&      err,
     std::istream&      in,
     TtyCheckFn         tty_check)
     : voice_service_(std::move(voice_service))
-    , communicate_factory_(std::move(communicate_factory))
+    , synthesizer_factory_(std::move(synthesizer_factory))
     , out_(out)
     , err_(err)
     , in_(in)
@@ -128,7 +128,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     }
 
     // 2. Build TtsConfig from CLI arguments.
-    //    Validation happens inside Communicate; we do not duplicate it here.
+    //    Validation happens inside SpeechSynthesizer; we do not duplicate it here.
     core::TtsConfig config;
     config.voice  = args.voice;
     config.rate   = args.rate;
@@ -136,12 +136,12 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     config.pitch  = args.pitch;
 
     // 3. Build transport options from CLI arguments.
-    //    proxy maps from --proxy; timeouts use CommunicateOptions defaults.
-    api::CommunicateOptions opts;
+    //    proxy maps from --proxy; timeouts use SynthesisOptions defaults.
+    api::SynthesisOptions opts;
     opts.proxy = args.proxy;
 
-    // 4. Create Communicate via the injected factory.
-    api::Communicate communicate = communicate_factory_(*text, config, opts);
+    // 4. Create SpeechSynthesizer via the injected factory.
+    api::SpeechSynthesizer synthesizer = synthesizer_factory_(*text, config, opts);
 
     // 5. Determine routing per reference util.py _run_tts():
     //      write_media  absent | "-" → audio → out_ (stdout)
@@ -158,16 +158,13 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
 
     // 5a. Interactive TTY warning.
     //
-    // Reference: util.py _run_tts() — if stdin.isatty() and stdout.isatty()
     //   and not write_media: warn on stderr and wait for Enter.
     //
     // The check fires only when write_media is absent (not when it is "-"),
-    // matching the Python condition `not args.write_media` which is True only
     // for None, not for the string "-".
     //
     // If the user provides EOF on stdin (Ctrl-C on a real terminal or an empty
     // injected stream in tests), we print "Operation canceled." and return 0,
-    // matching the Python KeyboardInterrupt handler.
     if (!args.write_media.has_value() && tty_check_ && tty_check_()) {
         err_ << "Warning: TTS output will be written to the terminal. "
                 "Use --write-media to write to a file.\n"
@@ -181,7 +178,7 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     }
 
     // 6. Stream all chunks.
-    auto chunks = communicate.stream_sync();
+    auto chunks = synthesizer.synthesize();
     if (!chunks) {
         err_ << "error: " << format_error(chunks.error()) << '\n';
         return 1;

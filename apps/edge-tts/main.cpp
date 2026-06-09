@@ -1,5 +1,5 @@
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
 #include "edge_tts/common/Clock.hpp"
@@ -29,18 +29,18 @@ int main(int argc, char* argv[]) {
     communication::EdgeTokenProvider tokens{svc_config, clock};
 
     // Forward --proxy from CLI into the HTTP client.
-    // http_timeout comes from CommunicateOptions defaults (30 s).
+    // http_timeout comes from SynthesisOptions defaults (30 s).
     communication::HttpClientOptions http_opts;
     http_opts.proxy   = result.arguments.proxy;
-    http_opts.timeout = api::CommunicateOptions{}.http_timeout;
+    http_opts.timeout = api::SynthesisOptions{}.http_timeout;
     communication::HttpClient http{std::move(http_opts)};
 
     communication::VoiceService voice_svc{svc_config, http, voice_parser, ids, tokens};
 
     cli::EdgeTtsCommandDispatcher dispatcher{
         [&voice_svc]() { return voice_svc.list_voices(); },
-        [](std::string text, core::TtsConfig cfg, api::CommunicateOptions opts) {
-            return api::Communicate{std::move(text), std::move(cfg), std::move(opts)};
+        [](std::string text, core::TtsConfig cfg, api::SynthesisOptions opts) {
+            return api::SpeechSynthesizer{std::move(text), std::move(cfg), std::move(opts)};
         },
         std::cout,
         std::cerr,

@@ -21,18 +21,13 @@ namespace edge_tts::communication {
 // WebSocket and VoiceService for HTTP — must use these builders rather than
 // hard-coding header lists inline.
 //
-// Reference files:
-//   constants.py  — BASE_HEADERS, WSS_HEADERS, VOICE_HEADERS
-//   drm.py        — DRM.generate_muid(), DRM.headers_with_muid()
-//   communicate.py — __stream() ws_connect() call
-//   voices.py     — __list_voices() session.get() call
 
 // ---------------------------------------------------------------------------
 // WebSocket upgrade headers
 // ---------------------------------------------------------------------------
 //
-// Reference: communicate.py __stream()
-//   headers = DRM.headers_with_muid(WSS_HEADERS)
+
+
 //
 // Header set (WSS_HEADERS merged with BASE_HEADERS + DRM.headers_with_muid()):
 //   Pragma:          no-cache
@@ -43,7 +38,6 @@ namespace edge_tts::communication {
 //   Accept-Language: en-US,en;q=0.9
 //   Cookie:          muid=<32 uppercase hex chars>;
 //
-// Order matches the Python merged-dict order for reproducibility.
 // A fresh MUID (random 16 bytes, 32 uppercase hex chars) is generated per call.
 // The returned type matches WebSocketClientOptions::extra_headers.
 [[nodiscard]] std::vector<std::pair<std::string, std::string>>
@@ -54,8 +48,8 @@ build_websocket_headers(const EdgeServiceConfig& config,
 // Voice-list HTTP request headers
 // ---------------------------------------------------------------------------
 //
-// Reference: voices.py __list_voices()
-//   headers = DRM.headers_with_muid(VOICE_HEADERS)
+
+
 //
 // Header set (VOICE_HEADERS merged with BASE_HEADERS + DRM.headers_with_muid()):
 //   User-Agent:      <EdgeServiceConfig::user_agent>

@@ -1,7 +1,7 @@
 #include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/common/Error.hpp"
 #include "edge_tts/core/Chunk.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace fs = std::filesystem;
-using edge_tts::api::Communicate;
+using edge_tts::api::SpeechSynthesizer;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::cli::PlaybackArgumentParser;
 using edge_tts::cli::PlaybackArguments;
@@ -66,18 +66,18 @@ static AudioChunk make_audio(std::string_view s) {
     return ac;
 }
 
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SynthesisOptions;
 
-// CommunicateFactory that returns audio chunks.
+// SynthesizerFactory that returns audio chunks.
 // Captures options so tests can inspect what proxy/timeouts were forwarded.
 struct CapturingFactory {
     std::vector<TtsChunk> chunks;
-    CommunicateOptions    last_options;
+    SynthesisOptions    last_options;
 
-    PlaybackCommandDispatcher::CommunicateFactory make() {
-        return [this](std::string text, TtsConfig cfg, CommunicateOptions opts) {
+    PlaybackCommandDispatcher::SynthesizerFactory make() {
+        return [this](std::string text, TtsConfig cfg, SynthesisOptions opts) {
             last_options = opts;
-            return Communicate(std::move(text), std::move(cfg),
+            return SpeechSynthesizer(std::move(text), std::move(cfg),
                 [chunks = chunks](const TtsConfig&, std::span<const std::string>)
                     -> edge_tts::common::Result<std::vector<TtsChunk>> {
                     return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
@@ -87,11 +87,11 @@ struct CapturingFactory {
 };
 
 // Convenience: build a factory that ignores options (most tests don't need them).
-static PlaybackCommandDispatcher::CommunicateFactory
+static PlaybackCommandDispatcher::SynthesizerFactory
 make_factory(std::vector<TtsChunk> chunks) {
     return [chunks = std::move(chunks)](std::string text, TtsConfig cfg,
-                                        CommunicateOptions /*opts*/) {
-        return Communicate(std::move(text), std::move(cfg),
+                                        SynthesisOptions /*opts*/) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [chunks](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
@@ -99,12 +99,12 @@ make_factory(std::vector<TtsChunk> chunks) {
     };
 }
 
-// CommunicateFactory that always fails.
-static PlaybackCommandDispatcher::CommunicateFactory
+// SynthesizerFactory that always fails.
+static PlaybackCommandDispatcher::SynthesizerFactory
 make_failing_factory(ErrorCode code, std::string msg) {
     return [code, msg = std::move(msg)](std::string text, TtsConfig cfg,
-                                        CommunicateOptions /*opts*/) {
-        return Communicate(std::move(text), std::move(cfg),
+                                        SynthesisOptions /*opts*/) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [code, msg](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
@@ -302,9 +302,9 @@ TEST(PlaybackCommandDispatcher, SynthesisCalledWithCorrectText) {
 
     std::string received_text;
     auto factory = [&received_text](std::string text, TtsConfig cfg,
-                                    CommunicateOptions /*opts*/) {
+                                    SynthesisOptions /*opts*/) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -497,7 +497,7 @@ TEST(PlaybackCommandDispatcher, PlaybackReceivesCorrectTempPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Dispatcher: proxy forwarded to CommunicateOptions
+// Dispatcher: proxy forwarded to SynthesisOptions
 // ---------------------------------------------------------------------------
 
 TEST(PlaybackCommandDispatcher, ProxyReachesCommunicateOptions) {
@@ -878,9 +878,9 @@ TEST(PlaybackCommandDispatcher, VoiceForwardedToFactory) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"fwd_voice"};
     TtsConfig received;
-    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received](std::string text, TtsConfig cfg, SynthesisOptions) {
         received = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -897,9 +897,9 @@ TEST(PlaybackCommandDispatcher, RateForwardedToFactory) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"fwd_rate"};
     TtsConfig received;
-    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received](std::string text, TtsConfig cfg, SynthesisOptions) {
         received = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -918,9 +918,9 @@ TEST(PlaybackCommandDispatcher, VolumeForwardedToFactory) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"fwd_vol"};
     TtsConfig received;
-    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received](std::string text, TtsConfig cfg, SynthesisOptions) {
         received = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -939,9 +939,9 @@ TEST(PlaybackCommandDispatcher, PitchForwardedToFactory) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"fwd_pitch"};
     TtsConfig received;
-    auto factory = [&received](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received](std::string text, TtsConfig cfg, SynthesisOptions) {
         received = cfg;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
@@ -964,9 +964,9 @@ TEST(PlaybackCommandDispatcher, FileDashReadsFromStdin) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"stdin_read"};
     std::string received_text;
-    auto factory = [&received_text](std::string text, TtsConfig cfg, CommunicateOptions) {
+    auto factory = [&received_text](std::string text, TtsConfig cfg, SynthesisOptions) {
         received_text = text;
-        return Communicate(std::move(text), std::move(cfg),
+        return SpeechSynthesizer(std::move(text), std::move(cfg),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
                 return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});

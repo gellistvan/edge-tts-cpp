@@ -13,9 +13,8 @@
 
 namespace edge_tts::communication {
 
-// Builds outgoing WebSocket text frames for the Edge TTS protocol.
-//
-// Reference: communicate.py send_command_request(), ssml_headers_plus_data()
+// Builds outgoing WebSocket text frames and parses incoming frames for the
+// Edge TTS protocol.
 //
 // The IClock is held by reference — callers must ensure it outlives this object.
 // Use common::FixedClock in tests for deterministic timestamps.
@@ -25,8 +24,6 @@ public:
 
     // Builds the speech.config WebSocket frame.
     //
-    // Reference: communicate.py send_command_request()
-    //
     // Frame structure:
     //   X-Timestamp:{js_date_string}\r\n
     //   Content-Type:application/json; charset=utf-8\r\n
@@ -35,18 +32,15 @@ public:
     //   {"context":{"synthesis":{"audio":{"metadataoptions":{...},"outputFormat":"..."}}}}
     //
     // Notes:
-    //   - NO X-RequestId header (metadata.request_id is accepted for API
-    //     consistency but unused — the Python reference omits it here).
-    //   - Timestamp has NO trailing 'Z' (only the SSML frame has it).
+    //   - No X-RequestId header in the speech.config frame.
+    //   - Timestamp has no trailing 'Z' (the SSML frame has it).
     //   - sentenceBoundaryEnabled / wordBoundaryEnabled are JSON strings
-    //     ("true"/"false"), not JSON booleans — matches the Python reference.
+    //     ("true"/"false"), not JSON booleans.
     [[nodiscard]] common::Result<std::string> build_speech_config_frame(
         const core::TtsConfig&     config,
         const ConnectionMetadata&  metadata) const;
 
     // Builds the SSML WebSocket frame for one text chunk.
-    //
-    // Reference: communicate.py ssml_headers_plus_data() + send_ssml_request()
     //
     // Frame structure:
     //   X-RequestId:{metadata.request_id}\r\n
@@ -58,11 +52,10 @@ public:
     //
     // Notes:
     //   - X-RequestId uses metadata.request_id (32-char hex, no hyphens).
-    //   - Timestamp has a trailing 'Z' — documented as a Microsoft Edge bug.
+    //   - Timestamp has a trailing 'Z' (service requirement).
     //   - text_chunk MUST be XML-escaped (e.g. output of serialization::TextChunker).
     //     SsmlBuilder::build_from_escaped_text embeds it verbatim — no second escape.
-    //   - Do NOT pass raw (unescaped) text — special characters will appear as
-    //     literal XML in the SSML and produce malformed output.
+    //   - Do NOT pass raw (unescaped) text — special characters will produce malformed SSML.
     //   - Propagates any error from SsmlBuilder (invalid config).
     [[nodiscard]] common::Result<std::string> build_ssml_frame(
         const core::TtsConfig&     config,
@@ -71,14 +64,12 @@ public:
 
     // Parses an incoming WebSocket message into zero or more typed events.
     //
-    // Reference: communicate.py __stream() message dispatch loop
-    //
     // Text frame dispatch (by Path header):
     //   "audio.metadata" → one IncomingMessage per BoundaryChunk
     //   "turn.end"       → single IncomingMessage{turn_end}
     //   "response"       → single IncomingMessage{ignored}   (silently ignored)
     //   "turn.start"     → single IncomingMessage{ignored}   (silently ignored)
-    //   anything else    → protocol_error (reference: UnknownResponse)
+    //   anything else    → protocol_error
     //
     // Binary frame dispatch:
     //   - First 2 bytes: big-endian uint16 = header_length (includes these 2 bytes)
@@ -95,8 +86,7 @@ public:
     // Error cases (all return protocol_error):
     //   - Text frame: missing \r\n\r\n separator or malformed header
     //   - Text frame Path:audio.metadata: malformed JSON or unknown type
-    //   - Text frame Path:audio.metadata: empty metadata (all SessionEnd) →
-    //     protocol_error (reference: UnexpectedResponse "No WordBoundary metadata found")
+    //   - Text frame Path:audio.metadata: empty metadata (all SessionEnd entries)
     //   - Binary frame: fewer than 2 bytes
     //   - Binary frame: header_length > message size
     //   - Binary frame: Path != "audio"
@@ -108,7 +98,6 @@ private:
     const common::IClock& clock_;
 
     // Formats a time point as a JavaScript-style UTC date string.
-    // Reference: communicate.py date_to_string()
     // Format: "Mon Jan 01 2024 00:00:00 GMT+0000 (Coordinated Universal Time)"
     [[nodiscard]] static std::string format_js_timestamp(
         std::chrono::system_clock::time_point tp);

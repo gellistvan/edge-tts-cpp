@@ -20,7 +20,7 @@ struct PlaybackArguments {
     std::optional<std::string> text;  // -t / --text
     std::optional<std::string> file;  // -f / --file (path; not opened here)
 
-    // --- TTS configuration (forwarded to Communicate) -----------------------
+    // --- TTS configuration (forwarded to SpeechSynthesizer) -----------------------
     std::string                voice{kDefaultVoice};  // --voice / -v
     std::string                rate{"+0%"};           // --rate
     std::string                volume{"+0%"};         // --volume

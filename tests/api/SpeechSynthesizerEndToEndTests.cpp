@@ -1,4 +1,4 @@
-// Offline end-to-end integration tests for api::Communicate.
+// Offline end-to-end integration tests for api::SpeechSynthesizer.
 //
 // These tests exercise the full pipeline from text input — through TextChunker,
 // SynthesisSession, EdgeProtocol, and FakeWebSocketClient — to file output, with
@@ -16,8 +16,8 @@
 //   - Multi-byte UTF-8 text preserved through the full encoding pipeline
 //   - Multi-chunk long text producing combined MP3 and multi-chunk SRT
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/communication/ConnectionMetadata.hpp"
 #include "edge_tts/communication/EdgeProtocol.hpp"
 #include "edge_tts/communication/EdgeServiceConfig.hpp"
@@ -44,8 +44,8 @@
 
 namespace fs = std::filesystem;
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::api::SynthesizerFn;
 using edge_tts::communication::ConnectionMetadataFactory;
 using edge_tts::communication::EdgeProtocol;
@@ -143,7 +143,7 @@ TEST(CommunicateEndToEnd, SaveWritesBothMp3AndSrt) {
     TempFile mp3{"save_both", ".mp3"};
     TempFile srt{"save_both", ".srt"};
 
-    Communicate c("Hello world", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("Hello world", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     auto r = c.save(mp3.path, srt.path);
 
@@ -166,7 +166,7 @@ TEST(CommunicateEndToEnd, SaveMp3BytesMatchFakeAudio) {
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     TempFile mp3{"mp3_bytes", ".mp3"};
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path).has_value());
 
@@ -187,7 +187,7 @@ TEST(CommunicateEndToEnd, SaveSrtContainsWordText) {
 
     TempFile mp3{"srt_word", ".mp3"};
     TempFile srt{"srt_word", ".srt"};
-    Communicate c("sunshine", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("sunshine", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
@@ -207,7 +207,7 @@ TEST(CommunicateEndToEnd, SaveSrtHasTimestampAndArrow) {
 
     TempFile mp3{"srt_fmt", ".mp3"};
     TempFile srt{"srt_fmt", ".srt"};
-    Communicate c("hello world", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello world", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
@@ -218,10 +218,10 @@ TEST(CommunicateEndToEnd, SaveSrtHasTimestampAndArrow) {
 }
 
 // ---------------------------------------------------------------------------
-// stream_sync(): full stack returns both audio and boundary chunks
+// synthesize()(): full stack returns both audio and boundary chunks
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateEndToEnd, StreamSyncReturnsBothAudioAndBoundaryChunks) {
+TEST(CommunicateEndToEnd, SynthesizeReturnsBothAudioAndBoundaryChunks) {
     ProductionWiring   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "AUDIODATA",
@@ -229,9 +229,9 @@ TEST(CommunicateEndToEnd, StreamSyncReturnsBothAudioAndBoundaryChunks) {
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     bool has_audio    = false;
@@ -257,9 +257,9 @@ TEST(CommunicateEndToEnd, AmpersandEscapedInSsmlFrame) {
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("cats & dogs", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("cats & dogs", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     // sent_messages()[0] = speech.config; [1] = SSML frame
     const auto& msgs = fake_ws.sent_messages();
@@ -274,9 +274,9 @@ TEST(CommunicateEndToEnd, LessThanEscapedInSsmlFrame) {
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("a < b", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("a < b", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -290,9 +290,9 @@ TEST(CommunicateEndToEnd, GreaterThanEscapedInSsmlFrame) {
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("a > b", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("a > b", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -307,9 +307,9 @@ TEST(CommunicateEndToEnd, AllXmlSpecialCharsEscapedTogether) {
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("x & y < z > w", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("x & y < z > w", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -335,9 +335,9 @@ TEST(CommunicateEndToEnd, MultiByteUtf8PreservedInSsmlFrame) {
     // "こんにちは" — each character is 3 bytes in UTF-8.
     const std::string japanese =
         "\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf";
-    Communicate c(japanese, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(japanese, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    ASSERT_TRUE(c.stream_sync().has_value());
+    ASSERT_TRUE(c.synthesize().has_value());
 
     const auto& msgs = fake_ws.sent_messages();
     ASSERT_TRUE(msgs.size() >= 2u);
@@ -360,7 +360,7 @@ TEST(CommunicateEndToEnd, LongTextSavesCombinedMp3) {
 
     TempFile mp3{"long_mp3", ".mp3"};
     std::string long_text(5000, 'x');  // exceeds 4096-byte chunk limit
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path).has_value());
 
@@ -386,7 +386,7 @@ TEST(CommunicateEndToEnd, LongTextSrtSpansAllChunks) {
     TempFile mp3{"long_srt", ".mp3"};
     TempFile srt{"long_srt", ".srt"};
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
@@ -397,10 +397,10 @@ TEST(CommunicateEndToEnd, LongTextSrtSpansAllChunks) {
 }
 
 // ---------------------------------------------------------------------------
-// Long text via stream_sync(): all chunks return their audio chunks
+// Long text via synthesize()(): all chunks return their audio chunks
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateEndToEnd, LongTextStreamSyncReturnsAudioPerChunk) {
+TEST(CommunicateEndToEnd, LongTextSynthesizeReturnsAudioPerChunk) {
     ProductionWiring   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "CHUNK_A");
@@ -409,9 +409,9 @@ TEST(CommunicateEndToEnd, LongTextStreamSyncReturnsAudioPerChunk) {
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     std::string long_text(5000, 'x');
-    Communicate c(long_text, TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    auto result = c.stream_sync();
+    auto result = c.synthesize();
 
     ASSERT_TRUE(result.has_value());
     int audio_count = 0;
@@ -425,18 +425,18 @@ TEST(CommunicateEndToEnd, LongTextStreamSyncReturnsAudioPerChunk) {
 // Single-use guarantee through the full stack
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateEndToEnd, StreamSyncIsOneShot) {
+TEST(CommunicateEndToEnd, SynthesizeIsOneShot) {
     ProductionWiring   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
-    (void)c.stream_sync();
+    (void)c.synthesize();
 
-    auto r2 = c.stream_sync();
+    auto r2 = c.synthesize();
     EXPECT_FALSE(r2.has_value());
     EXPECT_EQ(r2.error().code(), ErrorCode::invalid_state);
 }
@@ -449,7 +449,7 @@ TEST(CommunicateEndToEnd, SaveIsOneShot) {
     SynthesisSession session{fake_ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
 
     TempFile mp3{"one_shot", ".mp3"};
-    Communicate c("hello", TtsConfig::defaults(), CommunicateOptions{},
+    SpeechSynthesizer c("hello", TtsConfig::defaults(), SynthesisOptions{},
                   make_seam(session));
     ASSERT_TRUE(c.save(mp3.path).has_value());
 

@@ -9,12 +9,6 @@ namespace edge_tts::communication {
 
 // Minimal synchronous WebSocket transport boundary.
 //
-// Reference: communicate.py __stream() — connection lifecycle:
-//   1. session.ws_connect(url, ...) — connect with URL and headers
-//   2. websocket.send_str(text)     — send speech.config frame (text)
-//   3. websocket.send_str(text)     — send SSML frame (text)
-//   4. async for received in websocket: ... — receive loop
-//   5. (context manager exit)       — close implicitly
 //
 // Error model:
 //   Every operation returns Result<> so errors propagate without exceptions.

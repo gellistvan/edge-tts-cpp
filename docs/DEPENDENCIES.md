@@ -334,7 +334,7 @@ Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py
 | Single submodule for both HTTP and WebSocket | ✓ | ✗ (HTTP only) | ✗ (HTTP only) |
 | Already integrated in this project | ✓ | ✗ | ✗ |
 | Header/source library; no OS install required | ✓ | ✗ (needs curl) | ✗ (system install) |
-| Aligns with Python reference (aiohttp = HTTP+WS) | ✓ | partial | partial |
+| Single library covers both HTTP and WebSocket | ✓ | partial | partial |
 
 Choosing ixwebsocket avoids a second WebSocket submodule later and matches the
 project's existing plan documented in `submodules/README.md`.
@@ -385,7 +385,7 @@ the public interface.
 - `connect_timeout` — maps to `ix::WebSocket::setHandshakeTimeout()` (default 10 s, reference `sock_connect=10`)
 - `read_timeout` — used as the `wait_for` deadline in the blocking `receive()` call (default 60 s, reference `sock_read=60`)
 - `proxy` — if set, `connect()` returns `ErrorCode::unsupported` before touching the network (ixwebsocket has no CONNECT-tunnel proxy API)
-- `extra_headers` — forwarded to `ix::WebSocket::setExtraHeaders()` for the upgrade request (reference: `WSS_HEADERS` in `constants.py`)
+- `extra_headers` — forwarded to `ix::WebSocket::setExtraHeaders()` for the upgrade request
 
 After a successful `connect()`, an internal thread runs `ws.run()` and pumps
 incoming frames into a thread-safe queue.  `receive()` blocks on that queue until
@@ -393,13 +393,13 @@ a frame arrives or `read_timeout` elapses.  `close()` calls `ws.stop()` and
 joins the receive thread.
 
 TLS: `tls_opts.caFile = "SYSTEM"` tells ixwebsocket to use the platform CA
-bundle (matching Python's `ssl.create_default_context()` in `communicate.py`).
+bundle for certificate verification.
 
 ### Production app usage
 
 `communication::HttpClient` is the HTTP backend used in production by
 `apps/edge-tts/main.cpp` for `--list-voices`.  It is constructed with
-`HttpClientOptions` carrying the proxy and timeout from `CommunicateOptions`
+`HttpClientOptions` carrying the proxy and timeout from `SynthesisOptions`
 defaults, and is backed by `ix::HttpClient` from ixwebsocket.
 `FakeHttpClient` is only used in tests and is never compiled into the app.
 

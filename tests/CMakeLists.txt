@@ -140,10 +140,10 @@ edge_tts_add_module_test(
     SOURCES
         common/test_main.cpp
         api/FileWriterTests.cpp
-        api/CommunicateTests.cpp
-        api/CommunicateOptionsTests.cpp
-        api/CommunicateProductionWiringTests.cpp
-        api/CommunicateEndToEndTests.cpp
+        api/SpeechSynthesizerTests.cpp
+        api/SynthesisOptionsTests.cpp
+        api/SpeechSynthesizerWiringTests.cpp
+        api/SpeechSynthesizerEndToEndTests.cpp
         api/OfflineIntegrationTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli edge_tts_test_support
 )
@@ -153,7 +153,7 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
         NAME api_network
         SOURCES
             common/test_main.cpp
-            api/CommunicateNetworkTests.cpp
+            api/SpeechSynthesizerNetworkTests.cpp
         LIBRARIES edge_tts::api
     )
     # Network tests require ixwebsocket for real WebSocket/HTTP connections.
@@ -246,8 +246,8 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "edge_tts/edge_tts.hpp"
     "edge_tts/version.hpp"
     # api
-    "edge_tts/api/Communicate.hpp"
-    "edge_tts/api/CommunicateOptions.hpp"
+    "edge_tts/api/SpeechSynthesizer.hpp"
+    "edge_tts/api/SynthesisOptions.hpp"
     "edge_tts/api/FileWriter.hpp"
     # core
     "edge_tts/core/Chunk.hpp"

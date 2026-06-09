@@ -1,8 +1,8 @@
 // consumer_add_subdirectory example — minimal edge-tts-cpp consumer.
 //
 // This file demonstrates the public API surface available after linking
-// edge_tts::tts.  Include the umbrella header; it exposes Communicate,
-// TtsConfig, CommunicateOptions, Voice, Result<T>, and ErrorCode.
+// edge_tts::tts.  Include the umbrella header; it exposes SpeechSynthesizer,
+// TtsConfig, SynthesisOptions, Voice, Result<T>, and ErrorCode.
 //
 // Build instructions: see CMakeLists.txt in this directory.
 
@@ -22,13 +22,13 @@ int main() {
     // NOTE: proxy is not supported by the ixwebsocket backend.
     // Setting opts.proxy will cause save()/stream_sync() to return
     // ErrorCode::unsupported.
-    edge_tts::api::CommunicateOptions opts;
+    edge_tts::api::SynthesisOptions opts;
     // opts.connect_timeout = std::chrono::seconds{15};
     // opts.receive_timeout = std::chrono::seconds{60};
 
     // ── Create the TTS session ────────────────────────────────────────────
     // Construction is cheap — no network connection is opened here.
-    edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), std::move(opts));
+    edge_tts::api::SpeechSynthesizer tts("Hello, world!", std::move(cfg), std::move(opts));
 
     // ── Synthesize speech (requires internet access) ──────────────────────
     // Uncomment the block below to actually produce audio.  The call connects
@@ -43,7 +43,7 @@ int main() {
     //
     // Alternatively, stream chunks directly:
     //
-    // auto chunks = tts.stream_sync();
+    // auto chunks = tts.synthesize();
     // if (!chunks) {
     //     std::cerr << "Stream failed: " << chunks.error().what() << '\n';
     //     return 1;

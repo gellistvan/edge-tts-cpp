@@ -42,7 +42,7 @@ printing and `exit()`.
 | `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
 | `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `exact` |
 | `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `exact` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL forwarded verbatim to the aiohttp WebSocket and voice-list clients. | Parsed and format-validated (`URL` must be non-empty and contain `://`; invalid format → exit 2). Flows into `api::CommunicateOptions::proxy`. **Runtime**: the current ixwebsocket backend has no client-side proxy API; any non-absent proxy returns `ErrorCode::unsupported` (exit 1) rather than being silently ignored. **Security**: proxy URL credentials (`user:pass@`) are redacted to `[credentials]` in all CLI stderr output. | `deviation` (proxy not functional; returns explicit error) |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Parsed and format-validated (`URL` must be non-empty and contain `://`; invalid format → exit 2). Flows into `api::SynthesisOptions::proxy`. **Runtime**: the current ixwebsocket backend has no client-side proxy API; any non-absent proxy returns `ErrorCode::unsupported` (exit 1) rather than being silently ignored. **Security**: proxy URL credentials (`user:pass@`) are redacted to `[credentials]` in all CLI stderr output. | `deviation` (proxy not functional; returns explicit error) |
 | `--version` | — | (flag) | — | Print `edge-tts {version}` (e.g. `edge-tts 7.2.8`) to stdout and exit 0. | Print `edge-tts-cpp {semver}` to stdout and exit 0. | `deviation` (version string differs) |
 | `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via hand-rolled parser. | `exact` |
 
@@ -74,7 +74,7 @@ and testable.  Dispatch: `include/edge_tts/cli/PlaybackCommandDispatcher.hpp` /
 
 **Implementation note (deviation from Python):** The Python reference calls
 `edge-tts` as a subprocess (`_run_edge_tts()`).  The C++ implementation calls
-`api::Communicate::save()` directly and `media::FfmpegAudioConverter::play_mp3()`
+`api::SpeechSynthesizer::save()` directly and `media::FfmpegAudioConverter::play_mp3()`
 for playback via `ffplay`.  Observable behavior (temp file lifecycle, env vars,
 exit codes) is identical.
 
@@ -83,13 +83,13 @@ exit codes) is identical.
 | Option | Short | Argument | Default | Python behavior | C++ behavior | Status |
 |--------|-------|----------|---------|-----------------|--------------|--------|
 | `--mpv` | — | (flag) | `false` on Windows, `true` elsewhere | Force mpv playback on Windows. On non-Windows mpv is always used. | Explicitly rejected: returns exit 1 with a clear message ("only ffplay is available"). | `deviation` (see note 4) |
-| `--text` | `-t` | `STRING` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Passed to `Communicate`. | `exact` |
+| `--text` | `-t` | `STRING` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Passed to `SpeechSynthesizer`. | `exact` |
 | `--file` | `-f` | `PATH` | (required\*) | Forwarded verbatim to `edge-tts` subprocess. | Read via `InputLoader`; same stdin/file semantics. | `exact` |
 | `--voice` | `-v` | `VOICE` | `en-US-EmmaMultilingualNeural` | Forwarded verbatim to `edge-tts` subprocess. | Identical. | `exact` |
 | `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
-| `--proxy` | — | `URL` | (none) | Forwarded verbatim to `edge-tts` subprocess which passes it to `aiohttp`. | Format-validated at parse time (non-empty, must contain `://`); flows into `api::CommunicateOptions::proxy`. **Runtime**: same limitation as `edge-tts` — ixwebsocket backend returns `unsupported` (exit 1) rather than silently ignoring the proxy. **Security**: credentials redacted from error output as with `edge-tts`. | `deviation` (proxy not functional; returns explicit error) |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Format-validated at parse time (non-empty, must contain `://`); flows into `api::SynthesisOptions::proxy`. **Runtime**: same limitation as `edge-tts` — ixwebsocket backend returns `unsupported` (exit 1) rather than silently ignoring the proxy. **Security**: credentials redacted from error output as with `edge-tts`. | `deviation` (proxy not functional; returns explicit error) |
 | `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |
@@ -101,7 +101,7 @@ exit codes) is identical.
 
 | # | Behavior | Python source | C++ status |
 |---|----------|---------------|------------|
-| 1 | **Library call model.** C++ calls `api::Communicate::save()` directly instead of spawning an `edge-tts` subprocess. Observable behavior is equivalent. | `__main__.py:_run_edge_tts()` | `deviation` (library call, not subprocess) |
+| 1 | **Library call model.** C++ calls `api::SpeechSynthesizer::save()` directly instead of spawning an `edge-tts` subprocess. Observable behavior is equivalent. | `__main__.py:_run_edge_tts()` | `deviation` (library call, not subprocess) |
 | 2 | **Temp file lifecycle.** Temp `.mp3` (and `.srt` if `EDGE_PLAYBACK_SRT_FILE` is set) are created in the OS temp dir and deleted on exit unless `EDGE_PLAYBACK_KEEP_TEMP` is set. Cleanup happens even on synthesis or playback errors (RAII guard covers both files). | `__main__.py:_cleanup()` | `exact` |
 | 3 | **Playback.** Uses `ffplay -nodisp -autoexit <mp3>` via `FfmpegAudioConverter`. Python uses `mpv`. | `__main__.py:_play_media()` | `deviation` (ffplay instead of mpv) |
 | 4 | **`--mpv` flag.** Python uses mpv by default on non-Windows; `--mpv` forces it on Windows. C++ build does not implement mpv: passing `--mpv` produces `error: --mpv is not supported; only ffplay is available. Remove --mpv to use ffplay.` and exits 1. | `__main__.py:_play_media()` | `deviation` (explicit rejection, not silent ignore) |
@@ -149,7 +149,7 @@ or when the target was not built.
 | 1 | `--version` output | `edge-tts 7.2.8` | `edge-tts-cpp {semver}` | Different project; version tracks C++ release |
 | 2 | Subtitle output format | `tabulate` library for voice list | Custom stream formatting | No Python dependency; must match column layout exactly |
 | 3 | Async runtime | `asyncio.run()` wraps all I/O | Native C++ async or `std::thread` | Language difference; external behavior unchanged |
-| 4 | Sync wrappers | `stream_sync()` / `save_sync()` are thin wrappers around async code, executed in a `ThreadPoolExecutor` | `stream_sync()` and `save()` are natively synchronous — no thread pool is used | `deviation` (implementation strategy differs; external behavior is equivalent) |
+| 4 | Sync wrappers | `synthesize()` / `save()` are thin wrappers around async code, executed in a `ThreadPoolExecutor` | `synthesize()` and `save()` are natively synchronous — no thread pool is used | `deviation` (implementation strategy differs; external behavior is equivalent) |
 
 ---
 

@@ -12,7 +12,7 @@ TEST(UmbrellaHeader, TtsConfigConstructsWithoutNetworkIO) {
 }
 
 TEST(UmbrellaHeader, CommunicateOptionsDefaultsAvailable) {
-    edge_tts::api::CommunicateOptions opts;
+    edge_tts::api::SynthesisOptions opts;
     // Default proxy is absent.
     EXPECT_FALSE(opts.proxy.has_value());
 }
@@ -20,9 +20,9 @@ TEST(UmbrellaHeader, CommunicateOptionsDefaultsAvailable) {
 TEST(UmbrellaHeader, CommunicateConstructsWithoutNetworkIO) {
     edge_tts::core::TtsConfig cfg;
     cfg.voice = "en-US-EmmaMultilingualNeural";
-    edge_tts::api::CommunicateOptions opts;
+    edge_tts::api::SynthesisOptions opts;
     // Construction must not perform any I/O.
-    edge_tts::api::Communicate c("Hello", std::move(cfg), std::move(opts));
+    edge_tts::api::SpeechSynthesizer c("Hello", std::move(cfg), std::move(opts));
     (void)c;
     EXPECT_TRUE(true);
 }

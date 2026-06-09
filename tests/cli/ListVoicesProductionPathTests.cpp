@@ -7,8 +7,8 @@
 // Goal: prove that the production dispatch path (VoiceService + HttpClient)
 // works end-to-end through the CLI dispatcher without requiring live network.
 
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/cli/EdgeTtsArgumentParser.hpp"
 #include "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
 #include "edge_tts/common/Clock.hpp"
@@ -29,8 +29,8 @@
 #include <string>
 #include <vector>
 
-using edge_tts::api::Communicate;
-using edge_tts::api::CommunicateOptions;
+using edge_tts::api::SpeechSynthesizer;
+using edge_tts::api::SynthesisOptions;
 using edge_tts::cli::EdgeTtsArgumentParser;
 using edge_tts::cli::EdgeTtsCommandDispatcher;
 using edge_tts::cli::ParseAction;
@@ -68,10 +68,10 @@ static ParseResult make_list_voices_result() {
     return r;
 }
 
-// Minimal CommunicateFactory — never called during list-voices dispatch.
-static EdgeTtsCommandDispatcher::CommunicateFactory make_noop_factory() {
-    return [](std::string text, TtsConfig cfg, CommunicateOptions opts) {
-        return Communicate{std::move(text), std::move(cfg), std::move(opts)};
+// Minimal SynthesizerFactory — never called during list-voices dispatch.
+static EdgeTtsCommandDispatcher::SynthesizerFactory make_noop_factory() {
+    return [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer{std::move(text), std::move(cfg), std::move(opts)};
     };
 }
 

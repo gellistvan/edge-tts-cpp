@@ -1,5 +1,5 @@
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"
+#include "edge_tts/api/SpeechSynthesizer.hpp"
+#include "edge_tts/api/SynthesisOptions.hpp"
 #include "edge_tts/cli/PlaybackArguments.hpp"
 #include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
 #include "edge_tts/core/TtsConfig.hpp"
@@ -73,10 +73,10 @@ int main(int argc, char* argv[]) {
     };
 
     // Wire production dependencies — same pattern as edge-tts/main.cpp.
-    // The factory forwards CommunicateOptions (proxy, timeouts) from CLI args.
+    // The factory forwards SynthesisOptions (proxy, timeouts) from CLI args.
     cli::PlaybackCommandDispatcher dispatcher{
-        [](std::string text, core::TtsConfig cfg, api::CommunicateOptions opts) {
-            return api::Communicate{std::move(text), std::move(cfg), std::move(opts)};
+        [](std::string text, core::TtsConfig cfg, api::SynthesisOptions opts) {
+            return api::SpeechSynthesizer{std::move(text), std::move(cfg), std::move(opts)};
         },
         converter,
         temp_provider,
