@@ -56,7 +56,7 @@ not affect them.
 
 ### Rule 4 — Include directories
 
-Every module sets `BUILD_INTERFACE` to the repo's `include/` tree and
+Every module sets `BUILD_INTERFACE to the module's own `modules/<name>/include/` directory and
 `INSTALL_INTERFACE` to `include` (relative, resolved against `_IMPORT_PREFIX`
 in installed packages).  Submodule source paths never appear in
 `INTERFACE_INCLUDE_DIRECTORIES` of installed targets.
@@ -74,8 +74,8 @@ independently.
 
 **CMake target:** `edge_tts_common` / `edge_tts::common`
 **Test target:** `edge_tts_common_tests`
-**Headers:** `include/edge_tts/common/`
-**Sources:** `src/common/Error.cpp`
+**Headers:** `modules/common/include/common/`
+**Sources:** `modules/common/src/`
 
 | File | Description |
 |------|-------------|
@@ -132,7 +132,7 @@ Two error propagation styles are used:
 
 **CMake target:** `edge_tts_core` / `edge_tts::core`
 **Test target:** `edge_tts_core_tests`
-**Headers:** `include/edge_tts/core/`
+**Headers:** `modules/core/include/core/`
 
 | File | Description |
 |------|-------------|
@@ -168,7 +168,7 @@ are idempotent.
 
 **CMake target:** `edge_tts_serialization` / `edge_tts::serialization`
 **Test target:** `edge_tts_serialization_tests`
-**Headers:** `include/edge_tts/serialization/`
+**Headers:** `modules/serialization/include/serialization/`
 
 Owns the Edge TTS WebSocket protocol format: SSML message construction,
 speech-config payloads, protocol/connection token metadata, and JSON parsing
@@ -218,8 +218,8 @@ of the voice-list response.
 
 **CMake target:** `edge_tts_subtitle` / `edge_tts::subtitle`
 **Test target:** `edge_tts_subtitle_tests`
-**Headers:** `include/edge_tts/subtitles/`
-**Sources:** `src/subtitles/`
+**Headers:** `modules/subtitle/include/subtitles/`
+**Sources:** `modules/subtitle/src/`
 
 Owns timing conversion, subtitle cue modeling, and SRT composition.
 
@@ -250,7 +250,7 @@ Owns timing conversion, subtitle cue modeling, and SRT composition.
 
 **CMake target:** `edge_tts_media` / `edge_tts::media`
 **Test target:** `edge_tts_media_tests`
-**Headers:** `include/edge_tts/media/`
+**Headers:** `modules/media/include/media/`
 
 Owns the `ffmpeg`/`ffplay` process boundary.  Converts or plays audio by
 spawning system executables — no direct linking to FFmpeg libraries.
@@ -272,7 +272,7 @@ spawning system executables — no direct linking to FFmpeg libraries.
 
 **CMake target:** `edge_tts_communication` / `edge_tts::communication`
 **Test target:** `edge_tts_communication_tests`
-**Headers:** `include/edge_tts/communication/`
+**Headers:** `modules/communication/include/communication/`
 
 WebSocket transport infrastructure, voice-list service, and synthesis
 orchestration.  Does NOT own the public `SpeechSynthesizer` facade — that lives
@@ -307,8 +307,8 @@ accumulation and audio conversion are `api`-layer concerns.  The public
 
 **CMake target:** `edge_tts_api` / `edge_tts::api`
 **Test target:** `edge_tts_api_tests` (offline integration — uses `FakeWebSocketClient` from `edge_tts_test_support`; real-network tests gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`)
-**Headers:** `include/edge_tts/api/`
-**Sources:** `src/api/`
+**Headers:** `modules/api/include/api/`
+**Sources:** `modules/api/src/`
 
 Public user-facing facade module.  This is the only module end-users and
 the CLI layer should depend on for synthesis.
@@ -335,8 +335,8 @@ avoids a fat `communication` module that also owns public API semantics.
 
 **CMake target:** `edge_tts_cli` / `edge_tts::cli`
 **Test target:** `edge_tts_cli_tests`
-**Headers:** `include/edge_tts/cli/`
-**Sources:** `src/cli/`
+**Headers:** `modules/cli/include/cli/`
+**Sources:** `modules/cli/src/`
 
 CLI argument parsing and application-level plumbing shared between the
 `edge-tts` and `edge-playback` executables.  Uses a hand-rolled token
@@ -389,8 +389,8 @@ regression:
 
 | Category | Location | Self-contained? | Stable API? | Installed? |
 |----------|----------|-----------------|-------------|------------|
-| **Stable** | `include/edge_tts/api/`, `core/`, `common/`, `subtitles/`, `edge_tts.hpp` | Yes | Yes | Yes |
-| **Installed, not stable** | `include/edge_tts/communication/`, `serialization/`, `media/`, `cli/` | Yes | No | Yes |
+| **Stable** | `modules/api/include/api/`, `core/`, `common/`, `subtitles/`, `edge_tts.hpp` | Yes | Yes | Yes |
+| **Installed, not stable** | `modules/communication/include/communication/`, `serialization/`, `media/`, `cli/` | Yes | No | Yes |
 
 **"Stable"** means the API will not change without a major version bump.  Consumers
 linking `edge_tts::tts` and including only stable headers are insulated from
@@ -423,15 +423,15 @@ Stable headers additionally must:
 
 | Module | Public header path | Stable? | Notes |
 |--------|-------------------|---------|-------|
-| `api` | `include/edge_tts/api/` | Yes | Core synthesis facade |
-| `core` | `include/edge_tts/core/` | Yes | Data types (TtsConfig, Voice, Chunk) |
-| `common` | `include/edge_tts/common/` | Yes | Error handling, utilities |
-| `subtitle` | `include/edge_tts/subtitles/` | Yes | SubMaker, SRT types |
-| `communication` | `include/edge_tts/communication/` | No | Internal transport — may change |
-| `serialization` | `include/edge_tts/serialization/` | No | Internal protocol framing — may change |
-| `media` | `include/edge_tts/media/` | No | App-layer; ffplay/ffmpeg runner |
-| `cli` | `include/edge_tts/cli/` | No | App-layer; CLI argument parsing |
-| `test_support` | `tests/communication/Fake*.hpp` | — | **Never installed**; test doubles only |
+| `api` | `modules/api/include/api/` | Yes | Core synthesis facade |
+| `core` | `modules/core/include/core/` | Yes | Data types (TtsConfig, Voice, Chunk) |
+| `common` | `modules/common/include/common/` | Yes | Error handling, utilities |
+| `subtitle` | `modules/subtitle/include/subtitles/` | Yes | SubMaker, SRT types |
+| `communication` | `modules/communication/include/communication/` | No | Internal transport — may change |
+| `serialization` | `modules/serialization/include/serialization/` | No | Internal protocol framing — may change |
+| `media` | `modules/media/include/media/` | No | App-layer; ffplay/ffmpeg runner |
+| `cli` | `modules/cli/include/cli/` | No | App-layer; CLI argument parsing |
+| `test_support` | `tests/support/communication/Fake*.hpp` | — | **Never installed**; test doubles only |
 
 ---
 

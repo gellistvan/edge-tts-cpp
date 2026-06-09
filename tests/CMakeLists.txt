@@ -1,6 +1,10 @@
 # EdgeTtsAddTest is included from the parent CMakeLists.txt before this
 # subdirectory is processed, so edge_tts_add_module_test() is available here.
 
+# Shorthand variables for each module's test directory.
+set(_M "${EDGE_TTS_SOURCE_DIR}/modules")
+set(_TEST_MAIN "${_M}/common/tests/test_main.cpp")
+
 # ---------------------------------------------------------------------------
 # Test-support library: fake in-memory implementations of production interfaces.
 # Only test targets may link against this.  Production modules must not.
@@ -23,75 +27,75 @@ target_link_libraries(edge_tts_test_support PUBLIC
 edge_tts_add_module_test(
     NAME common
     SOURCES
-        common/test_main.cpp
-        common/ErrorTests.cpp
-        common/ResultTests.cpp
-        common/ClockTests.cpp
-        common/HexTests.cpp
-        common/IdGeneratorTests.cpp
-        common/Utf8Tests.cpp
-        common/Sha256Tests.cpp
+        ${_TEST_MAIN}
+        ${_M}/common/tests/ErrorTests.cpp
+        ${_M}/common/tests/ResultTests.cpp
+        ${_M}/common/tests/ClockTests.cpp
+        ${_M}/common/tests/HexTests.cpp
+        ${_M}/common/tests/IdGeneratorTests.cpp
+        ${_M}/common/tests/Utf8Tests.cpp
+        ${_M}/common/tests/Sha256Tests.cpp
     LIBRARIES edge_tts::common
 )
 
 edge_tts_add_module_test(
     NAME core
     SOURCES
-        common/test_main.cpp
-        core/test_tts_config.cpp
-        core/test_voice.cpp
-        core/OutputFormatTests.cpp
-        core/TtsConfigTests.cpp
-        core/VoiceTests.cpp
-        core/ChunkTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/core/tests/test_tts_config.cpp
+        ${_M}/core/tests/test_voice.cpp
+        ${_M}/core/tests/OutputFormatTests.cpp
+        ${_M}/core/tests/TtsConfigTests.cpp
+        ${_M}/core/tests/VoiceTests.cpp
+        ${_M}/core/tests/ChunkTests.cpp
     LIBRARIES edge_tts::core
 )
 
 edge_tts_add_module_test(
     NAME subtitle
     SOURCES
-        common/test_main.cpp
-        subtitles/test_srt_composer.cpp
-        subtitles/SubtitleTimeTests.cpp
-        subtitles/SrtComposerTests.cpp
-        subtitles/SubMakerTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/subtitle/tests/test_srt_composer.cpp
+        ${_M}/subtitle/tests/SubtitleTimeTests.cpp
+        ${_M}/subtitle/tests/SrtComposerTests.cpp
+        ${_M}/subtitle/tests/SubMakerTests.cpp
     LIBRARIES edge_tts::subtitle
 )
 
 edge_tts_add_module_test(
     NAME serialization
     SOURCES
-        common/test_main.cpp
-        serialization/XmlEscaperTests.cpp
-        serialization/TextNormalizerTests.cpp
-        serialization/TextChunkerTests.cpp
-        serialization/SsmlBuilderTests.cpp
-        serialization/VoiceJsonParserTests.cpp
-        serialization/ProtocolFrameTests.cpp
-        serialization/MetadataJsonParserTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/serialization/tests/XmlEscaperTests.cpp
+        ${_M}/serialization/tests/TextNormalizerTests.cpp
+        ${_M}/serialization/tests/TextChunkerTests.cpp
+        ${_M}/serialization/tests/SsmlBuilderTests.cpp
+        ${_M}/serialization/tests/VoiceJsonParserTests.cpp
+        ${_M}/serialization/tests/ProtocolFrameTests.cpp
+        ${_M}/serialization/tests/MetadataJsonParserTests.cpp
     LIBRARIES edge_tts::serialization
 )
 
 edge_tts_add_module_test(
     NAME communication
     SOURCES
-        common/test_main.cpp
-        communication/EdgeServiceConfigTests.cpp
-        communication/EdgeTokenProviderTests.cpp
-        communication/ConnectionMetadataTests.cpp
-        communication/HttpClientInterfaceTests.cpp
-        communication/HttpClientTests.cpp
-        communication/VoiceServiceTests.cpp
-        communication/EdgeRequestHeadersTests.cpp
-        communication/EdgeProtocolSpeechConfigTests.cpp
-        communication/EdgeProtocolSsmlFrameTests.cpp
-        communication/EdgeProtocolIncomingTests.cpp
-        communication/FakeWebSocketClientTests.cpp
-        communication/HttpDateTests.cpp
-        communication/SynthesisSessionTests.cpp
-        communication/WebSocketClientTests.cpp
-        communication/RetryPolicyTests.cpp
-        communication/CommunicateStyleFlowTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/communication/tests/EdgeServiceConfigTests.cpp
+        ${_M}/communication/tests/EdgeTokenProviderTests.cpp
+        ${_M}/communication/tests/ConnectionMetadataTests.cpp
+        ${_M}/communication/tests/HttpClientInterfaceTests.cpp
+        ${_M}/communication/tests/HttpClientTests.cpp
+        ${_M}/communication/tests/VoiceServiceTests.cpp
+        ${_M}/communication/tests/EdgeRequestHeadersTests.cpp
+        ${_M}/communication/tests/EdgeProtocolSpeechConfigTests.cpp
+        ${_M}/communication/tests/EdgeProtocolSsmlFrameTests.cpp
+        ${_M}/communication/tests/EdgeProtocolIncomingTests.cpp
+        ${_M}/communication/tests/FakeWebSocketClientTests.cpp
+        ${_M}/communication/tests/HttpDateTests.cpp
+        ${_M}/communication/tests/SynthesisSessionTests.cpp
+        ${_M}/communication/tests/WebSocketClientTests.cpp
+        ${_M}/communication/tests/RetryPolicyTests.cpp
+        ${_M}/communication/tests/CommunicateStyleFlowTests.cpp
     LIBRARIES edge_tts::communication edge_tts_test_support
 )
 
@@ -107,9 +111,9 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
     edge_tts_add_module_test(
         NAME communication_network
         SOURCES
-            common/test_main.cpp
-            communication/HttpClientNetworkTests.cpp
-            communication/WebSocketClientNetworkTests.cpp
+            ${_TEST_MAIN}
+            ${_M}/communication/tests/HttpClientNetworkTests.cpp
+            ${_M}/communication/tests/WebSocketClientNetworkTests.cpp
         LIBRARIES edge_tts::communication
     )
     # Propagate the ixwebsocket availability flag to network tests as well.
@@ -122,9 +126,9 @@ endif()
 edge_tts_add_module_test(
     NAME media
     SOURCES
-        common/test_main.cpp
-        media/ExecutableDiscoveryTests.cpp
-        media/FfmpegAudioConverterTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/media/tests/ExecutableDiscoveryTests.cpp
+        ${_M}/media/tests/FfmpegAudioConverterTests.cpp
     LIBRARIES edge_tts::media edge_tts_test_support
 )
 
@@ -132,19 +136,19 @@ edge_tts_add_module_test(
 # fork/execvp) and can only be compiled on POSIX platforms.
 # FakeProcessRunner behavior is covered by FfmpegAudioConverterTests.cpp on all platforms.
 if(NOT WIN32)
-    target_sources(edge_tts_media_tests PRIVATE media/ProcessRunnerTests.cpp)
+    target_sources(edge_tts_media_tests PRIVATE ${_M}/media/tests/ProcessRunnerTests.cpp)
 endif()
 
 edge_tts_add_module_test(
     NAME api
     SOURCES
-        common/test_main.cpp
-        api/FileWriterTests.cpp
-        api/SpeechSynthesizerTests.cpp
-        api/SynthesisOptionsTests.cpp
-        api/SpeechSynthesizerWiringTests.cpp
-        api/SpeechSynthesizerEndToEndTests.cpp
-        api/OfflineIntegrationTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/api/tests/FileWriterTests.cpp
+        ${_M}/api/tests/SpeechSynthesizerTests.cpp
+        ${_M}/api/tests/SynthesisOptionsTests.cpp
+        ${_M}/api/tests/SpeechSynthesizerWiringTests.cpp
+        ${_M}/api/tests/SpeechSynthesizerEndToEndTests.cpp
+        ${_M}/api/tests/OfflineIntegrationTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli edge_tts_test_support
 )
 
@@ -152,8 +156,8 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
     edge_tts_add_module_test(
         NAME api_network
         SOURCES
-            common/test_main.cpp
-            api/SpeechSynthesizerNetworkTests.cpp
+            ${_TEST_MAIN}
+            ${_M}/api/tests/SpeechSynthesizerNetworkTests.cpp
         LIBRARIES edge_tts::api
     )
     # Network tests require ixwebsocket for real WebSocket/HTTP connections.
@@ -169,7 +173,7 @@ if(EDGE_TTS_ENABLE_NETWORK_TESTS)
     edge_tts_add_module_test(
         NAME network_smoke
         SOURCES
-            common/test_main.cpp
+            ${_TEST_MAIN}
             network/RealVoiceListTests.cpp
             network/RealSynthesisSmokeTests.cpp
         LIBRARIES edge_tts::api edge_tts::communication
@@ -194,14 +198,14 @@ endif()
 edge_tts_add_module_test(
     NAME cli
     SOURCES
-        common/test_main.cpp
-        cli/test_cli.cpp
-        cli/EdgeTtsArgumentParserTests.cpp
-        cli/InputLoaderTests.cpp
-        cli/VoiceFormatterTests.cpp
-        cli/EdgeTtsCommandDispatcherTests.cpp
-        cli/PlaybackCommandDispatcherTests.cpp
-        cli/ListVoicesProductionPathTests.cpp
+        ${_TEST_MAIN}
+        ${_M}/cli/tests/test_cli.cpp
+        ${_M}/cli/tests/EdgeTtsArgumentParserTests.cpp
+        ${_M}/cli/tests/InputLoaderTests.cpp
+        ${_M}/cli/tests/VoiceFormatterTests.cpp
+        ${_M}/cli/tests/EdgeTtsCommandDispatcherTests.cpp
+        ${_M}/cli/tests/PlaybackCommandDispatcherTests.cpp
+        ${_M}/cli/tests/ListVoicesProductionPathTests.cpp
     LIBRARIES edge_tts::cli edge_tts_test_support
 )
 
@@ -215,7 +219,7 @@ edge_tts_add_module_test(
 edge_tts_add_module_test(
     NAME umbrella_header
     SOURCES
-        common/test_main.cpp
+        ${_TEST_MAIN}
         headers/umbrella_consumer_test.cpp
     LIBRARIES edge_tts::tts
 )
@@ -228,13 +232,13 @@ edge_tts_add_module_test(
 # a single test executable.  If any header is not self-contained (missing its
 # own prerequisites), compilation fails with a clear error.
 #
-# Scope: all headers installed under include/edge_tts/ — api/, core/, common/,
+# Scope: all headers installed under include/ — api/, core/, common/,
 # subtitles/, communication/, serialization/, media/, cli/.
 #
-# All of these headers include only other edge_tts/ headers and C++ standard
+# All of these headers include only other module headers and C++ standard
 # library headers; none pull in nlohmann/json, ixwebsocket, or POSIX headers
 # directly (those external dependencies are hidden in .cpp files).  Linking
-# against edge_tts::tts provides the include/  directory, which is sufficient
+# against edge_tts::tts provides the include/ directory, which is sufficient
 # for compilation of every header in the tree.
 #
 # The companion Python test (edge_tts_installed_header_selfcontainment_tests)
@@ -246,71 +250,71 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "edge_tts/edge_tts.hpp"
     "edge_tts/version.hpp"
     # api
-    "edge_tts/api/SpeechSynthesizer.hpp"
-    "edge_tts/api/SynthesisOptions.hpp"
-    "edge_tts/api/FileWriter.hpp"
+    "api/SpeechSynthesizer.hpp"
+    "api/SynthesisOptions.hpp"
+    "api/FileWriter.hpp"
     # core
-    "edge_tts/core/Chunk.hpp"
-    "edge_tts/core/TtsChunk.hpp"
-    "edge_tts/core/TtsConfig.hpp"
-    "edge_tts/core/Voice.hpp"
-    "edge_tts/core/OutputFormat.hpp"
+    "core/Chunk.hpp"
+    "core/TtsChunk.hpp"
+    "core/TtsConfig.hpp"
+    "core/Voice.hpp"
+    "core/OutputFormat.hpp"
     # common
-    "edge_tts/common/Clock.hpp"
-    "edge_tts/common/Error.hpp"
-    "edge_tts/common/Errors.hpp"
-    "edge_tts/common/Expected.hpp"
-    "edge_tts/common/Result.hpp"
-    "edge_tts/common/Hex.hpp"
-    "edge_tts/common/IdGenerator.hpp"
-    "edge_tts/common/Sha256.hpp"
-    "edge_tts/common/Utf8.hpp"
+    "common/Clock.hpp"
+    "common/Error.hpp"
+    "common/Errors.hpp"
+    "common/Expected.hpp"
+    "common/Result.hpp"
+    "common/Hex.hpp"
+    "common/IdGenerator.hpp"
+    "common/Sha256.hpp"
+    "common/Utf8.hpp"
     # subtitles
-    "edge_tts/subtitles/SrtComposer.hpp"
-    "edge_tts/subtitles/SubMaker.hpp"
-    "edge_tts/subtitles/SubtitleCue.hpp"
-    "edge_tts/subtitles/Subtitle.hpp"
-    "edge_tts/subtitles/SubtitleTime.hpp"
+    "subtitles/SrtComposer.hpp"
+    "subtitles/SubMaker.hpp"
+    "subtitles/SubtitleCue.hpp"
+    "subtitles/Subtitle.hpp"
+    "subtitles/SubtitleTime.hpp"
     # communication (internal transport — installed, not part of stable API)
-    "edge_tts/communication/ConnectionMetadata.hpp"
-    "edge_tts/communication/EdgeProtocol.hpp"
-    "edge_tts/communication/EdgeRequestHeaders.hpp"
-    "edge_tts/communication/EdgeServiceConfig.hpp"
-    "edge_tts/communication/EdgeTokenProvider.hpp"
-    "edge_tts/communication/HttpClient.hpp"
-    "edge_tts/communication/HttpDate.hpp"
-    "edge_tts/communication/HttpTypes.hpp"
-    "edge_tts/communication/IHttpClient.hpp"
-    "edge_tts/communication/IncomingMessage.hpp"
-    "edge_tts/communication/IWebSocketClient.hpp"
-    "edge_tts/communication/RetryPolicy.hpp"
-    "edge_tts/communication/SynthesisSession.hpp"
-    "edge_tts/communication/VoiceService.hpp"
-    "edge_tts/communication/WebSocketClient.hpp"
-    "edge_tts/communication/WebSocketMessage.hpp"
+    "communication/ConnectionMetadata.hpp"
+    "communication/EdgeProtocol.hpp"
+    "communication/EdgeRequestHeaders.hpp"
+    "communication/EdgeServiceConfig.hpp"
+    "communication/EdgeTokenProvider.hpp"
+    "communication/HttpClient.hpp"
+    "communication/HttpDate.hpp"
+    "communication/HttpTypes.hpp"
+    "communication/IHttpClient.hpp"
+    "communication/IncomingMessage.hpp"
+    "communication/IWebSocketClient.hpp"
+    "communication/RetryPolicy.hpp"
+    "communication/SynthesisSession.hpp"
+    "communication/VoiceService.hpp"
+    "communication/WebSocketClient.hpp"
+    "communication/WebSocketMessage.hpp"
     # serialization (internal protocol — installed, not part of stable API)
-    "edge_tts/serialization/MetadataJsonParser.hpp"
-    "edge_tts/serialization/ProtocolMessage.hpp"
-    "edge_tts/serialization/ProtocolParser.hpp"
-    "edge_tts/serialization/ProtocolSerializer.hpp"
-    "edge_tts/serialization/SsmlBuilder.hpp"
-    "edge_tts/serialization/TextChunker.hpp"
-    "edge_tts/serialization/TextNormalizer.hpp"
-    "edge_tts/serialization/VoiceJsonParser.hpp"
-    "edge_tts/serialization/XmlEscaper.hpp"
+    "serialization/MetadataJsonParser.hpp"
+    "serialization/ProtocolMessage.hpp"
+    "serialization/ProtocolParser.hpp"
+    "serialization/ProtocolSerializer.hpp"
+    "serialization/SsmlBuilder.hpp"
+    "serialization/TextChunker.hpp"
+    "serialization/TextNormalizer.hpp"
+    "serialization/VoiceJsonParser.hpp"
+    "serialization/XmlEscaper.hpp"
     # media (app-layer — installed, not part of stable API)
-    "edge_tts/media/AudioConverter.hpp"
-    "edge_tts/media/ExecutableDiscovery.hpp"
-    "edge_tts/media/FfmpegAudioConverter.hpp"
-    "edge_tts/media/ProcessRunner.hpp"
+    "media/AudioConverter.hpp"
+    "media/ExecutableDiscovery.hpp"
+    "media/FfmpegAudioConverter.hpp"
+    "media/ProcessRunner.hpp"
     # cli (app-layer — installed, not part of stable API)
-    "edge_tts/cli/EdgeTtsArgumentParser.hpp"
-    "edge_tts/cli/EdgeTtsArguments.hpp"
-    "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
-    "edge_tts/cli/InputLoader.hpp"
-    "edge_tts/cli/PlaybackArguments.hpp"
-    "edge_tts/cli/PlaybackCommandDispatcher.hpp"
-    "edge_tts/cli/VoiceFormatter.hpp"
+    "cli/EdgeTtsArgumentParser.hpp"
+    "cli/EdgeTtsArguments.hpp"
+    "cli/EdgeTtsCommandDispatcher.hpp"
+    "cli/InputLoader.hpp"
+    "cli/PlaybackArguments.hpp"
+    "cli/PlaybackCommandDispatcher.hpp"
+    "cli/VoiceFormatter.hpp"
 )
 
 set(_SELFCONTAINMENT_SOURCES "")
@@ -326,7 +330,10 @@ endforeach()
 edge_tts_add_module_test(
     NAME header_selfcontainment
     SOURCES
-        common/test_main.cpp
+        ${_TEST_MAIN}
         ${_SELFCONTAINMENT_SOURCES}
-    LIBRARIES edge_tts::tts
+    LIBRARIES
+        edge_tts::tts
+        edge_tts::media
+        edge_tts::cli
 )

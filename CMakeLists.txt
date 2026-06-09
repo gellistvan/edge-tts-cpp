@@ -42,36 +42,36 @@ edge_tts_setup_static_analysis()
 edge_tts_add_module(
     NAME common
     SOURCES
-        src/common/Error.cpp
-        src/common/Clock.cpp
-        src/common/Hex.cpp
-        src/common/IdGenerator.cpp
-        src/common/Utf8.cpp
-        src/common/Sha256.cpp
+        modules/common/src/Error.cpp
+        modules/common/src/Clock.cpp
+        modules/common/src/Hex.cpp
+        modules/common/src/IdGenerator.cpp
+        modules/common/src/Utf8.cpp
+        modules/common/src/Sha256.cpp
 )
 
 edge_tts_add_module(
     NAME core
     SOURCES
-        src/core/Chunk.cpp
-        src/core/TtsConfig.cpp
-        src/core/OutputFormat.cpp
-        src/core/Voice.cpp
+        modules/core/src/Chunk.cpp
+        modules/core/src/TtsConfig.cpp
+        modules/core/src/OutputFormat.cpp
+        modules/core/src/Voice.cpp
     PUBLIC_DEPS edge_tts::common
 )
 
 edge_tts_add_module(
     NAME serialization
     SOURCES
-        src/serialization/XmlEscaper.cpp
-        src/serialization/TextNormalizer.cpp
-        src/serialization/TextChunker.cpp
-        src/serialization/SsmlBuilder.cpp
-        src/serialization/VoiceJsonParser.cpp
-        src/serialization/ProtocolMessage.cpp
-        src/serialization/ProtocolParser.cpp
-        src/serialization/ProtocolSerializer.cpp
-        src/serialization/MetadataJsonParser.cpp
+        modules/serialization/src/XmlEscaper.cpp
+        modules/serialization/src/TextNormalizer.cpp
+        modules/serialization/src/TextChunker.cpp
+        modules/serialization/src/SsmlBuilder.cpp
+        modules/serialization/src/VoiceJsonParser.cpp
+        modules/serialization/src/ProtocolMessage.cpp
+        modules/serialization/src/ProtocolParser.cpp
+        modules/serialization/src/ProtocolSerializer.cpp
+        modules/serialization/src/MetadataJsonParser.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::common
@@ -80,42 +80,42 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME subtitle
     SOURCES
-        src/subtitles/SrtComposer.cpp
-        src/subtitles/SubMaker.cpp
-        src/subtitles/SubtitleTime.cpp
+        modules/subtitle/src/SrtComposer.cpp
+        modules/subtitle/src/SubMaker.cpp
+        modules/subtitle/src/SubtitleTime.cpp
     PUBLIC_DEPS edge_tts::core
 )
 
 edge_tts_add_module(
     NAME media
     SOURCES
-        src/media/AudioConverter.cpp
-        src/media/ExecutableDiscovery.cpp
-        src/media/FfmpegAudioConverter.cpp
+        modules/media/src/AudioConverter.cpp
+        modules/media/src/ExecutableDiscovery.cpp
+        modules/media/src/FfmpegAudioConverter.cpp
     PUBLIC_DEPS edge_tts::common
 )
 
 # ProcessRunner.cpp uses POSIX APIs (fork/execvp/pipe/waitpid).
 # Only compile it on platforms where those are available.
 if(NOT WIN32)
-    target_sources(edge_tts_media PRIVATE src/media/ProcessRunner.cpp)
+    target_sources(edge_tts_media PRIVATE modules/media/src/ProcessRunner.cpp)
 endif()
 
 edge_tts_add_module(
     NAME communication
     SOURCES
-        src/communication/ConnectionMetadata.cpp
-        src/communication/EdgeProtocol.cpp
-        src/communication/EdgeProtocolIncoming.cpp
-        src/communication/HttpDate.cpp
-        src/communication/SynthesisSession.cpp
-        src/communication/HttpClient.cpp
-        src/communication/VoiceService.cpp
-        src/communication/EdgeRequestHeaders.cpp
-        src/communication/EdgeServiceConfig.cpp
-        src/communication/EdgeTokenProvider.cpp
-        src/communication/WebSocketClient.cpp
-        src/communication/RetryPolicy.cpp
+        modules/communication/src/ConnectionMetadata.cpp
+        modules/communication/src/EdgeProtocol.cpp
+        modules/communication/src/EdgeProtocolIncoming.cpp
+        modules/communication/src/HttpDate.cpp
+        modules/communication/src/SynthesisSession.cpp
+        modules/communication/src/HttpClient.cpp
+        modules/communication/src/VoiceService.cpp
+        modules/communication/src/EdgeRequestHeaders.cpp
+        modules/communication/src/EdgeServiceConfig.cpp
+        modules/communication/src/EdgeTokenProvider.cpp
+        modules/communication/src/WebSocketClient.cpp
+        modules/communication/src/RetryPolicy.cpp
     PUBLIC_DEPS
         edge_tts::core
         edge_tts::serialization
@@ -125,8 +125,8 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME api
     SOURCES
-        src/api/SpeechSynthesizer.cpp
-        src/api/FileWriter.cpp
+        modules/api/src/SpeechSynthesizer.cpp
+        modules/api/src/FileWriter.cpp
     PUBLIC_DEPS
         edge_tts::communication
         edge_tts::serialization
@@ -136,12 +136,12 @@ edge_tts_add_module(
 edge_tts_add_module(
     NAME cli
     SOURCES
-        src/cli/EdgeTtsArgumentParser.cpp
-        src/cli/EdgeTtsCommandDispatcher.cpp
-        src/cli/InputLoader.cpp
-        src/cli/PlaybackArgumentParser.cpp
-        src/cli/PlaybackCommandDispatcher.cpp
-        src/cli/VoiceFormatter.cpp
+        modules/cli/src/EdgeTtsArgumentParser.cpp
+        modules/cli/src/EdgeTtsCommandDispatcher.cpp
+        modules/cli/src/InputLoader.cpp
+        modules/cli/src/PlaybackArgumentParser.cpp
+        modules/cli/src/PlaybackCommandDispatcher.cpp
+        modules/cli/src/VoiceFormatter.cpp
     PUBLIC_DEPS
         edge_tts::api
         edge_tts::media
@@ -219,6 +219,7 @@ target_link_libraries(edge_tts_tts INTERFACE edge_tts::api)
 # build-tree consumers.  Install-tree consumers find it via the installed
 # include/ directory (covered by edge_tts::api's INSTALL_INTERFACE:include).
 target_include_directories(edge_tts_tts INTERFACE
+    $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${EDGE_TTS_BINARY_DIR}/include>
 )
 

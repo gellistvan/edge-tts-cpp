@@ -24,17 +24,11 @@ import re
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-INCLUDE_ROOT = REPO_ROOT / "include" / "edge_tts"
+MODULES_DIR = REPO_ROOT / "modules"
+UMBRELLA_DIR = REPO_ROOT / "include" / "edge_tts"
 
-# Modules whose headers are part of the stable consumer-facing API and are
-# therefore subject to the stricter namespace-exposure check.
-STABLE_MODULE_PATHS = {
-    INCLUDE_ROOT / "edge_tts.hpp",   # umbrella
-    INCLUDE_ROOT / "api",
-    INCLUDE_ROOT / "core",
-    INCLUDE_ROOT / "common",
-    INCLUDE_ROOT / "subtitles",
-}
+# Stable module directory names (consumer-facing API, subject to stricter checks).
+STABLE_MODULES = {"api", "core", "common", "subtitles"}
 
 
 def fail(msg: str) -> None:
@@ -47,16 +41,31 @@ def ok(msg: str) -> None:
 
 
 def all_headers() -> list[pathlib.Path]:
-    return sorted(INCLUDE_ROOT.rglob("*.hpp"))
+    """Return all public headers: module includes + umbrella."""
+    headers: list[pathlib.Path] = []
+    if MODULES_DIR.exists():
+        for mod_dir in sorted(MODULES_DIR.iterdir()):
+            include_dir = mod_dir / "include"
+            if include_dir.exists():
+                headers.extend(include_dir.rglob("*.hpp"))
+    if UMBRELLA_DIR.exists():
+        headers.extend(UMBRELLA_DIR.rglob("*.hpp"))
+    return sorted(headers)
 
 
 def is_stable(header: pathlib.Path) -> bool:
     """Return True if the header belongs to a stable consumer-facing module."""
-    if header == INCLUDE_ROOT / "edge_tts.hpp":
+    # Umbrella header
+    if header.parent == UMBRELLA_DIR:
         return True
-    for stable in STABLE_MODULE_PATHS:
-        if stable.is_dir() and header.is_relative_to(stable):
-            return True
+    # Check if it lives under a stable module's include subdir
+    try:
+        rel = header.relative_to(MODULES_DIR)
+    except ValueError:
+        return False
+    # rel.parts[0] = module dir name, rel.parts[1] = "include", rel.parts[2] = subdir name
+    if len(rel.parts) >= 3 and rel.parts[1] == "include":
+        return rel.parts[2] in STABLE_MODULES
     return False
 
 
@@ -213,19 +222,27 @@ def test_stable_headers_namespace() -> None:
 # ---------------------------------------------------------------------------
 
 def test_only_hpp_in_include() -> None:
-    include_root = REPO_ROOT / "include" / "edge_tts"
-    non_hpp = [
-        str(p.relative_to(REPO_ROOT))
-        for p in include_root.rglob("*")
-        if p.is_file() and p.suffix != ".hpp"
-    ]
+    non_hpp: list[str] = []
+    # Check umbrella include dir
+    if UMBRELLA_DIR.exists():
+        for p in UMBRELLA_DIR.rglob("*"):
+            if p.is_file() and p.suffix != ".hpp":
+                non_hpp.append(str(p.relative_to(REPO_ROOT)))
+    # Check each module's include dir
+    if MODULES_DIR.exists():
+        for mod_dir in sorted(MODULES_DIR.iterdir()):
+            include_dir = mod_dir / "include"
+            if include_dir.exists():
+                for p in include_dir.rglob("*"):
+                    if p.is_file() and p.suffix != ".hpp":
+                        non_hpp.append(str(p.relative_to(REPO_ROOT)))
     if non_hpp:
         fail(
-            "Non-.hpp files found under include/edge_tts/ "
+            "Non-.hpp files found in module include/ trees "
             "(generated headers, .h.in, etc. must not be in the public install tree):\n  "
             + "\n  ".join(non_hpp)
         )
-    ok("include/edge_tts/ contains only .hpp files")
+    ok("All module include/ trees contain only .hpp files")
 
 
 # ---------------------------------------------------------------------------

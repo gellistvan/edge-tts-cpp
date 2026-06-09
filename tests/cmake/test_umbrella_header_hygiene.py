@@ -69,13 +69,13 @@ def test_umbrella_has_pragma_once() -> None:
 # ---------------------------------------------------------------------------
 
 REQUIRED_INCLUDES = [
-    ("edge_tts/version.hpp",              "version macros and constexpr values"),
-    ("edge_tts/api/SpeechSynthesizer.hpp",      "synthesis facade"),
-    ("edge_tts/api/SynthesisOptions.hpp", "transport options"),
-    ("edge_tts/core/TtsConfig.hpp",       "speech configuration"),
-    ("edge_tts/common/Error.hpp",         "error types"),
-    ("edge_tts/common/Result.hpp",        "result propagation"),
-    ("edge_tts/core/Voice.hpp",           "voice type for listings"),
+    ("edge_tts/version.hpp",          "version macros and constexpr values"),
+    ("api/SpeechSynthesizer.hpp",     "synthesis facade"),
+    ("api/SynthesisOptions.hpp",      "transport options"),
+    ("core/TtsConfig.hpp",            "speech configuration"),
+    ("common/Error.hpp",              "error types"),
+    ("common/Result.hpp",             "result propagation"),
+    ("core/Voice.hpp",                "voice type for listings"),
 ]
 
 
@@ -104,13 +104,13 @@ def test_umbrella_includes_required_headers() -> None:
 
 FORBIDDEN_PATTERNS = [
     # (pattern, reason)
-    (r'#\s*include\s+[<"]edge_tts/cli/',
+    (r'#\s*include\s+[<"]cli/',
      "CLI headers are app-layer only; not part of the TTS library API"),
-    (r'#\s*include\s+[<"]edge_tts/media/',
+    (r'#\s*include\s+[<"]media/',
      "media headers pull in ffplay/ffmpeg; not needed for synthesis"),
-    (r'#\s*include\s+[<"]edge_tts/communication/',
+    (r'#\s*include\s+[<"]communication/',
      "communication headers are internal transport; expose only via edge_tts::api"),
-    (r'#\s*include\s+[<"]edge_tts/serialization/',
+    (r'#\s*include\s+[<"]serialization/',
      "serialization headers are internal protocol framing; expose only via edge_tts::api"),
     (r'#\s*include\s+[<"][^>\"]*Fake[A-Z][^>\"]*\.hpp[>"]',
      "Fake* headers are test-only utilities; must never appear in public headers"),

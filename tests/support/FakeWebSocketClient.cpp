@@ -1,5 +1,5 @@
-#include "edge_tts/communication/FakeWebSocketClient.hpp"
-#include "edge_tts/common/Error.hpp"
+#include "communication/FakeWebSocketClient.hpp"
+#include "common/Error.hpp"
 
 namespace edge_tts::communication {
 

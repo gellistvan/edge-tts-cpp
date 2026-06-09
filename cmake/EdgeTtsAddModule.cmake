@@ -28,7 +28,7 @@ function(edge_tts_add_module)
         add_library(${target} STATIC ${ARG_SOURCES})
         target_include_directories(${target}
             PUBLIC
-                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
+                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/modules/${ARG_NAME}/include>
                 $<INSTALL_INTERFACE:include>
         )
         target_compile_features(${target} PUBLIC cxx_std_20)
@@ -51,7 +51,7 @@ function(edge_tts_add_module)
         add_library(${target} INTERFACE)
         target_include_directories(${target}
             INTERFACE
-                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
+                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/modules/${ARG_NAME}/include>
                 $<INSTALL_INTERFACE:include>
         )
         target_compile_features(${target} INTERFACE cxx_std_20)

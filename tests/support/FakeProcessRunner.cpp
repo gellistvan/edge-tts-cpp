@@ -1,5 +1,5 @@
-#include "edge_tts/media/FakeProcessRunner.hpp"
-#include "edge_tts/common/Error.hpp"
+#include "media/FakeProcessRunner.hpp"
+#include "common/Error.hpp"
 
 // FakeProcessRunner has no POSIX dependencies and compiles on all platforms.
 // The real ProcessRunner (fork/execvp/pipe/waitpid) lives in ProcessRunner.cpp

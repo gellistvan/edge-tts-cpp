@@ -1,10 +1,10 @@
-#include "edge_tts/api/SpeechSynthesizer.hpp"
-#include "edge_tts/api/SynthesisOptions.hpp"
-#include "edge_tts/cli/PlaybackArguments.hpp"
-#include "edge_tts/cli/PlaybackCommandDispatcher.hpp"
-#include "edge_tts/core/TtsConfig.hpp"
-#include "edge_tts/media/FfmpegAudioConverter.hpp"
-#include "edge_tts/media/ProcessRunner.hpp"
+#include "api/SpeechSynthesizer.hpp"
+#include "api/SynthesisOptions.hpp"
+#include "cli/PlaybackArguments.hpp"
+#include "cli/PlaybackCommandDispatcher.hpp"
+#include "core/TtsConfig.hpp"
+#include "media/FfmpegAudioConverter.hpp"
+#include "media/ProcessRunner.hpp"
 
 #include <chrono>
 #include <cstdlib>

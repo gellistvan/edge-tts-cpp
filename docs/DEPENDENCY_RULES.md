@@ -93,8 +93,8 @@ modules.
 ## Automated boundary check
 
 `tools/check_module_boundaries.py` scans all `#include` directives in
-`include/`, `src/`, and `apps/` and reports any that violate the matrix above.
-It also catches apps that include headers via relative paths into `src/`
+`modules/*/include/`, `modules/*/src/`, `include/edge_tts/`, and `apps/` and reports any that violate the matrix above.
+It also catches apps that include headers via relative paths into `modules/*/src/`
 (private headers).
 
 Run manually:

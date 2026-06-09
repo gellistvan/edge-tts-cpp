@@ -30,19 +30,19 @@
 //   reference/edge-tts/src/edge_tts/communicate.py SpeechSynthesizer.__stream()
 //   reference/edge-tts/src/edge_tts/constants.py WSS_HEADERS, WSS_URL
 
-#include "edge_tts/api/SpeechSynthesizer.hpp"
-#include "edge_tts/api/SynthesisOptions.hpp"
-#include "edge_tts/communication/ConnectionMetadata.hpp"
-#include "edge_tts/communication/EdgeProtocol.hpp"
-#include "edge_tts/communication/EdgeRequestHeaders.hpp"
-#include "edge_tts/communication/EdgeServiceConfig.hpp"
-#include "edge_tts/communication/EdgeTokenProvider.hpp"
-#include "edge_tts/communication/SynthesisSession.hpp"
-#include "edge_tts/communication/WebSocketClient.hpp"
-#include "edge_tts/common/Clock.hpp"
-#include "edge_tts/common/IdGenerator.hpp"
-#include "edge_tts/core/Chunk.hpp"
-#include "edge_tts/core/TtsConfig.hpp"
+#include "api/SpeechSynthesizer.hpp"
+#include "api/SynthesisOptions.hpp"
+#include "communication/ConnectionMetadata.hpp"
+#include "communication/EdgeProtocol.hpp"
+#include "communication/EdgeRequestHeaders.hpp"
+#include "communication/EdgeServiceConfig.hpp"
+#include "communication/EdgeTokenProvider.hpp"
+#include "communication/SynthesisSession.hpp"
+#include "communication/WebSocketClient.hpp"
+#include "common/Clock.hpp"
+#include "common/IdGenerator.hpp"
+#include "core/Chunk.hpp"
+#include "core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <chrono>

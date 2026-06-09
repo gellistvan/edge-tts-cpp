@@ -12,7 +12,7 @@ Checks:
   4. No build artifacts tracked in git.
   5. Docs/CONTRIBUTING.md documents hygiene rules.
 
-Production source = src/, include/edge_tts/, apps/
+Production source = modules/*/src/, modules/*/include/*/, apps/
 Tests and docs are NOT scanned for placeholder strings (docs may legitimately
 explain historical cleanup; tests may include Fake* headers by design).
 
@@ -53,16 +53,22 @@ def _strip_comments(content: str) -> str:
 def _production_source_files() -> list[pathlib.Path]:
     """
     Return all .cpp/.hpp files from production source directories:
-      src/  include/edge_tts/  apps/
-    Excludes third-party submodules.
+      modules/*/src/  modules/*/include/*/  apps/
+    Also includes the top-level include/edge_tts/ (umbrella header).
+    Excludes third-party submodules and test fixture trees.
     """
-    dirs = [
-        REPO_ROOT / "src",
-        REPO_ROOT / "include" / "edge_tts",
-        REPO_ROOT / "apps",
-    ]
     result: list[pathlib.Path] = []
-    for d in dirs:
+    modules_dir = REPO_ROOT / "modules"
+    if modules_dir.exists():
+        for mod_dir in sorted(modules_dir.iterdir()):
+            if not mod_dir.is_dir():
+                continue
+            for subdir in ("src", "include"):
+                d = mod_dir / subdir
+                if d.exists():
+                    for ext in ("*.cpp", "*.hpp"):
+                        result.extend(d.rglob(ext))
+    for d in [REPO_ROOT / "include" / "edge_tts", REPO_ROOT / "apps"]:
         if d.exists():
             for ext in ("*.cpp", "*.hpp"):
                 result.extend(d.rglob(ext))
@@ -224,37 +230,37 @@ def test_no_fake_class_defined_in_production_headers() -> None:
 
 REMOVED_SKELETON_FILES: list[str] = [
     # EdgeToken was the skeleton DRM token class.  Replaced by EdgeTokenProvider.
-    "src/serialization/EdgeToken.cpp",
-    "include/edge_tts/serialization/EdgeToken.hpp",
+    "modules/serialization/src/EdgeToken.cpp",
+    "modules/serialization/include/serialization/EdgeToken.hpp",
     # WebSocketTransport was the skeleton ITransport stub.  Replaced by WebSocketClient.
-    "src/communication/WebSocketTransport.cpp",
-    "include/edge_tts/communication/WebSocketTransport.hpp",
+    "modules/communication/src/WebSocketTransport.cpp",
+    "modules/communication/include/communication/WebSocketTransport.hpp",
     # Transport.hpp defined the ITransport / RawMessage skeleton interface.
     # The real interface is IWebSocketClient / WebSocketMessage.
-    "include/edge_tts/communication/Transport.hpp",
+    "modules/communication/include/communication/Transport.hpp",
     # serialization::EdgeProtocol was a skeleton frame-builder with hardcoded JSON and
     # no timestamp support.  Replaced by communication::EdgeProtocol (full implementation).
-    "src/serialization/EdgeProtocol.cpp",
-    "include/edge_tts/serialization/EdgeProtocol.hpp",
+    "modules/serialization/src/EdgeProtocol.cpp",
+    "modules/serialization/include/serialization/EdgeProtocol.hpp",
     # HttpVoiceService was a skeleton voice-list stub that returned an empty vector.
     # Replaced by VoiceService (DRM token injection, HTTP retry on 403).
-    "src/communication/HttpVoiceService.cpp",
-    "include/edge_tts/communication/HttpVoiceService.hpp",
+    "modules/communication/src/HttpVoiceService.cpp",
+    "modules/communication/include/communication/HttpVoiceService.hpp",
     # VoicesManager wrapped HttpVoiceService and is equally stale.
     # The VoiceFilter API on VoiceService replaces its find_by_locale().
-    "src/communication/VoicesManager.cpp",
-    "include/edge_tts/communication/VoicesManager.hpp",
+    "modules/communication/src/VoicesManager.cpp",
+    "modules/communication/include/communication/VoicesManager.hpp",
     # CliPlaceholder.cpp was the sole translation unit of the cli module before real
     # argument parsing was implemented.  CliOptions.hpp was the struct it included.
     # Both are superseded by EdgeTtsArguments / PlaybackArguments.
-    "src/cli/CliPlaceholder.cpp",
-    "include/edge_tts/cli/CliOptions.hpp",
+    "modules/cli/src/CliPlaceholder.cpp",
+    "modules/cli/include/cli/CliOptions.hpp",
     # core::TextChunker was a raw UTF-8 byte splitter with no production callers.
     # All Edge-SSML-aware chunking lives in serialization::TextChunker, which
     # normalizes, XML-escapes, and applies the 4096-byte escaped-length limit.
     # Re-adding core::TextChunker would create the same ambiguity this task resolved.
-    "src/core/TextChunker.cpp",
-    "include/edge_tts/core/TextChunker.hpp",
+    "modules/core/src/TextChunker.cpp",
+    "modules/core/include/core/TextChunker.hpp",
 ]
 
 
@@ -367,23 +373,30 @@ FAKE_HEADER_NAMES = (
 
 
 def test_fake_headers_not_in_public_include() -> None:
-    public_include = REPO_ROOT / "include" / "edge_tts"
-    if not public_include.exists():
-        ok("include/edge_tts/ does not exist — nothing to check")
-        return
-
     found: list[str] = []
-    for name in FAKE_HEADER_NAMES:
-        for hit in public_include.rglob(name):
-            found.append(str(hit.relative_to(REPO_ROOT)))
+    # Check top-level include/edge_tts/ (umbrella)
+    public_include = REPO_ROOT / "include" / "edge_tts"
+    if public_include.exists():
+        for name in FAKE_HEADER_NAMES:
+            for hit in public_include.rglob(name):
+                found.append(str(hit.relative_to(REPO_ROOT)))
+    # Check each module's include/ directory
+    modules_dir = REPO_ROOT / "modules"
+    if modules_dir.exists():
+        for mod_dir in sorted(modules_dir.iterdir()):
+            include_dir = mod_dir / "include"
+            if include_dir.exists():
+                for name in FAKE_HEADER_NAMES:
+                    for hit in include_dir.rglob(name):
+                        found.append(str(hit.relative_to(REPO_ROOT)))
 
     if found:
         fail(
-            "Fake test-double headers found under include/edge_tts/ (public API tree).\n"
-            "Move them to tests/support/edge_tts/<module>/ and update test include "
+            "Fake test-double headers found in module include/ trees (public API tree).\n"
+            "Move them to tests/support/ and update test include "
             "directories accordingly:\n  " + "\n  ".join(found)
         )
-    ok("No Fake* headers found in include/edge_tts/ (public include tree)")
+    ok("No Fake* headers found in module include/ trees (public include tree)")
 
 
 # ---------------------------------------------------------------------------
@@ -401,23 +414,23 @@ FAKE_SOURCE_NAMES = (
 
 
 def test_fake_sources_not_in_production_src() -> None:
-    src_dir = REPO_ROOT / "src"
-    if not src_dir.exists():
-        ok("src/ does not exist — nothing to check")
-        return
-
     found: list[str] = []
-    for name in FAKE_SOURCE_NAMES:
-        for hit in src_dir.rglob(name):
-            found.append(str(hit.relative_to(REPO_ROOT)))
+    modules_dir = REPO_ROOT / "modules"
+    if modules_dir.exists():
+        for mod_dir in sorted(modules_dir.iterdir()):
+            src_dir = mod_dir / "src"
+            if src_dir.exists():
+                for name in FAKE_SOURCE_NAMES:
+                    for hit in src_dir.rglob(name):
+                        found.append(str(hit.relative_to(REPO_ROOT)))
 
     if found:
         fail(
-            "Fake test-double source files found under src/ (production source tree).\n"
+            "Fake test-double source files found under modules/*/src/ (production source tree).\n"
             "These files must live in tests/support/ and be compiled only by the "
             "edge_tts_test_support CMake target:\n  " + "\n  ".join(found)
         )
-    ok("No Fake* source files found in src/ (production source tree)")
+    ok("No Fake* source files found in modules/*/src/ (production source tree)")
 
 
 # ---------------------------------------------------------------------------
