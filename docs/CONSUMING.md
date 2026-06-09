@@ -3,6 +3,80 @@
 This document describes the supported ways to integrate edge-tts-cpp into a
 CMake project.
 
+Ready-to-copy examples:
+- [`examples/consumer_add_subdirectory/`](../examples/consumer_add_subdirectory/) — full add_subdirectory example
+- [`examples/consumer_find_package/`](../examples/consumer_find_package/) — full find_package example
+
+---
+
+## Quick start
+
+```cmake
+# After installation (Option A below):
+find_package(edge_tts_cpp CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+```cpp
+#include <edge_tts/edge_tts.hpp>   // recommended umbrella header
+
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+
+edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), {});
+auto result = tts.save("hello.mp3", "hello.srt");
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+}
+```
+
+That's it.  `edge_tts::tts` carries all required link dependencies and include
+paths automatically — no need to list ixwebsocket, nlohmann_json, or internal
+sub-targets.
+
+---
+
+## Recommended header
+
+Always include the umbrella header:
+
+```cpp
+#include <edge_tts/edge_tts.hpp>
+```
+
+It exposes the complete stable public API:
+
+| Symbol | Purpose |
+|--------|---------|
+| `edge_tts::api::Communicate` | Synthesize text to audio |
+| `edge_tts::api::CommunicateOptions` | Transport options (timeouts) |
+| `edge_tts::api::FileWriter` | Write audio/subtitle files |
+| `edge_tts::core::TtsConfig` | Voice, rate, volume, pitch |
+| `edge_tts::core::Voice` | Voice listing type |
+| `edge_tts::core::AudioChunk` | Raw MP3 bytes from `stream_sync()` |
+| `edge_tts::core::BoundaryChunk` | Word/sentence boundary event |
+| `edge_tts::core::is_audio(chunk)` | `true` for `AudioChunk` variants |
+| `edge_tts::common::Result<T>` | Error propagation (no exceptions for runtime errors) |
+| `edge_tts::common::ErrorCode` | Error category enum |
+
+Individual headers remain available for finer-grained includes:
+`edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`, etc.
+
+---
+
+## Proxy support (unsupported)
+
+The ixwebsocket backend has no client-side CONNECT-tunnel proxy API.
+
+- Setting `CommunicateOptions::proxy` is **validated** at the API layer.
+- Any call to `save()` or `stream_sync()` with a proxy set **returns
+  `ErrorCode::unsupported` immediately** — no network connection is attempted.
+- The CLI propagates this as exit code 1.
+
+If proxy support is required, either route traffic through a transparent proxy
+at the OS/network level, or use a different WebSocket library that supports the
+CONNECT tunnel.
+
 ---
 
 ## Option A: find_package after cmake --install
@@ -190,13 +264,19 @@ and `find_package` will continue to work.
 
 ---
 
-## Minimal consumer example
+## Consumer examples
 
-A self-contained consumer fixture is provided at
-`tests/cmake/consumer_install_basic/`.  The install tree test
-(`tests/cmake/test_install_tree.py`, CTest name `edge_tts_install_tree_tests`)
-configures, builds, installs edge-tts-cpp, and then:
+Two ready-to-copy example projects live in the repository:
 
-1. Configures and **builds** the consumer fixture against the install prefix.
-2. Copies the install prefix to a new location and **builds again** to verify
-   relocation.
+| Directory | Integration mode | What it shows |
+|-----------|-----------------|---------------|
+| [`examples/consumer_add_subdirectory/`](../examples/consumer_add_subdirectory/) | `add_subdirectory` | Vendored submodule layout, build-option overrides, `edge_tts::tts` link |
+| [`examples/consumer_find_package/`](../examples/consumer_find_package/) | `find_package` | Install-then-consume pattern, `CMAKE_PREFIX_PATH`, `edge_tts::tts` link |
+
+Both examples use `<edge_tts/edge_tts.hpp>` and link only `edge_tts::tts`.
+Both are automatically built and verified by CTest (`edge_tts_consumer_examples_tests`).
+
+A minimal test fixture (`tests/cmake/consumer_install_basic/`) is also used by
+the install tree test (`edge_tts_install_tree_tests`) which installs edge-tts-cpp
+to a temp prefix, configures and builds the fixture against it, then relocates the
+install tree and re-builds to verify portability.

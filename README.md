@@ -187,12 +187,17 @@ See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guid
 
 ### Using as an add_subdirectory dependency
 
-edge-tts-cpp can be consumed from a parent CMake project via `add_subdirectory`:
+edge-tts-cpp can be consumed from a parent CMake project via `add_subdirectory`.
+A ready-to-copy example is in [`examples/consumer_add_subdirectory/`](examples/consumer_add_subdirectory/).
 
 ```cmake
 # In your parent CMakeLists.txt:
 cmake_minimum_required(VERSION 3.24)
 project(my_app LANGUAGES CXX)
+
+# Disable install rules and apps when using as a sub-project:
+set(EDGE_TTS_INSTALL    OFF CACHE BOOL "" FORCE)
+set(EDGE_TTS_BUILD_APPS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(
     path/to/edge-tts-cpp
@@ -220,7 +225,8 @@ Or set `EDGE_TTS_FETCH_DEPS=ON` to let CMake download them automatically.
 ### Installing and using via find_package
 
 edge-tts-cpp supports `cmake --install` to produce an install tree consumable
-via `find_package(edge_tts_cpp REQUIRED)`.
+via `find_package(edge_tts_cpp CONFIG REQUIRED)`.
+A ready-to-copy example is in [`examples/consumer_find_package/`](examples/consumer_find_package/).
 
 **Install:**
 
