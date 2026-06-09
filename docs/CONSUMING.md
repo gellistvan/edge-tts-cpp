@@ -62,6 +62,68 @@ It exposes the complete stable public API:
 Individual headers remain available for finer-grained includes:
 `edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`, etc.
 
+### Stable public headers
+
+The following headers are part of the stable consumer-facing API, are
+self-contained, and are safe to include individually.  Each is guaranteed to
+compile as the first (and only) project include in a translation unit.
+
+#### `edge_tts/api/` — synthesis facade
+
+| Header | Key types |
+|--------|-----------|
+| `edge_tts/api/Communicate.hpp` | `Communicate` — single-use synthesis object |
+| `edge_tts/api/CommunicateOptions.hpp` | `CommunicateOptions` — transport options |
+| `edge_tts/api/FileWriter.hpp` | `FileWriter` — write MP3 + SRT |
+
+#### `edge_tts/core/` — data types
+
+| Header | Key types |
+|--------|-----------|
+| `edge_tts/core/TtsConfig.hpp` | `TtsConfig` — voice, rate, volume, pitch |
+| `edge_tts/core/Voice.hpp` | `Voice` — voice listing entry |
+| `edge_tts/core/Chunk.hpp` | `AudioChunk`, `BoundaryChunk`, `TtsChunk` variant, `is_audio()` |
+| `edge_tts/core/TtsChunk.hpp` | `TtsChunk` alias |
+| `edge_tts/core/OutputFormat.hpp` | `OutputFormat` — audio format selection |
+
+#### `edge_tts/common/` — error handling and utilities
+
+| Header | Key types |
+|--------|-----------|
+| `edge_tts/common/Result.hpp` | `Result<T>` — error propagation without exceptions |
+| `edge_tts/common/Error.hpp` | `ErrorCode` — error category enum |
+| `edge_tts/common/Errors.hpp` | `make_error()`, `error_message()` helpers |
+| `edge_tts/common/Expected.hpp` | `Expected<T,E>` — internal result type |
+| `edge_tts/common/Clock.hpp` | `IClock`, `SystemClock` |
+| `edge_tts/common/IdGenerator.hpp` | `IIdGenerator`, UUID generation |
+| `edge_tts/common/Hex.hpp` | `hex_encode()` |
+| `edge_tts/common/Sha256.hpp` | `sha256_hex()` |
+| `edge_tts/common/Utf8.hpp` | UTF-8 validation helpers |
+
+#### `edge_tts/subtitles/` — subtitle generation
+
+| Header | Key types |
+|--------|-----------|
+| `edge_tts/subtitles/SubMaker.hpp` | `SubMaker` — collect boundaries, write SRT |
+| `edge_tts/subtitles/SubtitleCue.hpp` | `SubtitleCue` |
+| `edge_tts/subtitles/Subtitle.hpp` | `Subtitle` |
+| `edge_tts/subtitles/SubtitleTime.hpp` | `SubtitleTime` |
+| `edge_tts/subtitles/SrtComposer.hpp` | `SrtComposer` — format SRT text |
+
+### Installed but not stable-API headers
+
+These headers are installed under `include/edge_tts/` and are self-contained,
+but they are **not part of the stable public API** and may change between minor
+versions.  Use them only when building a custom transport layer or extending
+the library:
+
+| Module | Purpose |
+|--------|---------|
+| `edge_tts/communication/` | Internal WebSocket transport, HTTP client, retry policy, synthesis session |
+| `edge_tts/serialization/` | Internal protocol framing, SSML builder, text chunker |
+| `edge_tts/media/` | ffmpeg/ffplay audio conversion (app-layer) |
+| `edge_tts/cli/` | CLI argument parsing (app-layer) |
+
 ---
 
 ## Proxy support (unsupported)

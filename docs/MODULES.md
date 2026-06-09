@@ -384,6 +384,58 @@ regression:
 
 ---
 
+## Public vs private headers
+
+### Two header categories
+
+| Category | Location | Self-contained? | Stable API? | Installed? |
+|----------|----------|-----------------|-------------|------------|
+| **Stable** | `include/edge_tts/api/`, `core/`, `common/`, `subtitles/`, `edge_tts.hpp` | Yes | Yes | Yes |
+| **Installed, not stable** | `include/edge_tts/communication/`, `serialization/`, `media/`, `cli/` | Yes | No | Yes |
+
+**"Stable"** means the API will not change without a major version bump.  Consumers
+linking `edge_tts::tts` and including only stable headers are insulated from
+internal refactors.
+
+**"Installed, not stable"** means the header is present in the install tree and
+fully self-contained, but it may change or be reorganized in a minor version.
+Use these headers only when building a custom transport or extending the library.
+
+### Invariants enforced by automated tests
+
+Every header under `include/edge_tts/` must satisfy all of the following:
+
+| Invariant | Test | CTest name |
+|-----------|------|------------|
+| Has `#pragma once` | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Does not `#include` from `src/`, `tests/`, or absolute paths | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Does not `#include` any `Fake*.hpp` test-double | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Compiles in isolation at the build tree | `edge_tts_header_selfcontainment_tests` (C++) | built by CMake |
+| Compiles in isolation against the install prefix | `test_installed_header_selfcontainment.py` | `edge_tts_installed_header_selfcontainment_tests` |
+
+Stable headers additionally must:
+
+| Invariant | Test | CTest name |
+|-----------|------|------------|
+| Only introduce `namespace edge_tts::` declarations at file scope | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Only include stable API headers from edge-tts-cpp (no cli/, media/, etc.) | `test_umbrella_header_hygiene.py` (for umbrella) | `edge_tts_umbrella_header_hygiene_tests` |
+
+### Per-module header classification
+
+| Module | Public header path | Stable? | Notes |
+|--------|-------------------|---------|-------|
+| `api` | `include/edge_tts/api/` | Yes | Core synthesis facade |
+| `core` | `include/edge_tts/core/` | Yes | Data types (TtsConfig, Voice, Chunk) |
+| `common` | `include/edge_tts/common/` | Yes | Error handling, utilities |
+| `subtitle` | `include/edge_tts/subtitles/` | Yes | SubMaker, SRT types |
+| `communication` | `include/edge_tts/communication/` | No | Internal transport — may change |
+| `serialization` | `include/edge_tts/serialization/` | No | Internal protocol framing — may change |
+| `media` | `include/edge_tts/media/` | No | App-layer; ffplay/ffmpeg runner |
+| `cli` | `include/edge_tts/cli/` | No | App-layer; CLI argument parsing |
+| `test_support` | `tests/communication/Fake*.hpp` | — | **Never installed**; test doubles only |
+
+---
+
 ## Public consumer targets
 
 ### Umbrella header

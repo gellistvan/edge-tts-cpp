@@ -335,6 +335,16 @@ if(EDGE_TTS_BUILD_TESTS)
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_umbrella_header_hygiene.py"
         )
         add_test(
+            NAME edge_tts_public_header_hygiene_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_public_headers.py"
+        )
+        add_test(
+            NAME edge_tts_installed_header_selfcontainment_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_installed_header_selfcontainment.py"
+        )
+        add_test(
             NAME edge_tts_install_tree_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_tree.py"

@@ -223,27 +223,38 @@ edge_tts_add_module_test(
 # ---------------------------------------------------------------------------
 # Header self-containment tests
 #
-# For each stable public header, generate a tiny translation unit that
-# includes it as the first (and only) include, and add all of them to a
-# single test executable.  If any header is not self-contained (missing
-# its own prerequisites), compilation fails with a clear error.
+# For every installed public header, generate a tiny translation unit that
+# includes it as the first (and only) project include, and add all of them to
+# a single test executable.  If any header is not self-contained (missing its
+# own prerequisites), compilation fails with a clear error.
 #
-# Scope: api/, core/, common/, subtitles/ — stable consumer-facing modules.
-# communication/ and serialization/ are omitted because they require the
-# nlohmann/json INTERFACE include path that edge_tts::tts does not propagate
-# (json is a PRIVATE dep of edge_tts_communication).  Those headers are
-# validated by their own module tests which link edge_tts::communication.
+# Scope: all headers installed under include/edge_tts/ — api/, core/, common/,
+# subtitles/, communication/, serialization/, media/, cli/.
+#
+# All of these headers include only other edge_tts/ headers and C++ standard
+# library headers; none pull in nlohmann/json, ixwebsocket, or POSIX headers
+# directly (those external dependencies are hidden in .cpp files).  Linking
+# against edge_tts::tts provides the include/  directory, which is sufficient
+# for compilation of every header in the tree.
+#
+# The companion Python test (edge_tts_installed_header_selfcontainment_tests)
+# exercises the same set against the *installed* prefix using the system
+# C++ compiler, verifying that the install tree is complete and standalone.
 # ---------------------------------------------------------------------------
-set(_EDGE_TTS_STABLE_HEADERS
+set(_EDGE_TTS_ALL_PUBLIC_HEADERS
+    # Umbrella
     "edge_tts/edge_tts.hpp"
+    # api
     "edge_tts/api/Communicate.hpp"
     "edge_tts/api/CommunicateOptions.hpp"
     "edge_tts/api/FileWriter.hpp"
+    # core
     "edge_tts/core/Chunk.hpp"
     "edge_tts/core/TtsChunk.hpp"
     "edge_tts/core/TtsConfig.hpp"
     "edge_tts/core/Voice.hpp"
     "edge_tts/core/OutputFormat.hpp"
+    # common
     "edge_tts/common/Clock.hpp"
     "edge_tts/common/Error.hpp"
     "edge_tts/common/Errors.hpp"
@@ -253,15 +264,56 @@ set(_EDGE_TTS_STABLE_HEADERS
     "edge_tts/common/IdGenerator.hpp"
     "edge_tts/common/Sha256.hpp"
     "edge_tts/common/Utf8.hpp"
+    # subtitles
     "edge_tts/subtitles/SrtComposer.hpp"
     "edge_tts/subtitles/SubMaker.hpp"
     "edge_tts/subtitles/SubtitleCue.hpp"
     "edge_tts/subtitles/Subtitle.hpp"
     "edge_tts/subtitles/SubtitleTime.hpp"
+    # communication (internal transport — installed, not part of stable API)
+    "edge_tts/communication/ConnectionMetadata.hpp"
+    "edge_tts/communication/EdgeProtocol.hpp"
+    "edge_tts/communication/EdgeRequestHeaders.hpp"
+    "edge_tts/communication/EdgeServiceConfig.hpp"
+    "edge_tts/communication/EdgeTokenProvider.hpp"
+    "edge_tts/communication/HttpClient.hpp"
+    "edge_tts/communication/HttpDate.hpp"
+    "edge_tts/communication/HttpTypes.hpp"
+    "edge_tts/communication/IHttpClient.hpp"
+    "edge_tts/communication/IncomingMessage.hpp"
+    "edge_tts/communication/IWebSocketClient.hpp"
+    "edge_tts/communication/RetryPolicy.hpp"
+    "edge_tts/communication/SynthesisSession.hpp"
+    "edge_tts/communication/VoiceService.hpp"
+    "edge_tts/communication/WebSocketClient.hpp"
+    "edge_tts/communication/WebSocketMessage.hpp"
+    # serialization (internal protocol — installed, not part of stable API)
+    "edge_tts/serialization/MetadataJsonParser.hpp"
+    "edge_tts/serialization/ProtocolMessage.hpp"
+    "edge_tts/serialization/ProtocolParser.hpp"
+    "edge_tts/serialization/ProtocolSerializer.hpp"
+    "edge_tts/serialization/SsmlBuilder.hpp"
+    "edge_tts/serialization/TextChunker.hpp"
+    "edge_tts/serialization/TextNormalizer.hpp"
+    "edge_tts/serialization/VoiceJsonParser.hpp"
+    "edge_tts/serialization/XmlEscaper.hpp"
+    # media (app-layer — installed, not part of stable API)
+    "edge_tts/media/AudioConverter.hpp"
+    "edge_tts/media/ExecutableDiscovery.hpp"
+    "edge_tts/media/FfmpegAudioConverter.hpp"
+    "edge_tts/media/ProcessRunner.hpp"
+    # cli (app-layer — installed, not part of stable API)
+    "edge_tts/cli/EdgeTtsArgumentParser.hpp"
+    "edge_tts/cli/EdgeTtsArguments.hpp"
+    "edge_tts/cli/EdgeTtsCommandDispatcher.hpp"
+    "edge_tts/cli/InputLoader.hpp"
+    "edge_tts/cli/PlaybackArguments.hpp"
+    "edge_tts/cli/PlaybackCommandDispatcher.hpp"
+    "edge_tts/cli/VoiceFormatter.hpp"
 )
 
 set(_SELFCONTAINMENT_SOURCES "")
-foreach(_hdr IN LISTS _EDGE_TTS_STABLE_HEADERS)
+foreach(_hdr IN LISTS _EDGE_TTS_ALL_PUBLIC_HEADERS)
     # Derive a safe filename: replace path separators and dots.
     string(REPLACE "/" "_" _safe "${_hdr}")
     string(REPLACE "." "_" _safe "${_safe}")

@@ -97,26 +97,42 @@ Every header under `include/edge_tts/` must be self-contained: it must include
 all headers it depends on and must compile in isolation as the first include in a
 translation unit.
 
-The `edge_tts_header_selfcontainment_tests` CTest target compiles one generated
-`.cpp` per stable public header (api, core, common, subtitles modules) to verify
-this.  When adding a new public header:
+Two automated tests enforce this:
 
-1. Confirm it compiles in isolation by checking the test target still passes.
-2. Add it to the `_EDGE_TTS_STABLE_HEADERS` list in `tests/CMakeLists.txt` if it
-   belongs to a stable consumer-facing module.
+| CTest name | What it exercises |
+|------------|-------------------|
+| `edge_tts_header_selfcontainment_tests` | Build-tree compilation — one generated `.cpp` per header, linked against `edge_tts::tts`, compiled with C++20 |
+| `edge_tts_installed_header_selfcontainment_tests` | Install-tree compilation — installs edge-tts-cpp, discovers every `.hpp` under `<prefix>/include/edge_tts/`, compiles each with `-std=c++20 -I<prefix>/include` |
+
+When adding a new public header:
+
+1. Confirm it compiles in isolation against the build tree:
+   ```bash
+   cmake --build build --target edge_tts_header_selfcontainment_tests
+   ./build/tests/edge_tts_header_selfcontainment_tests
+   ```
+2. Add it to the `_EDGE_TTS_ALL_PUBLIC_HEADERS` list in `tests/CMakeLists.txt`.
+3. If it belongs to the stable consumer API (`api`, `core`, `common`, `subtitles`),
+   also add it to the `STABLE_MODULE_PATHS` set in `tests/tools/test_public_headers.py`
+   so the namespace-exposure check covers it.
 
 ### Adding headers to the public install tree
 
-Headers placed under `include/edge_tts/` are part of the public API.  Follow
-these rules before adding one:
+Headers placed under `include/edge_tts/` are installed to consumers via
+`cmake --install`. Follow these rules before adding one:
 
-1. It must include a `#pragma once` guard.
-2. It must not include `Fake*.hpp` or any `tests/support/` header.
-3. It must not include headers from modules that are "above" it in the dependency
+1. It must have a `#pragma once` guard.
+2. It must not `#include` any path under `src/`, `tests/`, or `apps/`.
+3. It must not `#include` any `Fake*.hpp` test-double header.
+4. It must not include headers from modules that are "above" it in the dependency
    graph (`cli` must not appear in `api`, `api` must not appear in `communication`, etc.)
-4. It must compile standalone (run the self-containment test).
-5. If it belongs to the stable consumer API (`api`, `core`, `common`, `subtitles`),
-   add it to the `_EDGE_TTS_STABLE_HEADERS` list in `tests/CMakeLists.txt`.
+5. It must compile standalone (run the self-containment test above).
+6. If it belongs to the stable consumer API (`api`, `core`, `common`, `subtitles`),
+   it must only introduce `namespace edge_tts::` declarations at file scope —
+   no other top-level namespaces.
+
+The static analysis test `edge_tts_public_header_hygiene_tests`
+(`tests/tools/test_public_headers.py`) enforces rules 1–4 and 6 automatically.
 
 ## Module conventions
 
