@@ -126,6 +126,47 @@ the library:
 
 ---
 
+## Linkage mode
+
+edge-tts-cpp is a **static-only library**.  All compiled modules
+(`edge_tts_common`, `edge_tts_core`, `edge_tts_serialization`,
+`edge_tts_subtitle`, `edge_tts_communication`, `edge_tts_api`) are created with
+an explicit `STATIC` keyword in CMake's `add_library()`.
+
+The CMake variable `BUILD_SHARED_LIBS` is **intentionally ignored** for
+`edge_tts_*` targets.  If your parent project sets `BUILD_SHARED_LIBS=ON`
+globally, edge-tts-cpp still produces static archives (`.a` / `.lib`).
+
+### Why static only?
+
+- ixwebsocket is bundled as a static archive; mixing static and shared boundaries
+  across submodule boundaries is fragile and untested.
+- No symbol-visibility (`__declspec(dllexport/dllimport)` / `EDGE_TTS_API`) macro
+  infrastructure exists yet.
+- Windows shared-library support has not been CI-tested.
+
+Shared library support may be added in a future release.  Until then, the
+supported and tested mode is static linkage only.
+
+### Installed artifacts
+
+The `Development` install component installs static archives:
+
+```
+<prefix>/lib/libedge_tts_common.a
+<prefix>/lib/libedge_tts_core.a
+<prefix>/lib/libedge_tts_serialization.a
+<prefix>/lib/libedge_tts_subtitle.a
+<prefix>/lib/libedge_tts_communication.a
+<prefix>/lib/libedge_tts_api.a
+<prefix>/lib/libixwebsocket.a          (when compiled with ixwebsocket)
+```
+
+Consumers link `edge_tts::tts` (INTERFACE target) which carries all of these as
+transitive link dependencies automatically.
+
+---
+
 ## Proxy support (unsupported)
 
 The ixwebsocket backend has no client-side CONNECT-tunnel proxy API.

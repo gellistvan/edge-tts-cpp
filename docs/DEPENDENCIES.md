@@ -109,16 +109,20 @@ default when this is the top-level project).
 
 ### Installed targets
 
-| Target (installed name) | Alias created by config | Type |
-|-------------------------|------------------------|------|
-| `edge_tts_tts` | `edge_tts::tts` | INTERFACE (entry point) |
-| `edge_tts_api` | `edge_tts::api` | STATIC |
-| `edge_tts_communication` | `edge_tts::communication` | STATIC |
-| `edge_tts_serialization` | `edge_tts::serialization` | STATIC |
-| `edge_tts_subtitle` | `edge_tts::subtitle` | STATIC |
-| `edge_tts_core` | `edge_tts::core` | STATIC |
-| `edge_tts_common` | `edge_tts::common` | STATIC |
-| `ixwebsocket` | — | STATIC (when compiled with ixwebsocket) |
+edge-tts-cpp only supports **static library builds**.  All compiled modules use
+an explicit `STATIC` keyword in `add_library()`; `BUILD_SHARED_LIBS` is
+intentionally ignored.  See [docs/CONSUMING.md — Linkage mode](CONSUMING.md).
+
+| Target (installed name) | Alias created by config | Type | Notes |
+|-------------------------|------------------------|------|-------|
+| `edge_tts_tts` | `edge_tts::tts` | INTERFACE (entry point) | Carries all transitive link deps |
+| `edge_tts_api` | `edge_tts::api` | STATIC | Always static |
+| `edge_tts_communication` | `edge_tts::communication` | STATIC | Always static |
+| `edge_tts_serialization` | `edge_tts::serialization` | STATIC | Always static |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | STATIC | Always static |
+| `edge_tts_core` | `edge_tts::core` | STATIC | Always static |
+| `edge_tts_common` | `edge_tts::common` | STATIC | Always static |
+| `ixwebsocket` | — | STATIC | When compiled with ixwebsocket |
 
 The export set is named `edge_tts_cpp_targets`; the CMake package name is
 `edge_tts_cpp`.  Targets are exported **without** the `edge_tts::` namespace

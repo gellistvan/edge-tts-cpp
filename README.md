@@ -142,6 +142,11 @@ for the complete lookup-order policy.
 | `EDGE_TTS_FETCH_DEPS` | `OFF` | Allow FetchContent to download missing dependencies. Set `ON` for the `developer` preset or any online CI. |
 | `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when any app is enabled, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
 
+> **Linkage mode:** edge-tts-cpp only supports **static library builds**.  All
+> `edge_tts_*` modules use an explicit `STATIC` keyword in `add_library()`, so
+> `BUILD_SHARED_LIBS=ON` is silently ignored.  See
+> [docs/CONSUMING.md — Linkage mode](docs/CONSUMING.md) for details.
+
 ### Platform support
 
 | Platform | Core library | `edge-tts` CLI | `edge-playback` CLI |

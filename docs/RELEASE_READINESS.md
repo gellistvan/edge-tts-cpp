@@ -66,6 +66,7 @@ what "ready to release" means for each capability area.
 | `cmake --install` + `find_package` support | **Done** — `EdgeTtsInstall.cmake` with `configure_package_config_file` / `write_basic_package_version_file`; consumer configure + build + relocation verified by `edge_tts_install_tree_tests` in CTest |
 | Consumer examples | **Done** — `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build and link correctly; verified by `edge_tts_consumer_examples_tests` in CTest |
 | Package versioning | **Done** — `project(edge_tts_cpp VERSION 0.1.0)` is the single source of truth; `version.hpp` generated at configure time with `EDGE_TTS_CPP_VERSION_*` macros and `edge_tts::version_*` constexpr values; `SameMajorVersion` CMake compatibility; `edge_tts_package_version_tests` CTest validates macros, find_package version requests, and README consistency |
+| Linkage mode | **Static-only (documented)** — all `edge_tts_*` modules use explicit `STATIC` in `add_library()`; `BUILD_SHARED_LIBS=ON` is ignored; `edge_tts_linkage_mode_tests` CTest verifies static artifacts, BUILD_SHARED_LIBS override behavior, and both add_subdirectory and find_package consumers; documented in `docs/CONSUMING.md` and `docs/DEPENDENCIES.md`; shared library support not provided (no symbol-visibility infrastructure, no Windows DLL CI) |
 
 ---
 
@@ -85,6 +86,7 @@ Before tagging a release:
 7c. Verify install tree: `python3 tests/cmake/test_install_tree.py` passes — install, find_package consumer build, and relocation all succeed.
 7d. Verify consumer examples: `python3 tests/cmake/test_consumer_examples.py` passes — both `examples/consumer_add_subdirectory/` and `examples/consumer_find_package/` build cleanly.
 7e. Verify package versioning: `python3 tests/cmake/test_package_version.py` passes — version.hpp macros match CMake version, find_package version constraints work, README mentions the version.
+7f. Verify linkage mode: `python3 tests/cmake/test_linkage_mode.py` passes — static archives produced by default and with BUILD_SHARED_LIBS=ON; consumer add_subdirectory and find_package builds link correctly.
 8. Update version in `CMakeLists.txt` `project()` call and `README.md` version badge.
 9. Tag: `git tag -a v<VERSION> -m "Release v<VERSION>"`.
 
@@ -95,3 +97,4 @@ Before tagging a release:
 - **Windows:** `ProcessRunner` (POSIX fork/exec) is excluded. `edge-playback` cannot spawn `ffplay` on Windows without a Win32 `CreateProcess` implementation. Everything else compiles.
 - **Proxy:** Recognized and validated at parse time, propagated into `CommunicateOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
 - **Rate limiting:** No client-side rate limiter; matches Python behavior (no limiter there either).
+- **Static-only builds:** Shared library builds (`BUILD_SHARED_LIBS=ON`) are explicitly unsupported. All `edge_tts_*` modules are always compiled as static archives. No symbol-visibility (`EDGE_TTS_API`) infrastructure exists, and Windows DLL export/import has not been tested. `BUILD_SHARED_LIBS=ON` is silently ignored — static archives are produced regardless.

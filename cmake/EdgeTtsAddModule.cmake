@@ -22,7 +22,10 @@ function(edge_tts_add_module)
     set(target "edge_tts_${ARG_NAME}")
 
     if(ARG_SOURCES)
-        add_library(${target} ${ARG_SOURCES})
+        # Always STATIC: edge-tts-cpp only supports static library builds.
+        # BUILD_SHARED_LIBS is intentionally ignored for all edge_tts_* modules.
+        # See docs/CONSUMING.md — "Linkage mode".
+        add_library(${target} STATIC ${ARG_SOURCES})
         target_include_directories(${target}
             PUBLIC
                 $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
