@@ -293,6 +293,32 @@ def run_consumer(
     ok(f"{label}: Consumer app built and linked successfully")
 
 
+def verify_no_build_tree_paths(
+    install_prefix: pathlib.Path,
+    build_dir: pathlib.Path,
+) -> None:
+    """Step 4f: Installed CMake files must not reference build-tree paths."""
+    cmake_dir = install_prefix / "lib" / "cmake" / "edge_tts_cpp"
+    build_path_str = str(build_dir)
+
+    leaked: list[str] = []
+    for cmake_file in cmake_dir.iterdir():
+        if cmake_file.suffix != ".cmake":
+            continue
+        content = cmake_file.read_text(encoding="utf-8")
+        if build_path_str in content:
+            leaked.append(cmake_file.name)
+
+    if leaked:
+        fail(
+            f"Build-tree path '{build_path_str}' found in installed CMake file(s): "
+            + ", ".join(leaked)
+            + "\nAll paths in installed targets must be relative to _IMPORT_PREFIX, "
+            "not hardcoded to the build directory."
+        )
+    ok("No build-tree paths in installed CMake files")
+
+
 def main() -> None:
     if not cmake_bin():
         print("  SKIP install tree test (cmake not on PATH)")
@@ -305,10 +331,13 @@ def main() -> None:
         tmp = pathlib.Path(tmp_str)
 
         # Steps 1–3: Configure, build, install.
-        _, install_prefix = build_and_install(tmp)
+        build_dir, install_prefix = build_and_install(tmp)
 
         # Step 4a–4e: Verify install tree content.
         verify_install_tree(install_prefix)
+
+        # Step 4f: No build-tree paths in installed CMake files.
+        verify_no_build_tree_paths(install_prefix, build_dir)
 
         # ------------------------------------------------------------------
         # Step 5: find_package consumer — configure + build

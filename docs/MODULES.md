@@ -19,6 +19,57 @@ Three cmake helper files manage module and test registration:
 
 ---
 
+## PUBLIC / PRIVATE / INTERFACE dependency rules
+
+These rules govern `target_link_libraries` choices for all module targets.
+They ensure that consumers linking `edge_tts::tts` receive exactly what they need
+and nothing more.
+
+### Rule 1 — PUBLIC: use when consumers need the dep's types or headers
+
+Declare a dependency `PUBLIC` when the dependent target's **public headers**
+include or name types from the dependency.  Example: `edge_tts::core` headers
+reference `edge_tts::common` types, so `core` lists `common` as `PUBLIC_DEPS`.
+
+### Rule 2 — PRIVATE: use when the dep is implementation-only
+
+Declare a dependency `PRIVATE` when it is used exclusively in `.cpp` files
+and no type or constant from it appears in any public header under `include/`.
+Example: `nlohmann_json` is used only in `VoiceJsonParser.cpp`; it is PRIVATE.
+
+For **third-party static libraries** that are PRIVATE, if the consumer's final
+link step must still include that library's symbols, use `$<LINK_ONLY:...>` in
+`INTERFACE_LINK_LIBRARIES` to propagate the link dependency without propagating
+include directories or compile definitions.  `ixwebsocket` follows this pattern:
+`edge_tts_communication` links it PRIVATE (for compilation), then adds
+`$<LINK_ONLY:ixwebsocket>` to INTERFACE_LINK_LIBRARIES so static consumers
+automatically get it on their link line.
+
+### Rule 3 — Warning flags are NEVER propagated
+
+All project warning flags live in `edge_tts_compile_options` (INTERFACE target).
+Compiled modules inherit these flags via a generator-expression property read
+(`$<TARGET_PROPERTY:edge_tts_compile_options,...>`), which does NOT cause the
+`edge_tts_compile_options` target to appear in `LINK_LIBRARIES`.  Consumers
+compile with their own flag set; `-Werror` and `-Wall` from edge-tts-cpp do
+not affect them.
+
+### Rule 4 — Include directories
+
+Every module sets `BUILD_INTERFACE` to the repo's `include/` tree and
+`INSTALL_INTERFACE` to `include` (relative, resolved against `_IMPORT_PREFIX`
+in installed packages).  Submodule source paths never appear in
+`INTERFACE_INCLUDE_DIRECTORIES` of installed targets.
+
+### Rule 5 — cxx_std_20 is INTERFACE / PUBLIC
+
+`edge_tts::tts` declares `cxx_std_20` as an INTERFACE compile feature.
+Consumers inherit this requirement automatically; they do not need to add
+`target_compile_features(... cxx_std_20)` unless they also target C++20 APIs
+independently.
+
+---
+
 ## `edge_tts::common`
 
 **CMake target:** `edge_tts_common` / `edge_tts::common`

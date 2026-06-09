@@ -94,6 +94,36 @@ cmake -S . -B build -DEDGE_TTS_FETCH_DEPS=ON
 
 ---
 
+## Do not link internal sub-targets manually
+
+Link **only** `edge_tts::tts`.  Do not list any of the following explicitly:
+
+```cmake
+# WRONG — consumers must not manage edge-tts-cpp's internal graph
+target_link_libraries(my_app PRIVATE
+    edge_tts::communication
+    edge_tts::serialization
+    ixwebsocket
+    nlohmann_json::nlohmann_json
+)
+
+# CORRECT — the single public entry point carries everything
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+`edge_tts::tts` transitively provides:
+- All required static archives (`common`, `core`, `serialization`, `subtitle`,
+  `communication`, `api`)
+- The `ixwebsocket` link dependency (via `$<LINK_ONLY:...>` so its internal
+  headers and compile definitions do not pollute your build)
+- The `cxx_std_20` compile feature
+- Correct include directories for both build-tree and installed usage
+
+Internal modules (`edge_tts::cli`, `edge_tts::media`) are intentionally not
+exported and must never be linked by consumers.
+
+---
+
 ## Available targets after find_package
 
 | Target | Description | Use when |

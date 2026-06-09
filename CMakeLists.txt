@@ -164,12 +164,21 @@ if(TARGET ixwebsocket)
     # Signal to HttpClient.cpp / WebSocketClient.cpp that ixwebsocket is available.
     # PRIVATE so the definition does not leak into downstream consumers.
     target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
-    # For installed consumers: edge_tts_communication.a references ixwebsocket
-    # symbols, so consumers must also link ixwebsocket at link time.
-    # $<INSTALL_INTERFACE:...> means this only affects installed targets
-    # (find_package consumers), not build-tree consumers (add_subdirectory).
+    # For static-library consumers: edge_tts_communication.a embeds object files
+    # that reference ixwebsocket symbols.  Consumers must link ixwebsocket at
+    # link time or the final link step will have undefined symbols.
+    #
+    # $<LINK_ONLY:...> adds the target to the consumer's link command but does
+    # NOT propagate its INTERFACE_INCLUDE_DIRECTORIES or INTERFACE_COMPILE_DEFINITIONS
+    # (e.g. IXWEBSOCKET_USE_ZLIB).  Transitive link dependencies (OpenSSL, ZLIB,
+    # Threads) from ixwebsocket's own INTERFACE_LINK_LIBRARIES are still carried.
+    #
+    # BUILD_INTERFACE:  add_subdirectory consumers (build tree).
+    # INSTALL_INTERFACE: find_package consumers (ixwebsocket is in the export set).
     target_link_libraries(edge_tts_communication
-        INTERFACE "$<INSTALL_INTERFACE:ixwebsocket>")
+        INTERFACE
+            "$<BUILD_INTERFACE:$<LINK_ONLY:ixwebsocket>>"
+            "$<INSTALL_INTERFACE:$<LINK_ONLY:ixwebsocket>>")
 endif()
 
 # Guard: apps must not silently build against stub networking when real
@@ -192,6 +201,10 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(edge_tts_tts INTERFACE)
 add_library(edge_tts::tts ALIAS edge_tts_tts)
+# Declare cxx_std_20 directly on the entry-point target so that consumers
+# learn of the C++20 requirement without having to traverse the full
+# dependency chain.  The public headers use std::span (C++20).
+target_compile_features(edge_tts_tts INTERFACE cxx_std_20)
 target_link_libraries(edge_tts_tts INTERFACE edge_tts::api)
 
 # ---------------------------------------------------------------------------
@@ -325,6 +338,11 @@ if(EDGE_TTS_BUILD_TESTS)
             NAME edge_tts_install_tree_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_tree.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_strict_warnings_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_strict_warnings.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")

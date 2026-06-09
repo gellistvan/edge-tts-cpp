@@ -61,12 +61,27 @@ endmacro()
 # --- Suppress warnings on ixwebsocket headers -----------------------------
 macro(_edge_tts_suppress_ixwebsocket_warnings)
     if(TARGET ixwebsocket)
-        get_target_property(_ix_includes ixwebsocket INTERFACE_INCLUDE_DIRECTORIES)
-        if(_ix_includes)
+        # Promote ixwebsocket include directories to SYSTEM so the project's
+        # own -Wall/-Wextra/-Wpedantic flags do not fire on ixwebsocket headers.
+        #
+        # We must NOT copy INTERFACE_INCLUDE_DIRECTORIES raw into
+        # INTERFACE_SYSTEM_INCLUDE_DIRECTORIES: the stored generator expressions
+        # contain $<INSTALL_INTERFACE:include/ixwebsocket>, which CMake exports
+        # as the bare relative path "include/ixwebsocket" (without _IMPORT_PREFIX)
+        # in the generated targets file.  INTERFACE_INCLUDE_DIRECTORIES gets the
+        # correct prefix from the INCLUDES DESTINATION mechanism in install(TARGETS),
+        # but INTERFACE_SYSTEM_INCLUDE_DIRECTORIES does not benefit from the same
+        # processing.
+        #
+        # Fix: use SOURCE_DIR (the target's defining directory) for the build-tree
+        # path, and explicitly spell out the install-tree path with CMAKE_INSTALL_INCLUDEDIR.
+        get_target_property(_ix_src_dir ixwebsocket SOURCE_DIR)
+        if(_ix_src_dir)
             set_target_properties(ixwebsocket PROPERTIES
-                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_ix_includes}")
+                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                    "$<BUILD_INTERFACE:${_ix_src_dir}>;$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ixwebsocket>")
         endif()
-        unset(_ix_includes)
+        unset(_ix_src_dir)
     endif()
 endmacro()
 
