@@ -349,6 +349,11 @@ if(EDGE_TTS_BUILD_TESTS)
             COMMAND "${PYTHON3_EXECUTABLE}"
                     "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_examples.py"
         )
+        add_test(
+            NAME edge_tts_install_components_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_components.py"
+        )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")
     endif()

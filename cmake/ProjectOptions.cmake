@@ -11,9 +11,20 @@ function(edge_tts_setup_options)
         "Generate cmake --install rules for public headers and library targets"
         "${PROJECT_IS_TOP_LEVEL}")
 
-    # EDGE_TTS_INSTALL_APPS — include edge-tts and edge-playback CLI binaries
-    # in the install tree.  Off by default; most library consumers do not want
-    # the CLI apps installed alongside the library.
+    # EDGE_TTS_INSTALL_LIBRARY — install library artifacts:
+    #   • public headers (include/edge_tts/)
+    #   • compiled static archives (libedge_tts_*.a / ixwebsocket.a)
+    #   • CMake package config files (edge_tts_cpp-config.cmake, etc.)
+    # Disable to produce a binary-only install (apps only) or to do a
+    # component-specific install via: cmake --install --component Development
+    option(EDGE_TTS_INSTALL_LIBRARY
+        "Install library headers, static archives, and CMake package config files"
+        ON)
+
+    # EDGE_TTS_INSTALL_APPS — install edge-tts and edge-playback CLI binaries.
+    # Off by default; most library consumers do not want CLI apps installed.
+    # edge-playback is only installed when EDGE_TTS_BUILD_PLAYBACK_APP=ON and
+    # the target was actually built; its absence does not affect library install.
     option(EDGE_TTS_INSTALL_APPS
         "Install CLI app binaries (edge-tts, edge-playback) to CMAKE_INSTALL_BINDIR"
         OFF)

@@ -251,8 +251,19 @@ target_link_libraries(my_app PRIVATE edge_tts::tts)
 | Option | Default | Description |
 |--------|---------|-------------|
 | `EDGE_TTS_INSTALL` | `ON` (top-level) | Generate `cmake --install` rules |
-| `EDGE_TTS_INSTALL_APPS` | `OFF` | Install `edge-tts` / `edge-playback` binaries |
+| `EDGE_TTS_INSTALL_LIBRARY` | `ON` | Install headers, archives, and CMake package files (`Development` component) |
+| `EDGE_TTS_INSTALL_APPS` | `OFF` | Install `edge-tts` / `edge-playback` binaries (`Apps` component) |
 | `EDGE_TTS_INSTALL_TEST_SUPPORT` | `OFF` | Install `Fake*` test-support headers (test-only) |
+
+**Component-based install (selective):**
+
+```bash
+# Library only (headers + archives + CMake package files):
+cmake --install build --component Development
+
+# CLI apps only:
+cmake --install build --component Apps
+```
 
 The installed tree layout follows GNUInstallDirs conventions:
 

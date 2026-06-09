@@ -97,6 +97,38 @@ cmake --install build
 `EDGE_TTS_INSTALL` is `ON` by default when edge-tts-cpp is the top-level
 project.
 
+#### Library-only install (recommended for package maintainers)
+
+To install headers, archives, and CMake package files only — without CLI apps:
+
+```bash
+# EDGE_TTS_INSTALL_LIBRARY defaults ON; EDGE_TTS_INSTALL_APPS defaults OFF.
+cmake --install build --component Development
+```
+
+#### Apps install
+
+```bash
+cmake -S path/to/edge-tts-cpp -B build \
+    -DEDGE_TTS_INSTALL=ON \
+    -DEDGE_TTS_INSTALL_APPS=ON \
+    -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+cmake --install build --component Apps
+```
+
+`edge-playback` is included only when `EDGE_TTS_BUILD_PLAYBACK_APP=ON` (default
+on Linux/macOS; unavailable on Windows).
+
+#### Install options summary
+
+| Option | Default | Component | Description |
+|--------|---------|-----------|-------------|
+| `EDGE_TTS_INSTALL` | `ON` (top-level) | — | Generate install rules |
+| `EDGE_TTS_INSTALL_LIBRARY` | `ON` | `Development` | Headers, archives, CMake package files |
+| `EDGE_TTS_INSTALL_APPS` | `OFF` | `Apps` | `edge-tts` / `edge-playback` CLI binaries |
+| `EDGE_TTS_INSTALL_TEST_SUPPORT` | `OFF` | `TestSupport` | `Fake*` test-double headers |
+
 ### 2. Consume in your project
 
 ```cmake

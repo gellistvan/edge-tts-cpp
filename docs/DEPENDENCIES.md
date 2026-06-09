@@ -175,6 +175,34 @@ project root during `cmake_install.cmake` execution.  To avoid this,
 `install(DIRECTORY submodules/ixwebsocket/ixwebsocket DESTINATION include)`
 instead, producing `<prefix>/include/ixwebsocket/*.h`.
 
+### Install components
+
+The install tree is split into named CMake components so consumers can install
+only what they need.
+
+| Component | CMake option (guard) | Contents |
+|-----------|----------------------|----------|
+| `Development` | `EDGE_TTS_INSTALL_LIBRARY=ON` (default) | Headers (`include/edge_tts/`, `include/ixwebsocket/`), static archives (`lib/libedge_tts_*.a`, `lib/libixwebsocket.a`), CMake package files (`lib/cmake/edge_tts_cpp/`) |
+| `Apps` | `EDGE_TTS_INSTALL_APPS=ON` (default OFF) | `bin/edge-tts` (always); `bin/edge-playback` (POSIX only, when `EDGE_TTS_BUILD_PLAYBACK_APP=ON`) |
+| `TestSupport` | `EDGE_TTS_INSTALL_TEST_SUPPORT=ON` (default OFF) | `Fake*` test-double headers — test-only; never installed by default |
+
+**Component-based install:**
+
+```bash
+# Library only:
+cmake --install build --component Development
+
+# Apps only (requires EDGE_TTS_INSTALL_APPS=ON at configure time):
+cmake --install build --component Apps
+```
+
+`edge-playback` install notes:
+- Requires `EDGE_TTS_INSTALL_APPS=ON` **and** `EDGE_TTS_BUILD_PLAYBACK_APP=ON`.
+- `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `ON` on Linux/macOS and is forced `OFF`
+  on Windows (configuring with it `ON` on Windows is a `FATAL_ERROR`).
+- If the target was not built (e.g., `EDGE_TTS_BUILD_APPS=OFF`), the install
+  rule is silently skipped — it uses `if(TARGET edge-playback)` internally.
+
 ### Consumer tests
 
 | CTest name | Script | What it checks |
@@ -183,6 +211,7 @@ instead, producing `<prefix>/include/ixwebsocket/*.h`.
 | `edge_tts_consumer_add_subdirectory_tests` | `test_consumer_add_subdirectory.py` | add_subdirectory consumer; CMAKE_SOURCE_DIR invariant |
 | `edge_tts_public_tts_target_tests` | `test_public_tts_target.py` | edge_tts::tts target definition, no CLI leak, api link |
 | `edge_tts_consumer_strict_warnings_tests` | `test_consumer_strict_warnings.py` | No warning-flag leakage; consumer builds with -Werror using only `edge_tts::tts` (both add_subdirectory and find_package modes); no build-tree paths in installed files |
+| `edge_tts_install_components_tests` | `test_install_components.py` | Install component isolation: `Development` installs library only; `Apps` installs binaries only; `EDGE_TTS_INSTALL_LIBRARY=OFF` installs nothing; `EDGE_TTS_INSTALL_APPS=OFF` installs no binaries; playback conditional on POSIX + opt-in |
 
 `test_install_tree.py` detail:
 1. Configures edge-tts-cpp with `EDGE_TTS_BUILD_APPS=OFF -DEDGE_TTS_INSTALL=ON`.
