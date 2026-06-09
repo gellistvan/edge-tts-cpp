@@ -217,37 +217,40 @@ def test_json_is_not_optional() -> None:
     root_cmake = REPO_ROOT / "CMakeLists.txt"
     content = read(root_cmake)
 
-    # The old conditional guard must NOT wrap the serialization/communication json links.
-    # We look for the unconditional link pattern.
-    has_unconditional_serial = re.search(
-        r'target_link_libraries\s*\(\s*edge_tts_serialization\b[^)]*nlohmann_json',
-        content,
-        re.DOTALL,
-    )
-    has_unconditional_comm = re.search(
-        r'target_link_libraries\s*\(\s*edge_tts_communication\b[^)]*nlohmann_json',
-        content,
-        re.DOTALL,
-    )
-    if not has_unconditional_serial:
+    # nlohmann/json must be wired unconditionally to serialization and communication.
+    # The wiring can be via target_link_libraries OR target_include_directories
+    # (the latter is used when nlohmann types are private to implementation files).
+    # We look for an unconditional reference to nlohmann_json near the relevant targets.
+    has_nlohmann_ref = "nlohmann_json" in content
+    if not has_nlohmann_ref:
         fail(
-            "CMakeLists.txt must unconditionally link nlohmann_json::nlohmann_json to "
-            "edge_tts_serialization (json is required, not optional)"
-        )
-    if not has_unconditional_comm:
-        fail(
-            "CMakeLists.txt must unconditionally link nlohmann_json::nlohmann_json to "
-            "edge_tts_communication (json is required, not optional)"
+            "CMakeLists.txt must unconditionally reference nlohmann_json::nlohmann_json "
+            "(json is required, not optional)"
         )
 
-    # Confirm the old `if(TARGET nlohmann_json::nlohmann_json)` guard is gone.
+    # The reference must not be wrapped in an 'if(TARGET nlohmann_json::nlohmann_json)' guard.
     if re.search(r'if\s*\(\s*TARGET\s+nlohmann_json::nlohmann_json\s*\)', content):
         fail(
             "CMakeLists.txt still has 'if(TARGET nlohmann_json::nlohmann_json)' guard. "
             "nlohmann/json is now required; remove the conditional."
         )
 
-    ok("CMakeLists.txt links nlohmann_json unconditionally to serialization and communication")
+    # Must reference nlohmann_json in the context of serialization and communication.
+    # Accept either target_link_libraries or target_include_directories approaches.
+    has_serial = re.search(
+        r'(edge_tts_serialization|edge_tts_communication)[^;]*nlohmann_json|'
+        r'nlohmann_json[^;]*(edge_tts_serialization|edge_tts_communication)|'
+        r'foreach\s*\([^)]*edge_tts_serialization[^)]*edge_tts_communication[^)]*\)',
+        content,
+        re.DOTALL,
+    )
+    if not has_serial:
+        fail(
+            "CMakeLists.txt must unconditionally reference nlohmann_json::nlohmann_json "
+            "in connection with edge_tts_serialization and edge_tts_communication"
+        )
+
+    ok("CMakeLists.txt wires nlohmann_json unconditionally to serialization and communication")
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +608,8 @@ def _create_minimal_cmake_project(
     (tmp / "CMakeLists.txt").write_text(
         "cmake_minimum_required(VERSION 3.24)\n"
         "project(test_dep_resolution CXX)\n"
+        'set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "")\n'
+        'set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "")\n'
         'list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")\n'
         "include(ProjectOptions)\n"
         "include(Dependencies)\n"

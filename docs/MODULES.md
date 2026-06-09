@@ -19,6 +19,57 @@ Three cmake helper files manage module and test registration:
 
 ---
 
+## PUBLIC / PRIVATE / INTERFACE dependency rules
+
+These rules govern `target_link_libraries` choices for all module targets.
+They ensure that consumers linking `edge_tts::tts` receive exactly what they need
+and nothing more.
+
+### Rule 1 — PUBLIC: use when consumers need the dep's types or headers
+
+Declare a dependency `PUBLIC` when the dependent target's **public headers**
+include or name types from the dependency.  Example: `edge_tts::core` headers
+reference `edge_tts::common` types, so `core` lists `common` as `PUBLIC_DEPS`.
+
+### Rule 2 — PRIVATE: use when the dep is implementation-only
+
+Declare a dependency `PRIVATE` when it is used exclusively in `.cpp` files
+and no type or constant from it appears in any public header under `include/`.
+Example: `nlohmann_json` is used only in `VoiceJsonParser.cpp`; it is PRIVATE.
+
+For **third-party static libraries** that are PRIVATE, if the consumer's final
+link step must still include that library's symbols, use `$<LINK_ONLY:...>` in
+`INTERFACE_LINK_LIBRARIES` to propagate the link dependency without propagating
+include directories or compile definitions.  `ixwebsocket` follows this pattern:
+`edge_tts_communication` links it PRIVATE (for compilation), then adds
+`$<LINK_ONLY:ixwebsocket>` to INTERFACE_LINK_LIBRARIES so static consumers
+automatically get it on their link line.
+
+### Rule 3 — Warning flags are NEVER propagated
+
+All project warning flags live in `edge_tts_compile_options` (INTERFACE target).
+Compiled modules inherit these flags via a generator-expression property read
+(`$<TARGET_PROPERTY:edge_tts_compile_options,...>`), which does NOT cause the
+`edge_tts_compile_options` target to appear in `LINK_LIBRARIES`.  Consumers
+compile with their own flag set; `-Werror` and `-Wall` from edge-tts-cpp do
+not affect them.
+
+### Rule 4 — Include directories
+
+Every module sets `BUILD_INTERFACE` to the repo's `include/` tree and
+`INSTALL_INTERFACE` to `include` (relative, resolved against `_IMPORT_PREFIX`
+in installed packages).  Submodule source paths never appear in
+`INTERFACE_INCLUDE_DIRECTORIES` of installed targets.
+
+### Rule 5 — cxx_std_20 is INTERFACE / PUBLIC
+
+`edge_tts::tts` declares `cxx_std_20` as an INTERFACE compile feature.
+Consumers inherit this requirement automatically; they do not need to add
+`target_compile_features(... cxx_std_20)` unless they also target C++20 APIs
+independently.
+
+---
+
 ## `edge_tts::common`
 
 **CMake target:** `edge_tts_common` / `edge_tts::common`
@@ -333,11 +384,153 @@ regression:
 
 ---
 
-## Aggregate target
+## Public vs private headers
 
-`edge_tts` / `edge_tts::edge_tts` — INTERFACE target linking all modules.
-Used only by example programs.  Applications and tests must link specific
-module targets.
+### Two header categories
+
+| Category | Location | Self-contained? | Stable API? | Installed? |
+|----------|----------|-----------------|-------------|------------|
+| **Stable** | `include/edge_tts/api/`, `core/`, `common/`, `subtitles/`, `edge_tts.hpp` | Yes | Yes | Yes |
+| **Installed, not stable** | `include/edge_tts/communication/`, `serialization/`, `media/`, `cli/` | Yes | No | Yes |
+
+**"Stable"** means the API will not change without a major version bump.  Consumers
+linking `edge_tts::tts` and including only stable headers are insulated from
+internal refactors.
+
+**"Installed, not stable"** means the header is present in the install tree and
+fully self-contained, but it may change or be reorganized in a minor version.
+Use these headers only when building a custom transport or extending the library.
+
+### Invariants enforced by automated tests
+
+Every header under `include/edge_tts/` must satisfy all of the following:
+
+| Invariant | Test | CTest name |
+|-----------|------|------------|
+| Has `#pragma once` | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Does not `#include` from `src/`, `tests/`, or absolute paths | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Does not `#include` any `Fake*.hpp` test-double | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Compiles in isolation at the build tree | `edge_tts_header_selfcontainment_tests` (C++) | built by CMake |
+| Compiles in isolation against the install prefix | `test_installed_header_selfcontainment.py` | `edge_tts_installed_header_selfcontainment_tests` |
+
+Stable headers additionally must:
+
+| Invariant | Test | CTest name |
+|-----------|------|------------|
+| Only introduce `namespace edge_tts::` declarations at file scope | `test_public_headers.py` | `edge_tts_public_header_hygiene_tests` |
+| Only include stable API headers from edge-tts-cpp (no cli/, media/, etc.) | `test_umbrella_header_hygiene.py` (for umbrella) | `edge_tts_umbrella_header_hygiene_tests` |
+
+### Per-module header classification
+
+| Module | Public header path | Stable? | Notes |
+|--------|-------------------|---------|-------|
+| `api` | `include/edge_tts/api/` | Yes | Core synthesis facade |
+| `core` | `include/edge_tts/core/` | Yes | Data types (TtsConfig, Voice, Chunk) |
+| `common` | `include/edge_tts/common/` | Yes | Error handling, utilities |
+| `subtitle` | `include/edge_tts/subtitles/` | Yes | SubMaker, SRT types |
+| `communication` | `include/edge_tts/communication/` | No | Internal transport — may change |
+| `serialization` | `include/edge_tts/serialization/` | No | Internal protocol framing — may change |
+| `media` | `include/edge_tts/media/` | No | App-layer; ffplay/ffmpeg runner |
+| `cli` | `include/edge_tts/cli/` | No | App-layer; CLI argument parsing |
+| `test_support` | `tests/communication/Fake*.hpp` | — | **Never installed**; test doubles only |
+
+---
+
+## Public consumer targets
+
+### Quick reference
+
+| CMake target | `#include` | What it gives you | Exported? |
+|---|---|---|---|
+| `edge_tts::tts` | `<edge_tts/edge_tts.hpp>` | **Recommended entry point.** Carries all synthesis deps transitively. | Yes |
+| `edge_tts::api` | `<edge_tts/api/Communicate.hpp>` | `Communicate`, `FileWriter`, `CommunicateOptions`. | Yes |
+| `edge_tts::core` | `<edge_tts/core/TtsConfig.hpp>` | `TtsConfig`, `Voice`, `TtsChunk`. | Yes |
+| `edge_tts::common` | `<edge_tts/common/Result.hpp>` | `Result<T>`, `ErrorCode`, utilities. | Yes |
+| `edge_tts::subtitle` | `<edge_tts/subtitles/SubMaker.hpp>` | `SubMaker`, SRT types. | Yes |
+| `edge_tts::communication` | `<edge_tts/communication/>` | WebSocket/HTTP transport (advanced). | Yes |
+| `edge_tts::serialization` | `<edge_tts/serialization/>` | Protocol framing, SSML (advanced). | Yes |
+| `edge_tts::cli` | — | CLI argument parsing. **Not exported.** App-layer only. | No |
+| `edge_tts::media` | — | ffmpeg/ffplay runner. **Not exported.** App-layer only. | No |
+
+Consumers should link only `edge_tts::tts` unless they have a specific reason
+to depend on a lower-level module.
+
+### Umbrella header
+
+The recommended way to use edge-tts-cpp as a dependency is through the single
+umbrella header:
+
+```cpp
+#include <edge_tts/edge_tts.hpp>
+```
+
+`include/edge_tts/edge_tts.hpp` exposes the complete stable public API:
+`Communicate`, `CommunicateOptions`, `FileWriter`, `TtsConfig`, `Voice`,
+`Result<T>`, and `ErrorCode`.  It does NOT pull in CLI, media/playback,
+internal transport, or test utilities.
+
+Direct includes of individual headers (`edge_tts/api/Communicate.hpp`, etc.)
+are also supported for consumers who need finer granularity.
+
+### `edge_tts::tts` (recommended)
+
+**CMake target:** `edge_tts_tts` / `edge_tts::tts`
+
+The stable, minimal entry point for external consumers of the TTS library.
+
+```cmake
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+`edge_tts_tts` is an INTERFACE target that links `edge_tts::api`.  Transitively
+provides the full synthesis library:
+
+```
+edge_tts::tts
+  └─ edge_tts::api
+       ├─ edge_tts::communication  (WebSocket, HTTP, DRM token)
+       ├─ edge_tts::serialization  (SSML, protocol frames, JSON)
+       ├─ edge_tts::subtitle       (SRT generation)
+       ├─ edge_tts::core           (TtsConfig, Voice, TtsChunk)
+       └─ edge_tts::common         (Error, Result<T>, IClock)
+```
+
+`edge_tts::tts` does **not** expose:
+- `edge_tts::cli` — CLI argument parsing for the `edge-tts` / `edge-playback` apps
+- `edge_tts::media` — ffplay/ffmpeg process runner (not needed for synthesis)
+- `edge_tts_test_support` — test-only fake clients
+
+Stability contract: `edge_tts::tts` is stable and consumer-facing.  It will
+not be removed or renamed in a patch release.  Breaking changes require a semver
+major bump.
+
+### Advanced targets
+
+Lower-level module targets remain available for consumers who need fine-grained
+control over link graphs:
+
+| Target | Description |
+|--------|-------------|
+| `edge_tts::api` | Public synthesis facade only. |
+| `edge_tts::communication` | WebSocket/HTTP transport + DRM token. |
+| `edge_tts::serialization` | SSML, protocol framing, JSON parsing. |
+| `edge_tts::subtitle` | SRT generation. |
+| `edge_tts::media` | ffplay/ffmpeg process runner. |
+| `edge_tts::core` | Domain types. |
+| `edge_tts::common` | Errors, Result, utilities. |
+
+## Broad aggregate target (internal)
+
+`edge_tts` / `edge_tts::edge_tts` / `edge_tts::all` — INTERFACE target linking
+all modules including `edge_tts::cli` and `edge_tts::media`.
+
+Used only by internal example programs.  External consumers must use
+`edge_tts::tts` instead.  Apps and tests must link specific module targets.
+
+| Alias | Status |
+|-------|--------|
+| `edge_tts::edge_tts` | Retained for compatibility |
+| `edge_tts::all` | Preferred name for the broad aggregate |
 
 ---
 

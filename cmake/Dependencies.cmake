@@ -16,9 +16,9 @@ function(edge_tts_setup_dependencies)
     # -------------------------------------------------------------------------
     # nlohmann/json — JSON parsing (REQUIRED: serialization sources use it)
     # -------------------------------------------------------------------------
-    if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/json/CMakeLists.txt")
+    if(EXISTS "${EDGE_TTS_SOURCE_DIR}/submodules/json/CMakeLists.txt")
         set(JSON_BuildTests OFF CACHE INTERNAL "")
-        add_subdirectory("${CMAKE_SOURCE_DIR}/submodules/json" EXCLUDE_FROM_ALL)
+        add_subdirectory("${EDGE_TTS_SOURCE_DIR}/submodules/json" EXCLUDE_FROM_ALL)
         message(STATUS "nlohmann/json: using submodule at submodules/json")
     else()
         find_package(nlohmann_json CONFIG QUIET)
@@ -48,8 +48,8 @@ function(edge_tts_setup_dependencies)
     # -------------------------------------------------------------------------
     # googletest — optional test runner
     # -------------------------------------------------------------------------
-    if(EXISTS "${CMAKE_SOURCE_DIR}/submodules/googletest/CMakeLists.txt")
-        add_subdirectory("${CMAKE_SOURCE_DIR}/submodules/googletest" EXCLUDE_FROM_ALL)
+    if(EXISTS "${EDGE_TTS_SOURCE_DIR}/submodules/googletest/CMakeLists.txt")
+        add_subdirectory("${EDGE_TTS_SOURCE_DIR}/submodules/googletest" EXCLUDE_FROM_ALL)
     endif()
 
     # ixwebsocket and other submodule dependencies

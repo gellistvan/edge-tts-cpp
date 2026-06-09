@@ -30,7 +30,7 @@ function(edge_tts_add_module_test)
     )
     # Expose tests/vendor/minigtest and tests/ for #include "vendor/minigtest/..."
     target_include_directories(${target} PRIVATE
-        "${CMAKE_SOURCE_DIR}/tests"
+        "${EDGE_TTS_SOURCE_DIR}/tests"
     )
     add_test(NAME ${target} COMMAND ${target})
 endfunction()

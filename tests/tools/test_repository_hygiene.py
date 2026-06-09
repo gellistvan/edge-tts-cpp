@@ -451,7 +451,59 @@ def test_production_cmake_does_not_compile_fakes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. docs/CONTRIBUTING.md documents hygiene rules
+# 9. edge_tts_tts public target must not link cli, playback apps, or test-support
+#
+# edge_tts::tts is the stable consumer-facing target.  It must never pull in
+# CLI argument-parsing, playback infrastructure, or test utilities into a
+# normal TTS consumer link graph.
+# ---------------------------------------------------------------------------
+
+def test_edge_tts_tts_does_not_link_internal_targets() -> None:
+    cmake_path = REPO_ROOT / "CMakeLists.txt"
+    if not cmake_path.exists():
+        fail("CMakeLists.txt not found at repo root")
+
+    content = _strip_comments(read(cmake_path))
+
+    # Find the target_link_libraries block for edge_tts_tts.
+    match = re.search(
+        r'target_link_libraries\s*\(\s*edge_tts_tts\b(.*?)\)',
+        content,
+        re.DOTALL,
+    )
+    if not match:
+        fail(
+            "CMakeLists.txt has no target_link_libraries(edge_tts_tts ...) call.\n"
+            "edge_tts::tts must be defined and explicitly linked."
+        )
+
+    link_block = match.group(1)
+
+    # These targets must never appear in edge_tts_tts's direct link spec.
+    forbidden_fragments = [
+        ("edge_tts_cli",     "CLI argument-parsing module"),
+        ("edge_tts::cli",    "CLI argument-parsing module alias"),
+        ("edge-tts",         "edge-tts app executable"),
+        ("edge-playback",    "edge-playback app executable"),
+        ("test_support",     "test-support target"),
+    ]
+    violations = []
+    for fragment, description in forbidden_fragments:
+        if fragment in link_block:
+            violations.append(f"'{fragment}' ({description})")
+
+    if violations:
+        fail(
+            "edge_tts_tts is directly linked to internal targets that must not "
+            "be part of the public consumer API:\n  "
+            + "\n  ".join(violations)
+            + "\n\nedge_tts::tts must be minimal — only link edge_tts::api."
+        )
+    ok("edge_tts_tts does not link cli, playback apps, or test-support targets")
+
+
+# ---------------------------------------------------------------------------
+# 10. docs/CONTRIBUTING.md documents hygiene rules
 # ---------------------------------------------------------------------------
 
 CONTRIBUTING_REQUIRED_SECTIONS = [
@@ -500,6 +552,7 @@ def main() -> None:
         test_fake_headers_not_in_public_include,
         test_fake_sources_not_in_production_src,
         test_production_cmake_does_not_compile_fakes,
+        test_edge_tts_tts_does_not_link_internal_targets,
         test_contributing_documents_hygiene,
     ]
     print("Running repository hygiene tests...\n")

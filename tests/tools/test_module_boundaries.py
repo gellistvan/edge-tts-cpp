@@ -53,6 +53,8 @@ def test_module_of_file_recognition() -> None:
         (Path("/repo/include/edge_tts/core/TtsConfig.hpp"),    "core"),
         (Path("/repo/include/edge_tts/common/Errors.hpp"),     "common"),
         (Path("/repo/include/edge_tts/api/Communicate.hpp"),   "api"),
+        # Top-level headers directly under include/edge_tts/ are "umbrella"
+        (Path("/repo/include/edge_tts/edge_tts.hpp"),          "umbrella"),
         (Path("/repo/src/api/Communicate.cpp"),                "api"),
         (Path("/repo/src/core/TtsConfig.cpp"),                 "core"),
         (Path("/repo/src/subtitles/SrtComposer.cpp"),          "subtitles"),
@@ -65,7 +67,7 @@ def test_module_of_file_recognition() -> None:
         got = checker.module_of_file(path, root)
         if got != expected:
             fail(f"module_of_file({path.relative_to(root)}): expected {expected!r}, got {got!r}")
-    ok("module_of_file() recognises all path patterns")
+    ok("module_of_file() recognises all path patterns (including umbrella)")
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +110,11 @@ def test_allowed_includes_inline(tmp_path: Path) -> None:
         # apps may also use cli directly
         ("apps/edge-tts/cli.cpp",
          '#include "edge_tts/cli/CliOptions.hpp"\n'),
+        # umbrella header may include api, core, common
+        ("include/edge_tts/edge_tts.hpp",
+         '#include "edge_tts/api/Communicate.hpp"\n'
+         '#include "edge_tts/core/TtsConfig.hpp"\n'
+         '#include "edge_tts/common/Result.hpp"\n'),
     ]
     for rel, content in cases:
         path = tmp_path / rel
@@ -177,6 +184,10 @@ def test_forbidden_includes_inline(tmp_path: Path) -> None:
         ("src/cli/Bad2.cpp",
          '#include "edge_tts/serialization/TextChunker.hpp"\n',
          "[cli] forbidden include of [serialization]"),
+        # umbrella header must not include cli, media, communication, or serialization
+        ("include/edge_tts/edge_tts.hpp",
+         '#include "edge_tts/cli/CliOptions.hpp"\n',
+         "[umbrella] forbidden include of [cli]"),
     ]
     for rel, content, expected_sub in cases:
         path = tmp_path / rel

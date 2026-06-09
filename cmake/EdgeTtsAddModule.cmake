@@ -22,14 +22,23 @@ function(edge_tts_add_module)
     set(target "edge_tts_${ARG_NAME}")
 
     if(ARG_SOURCES)
-        add_library(${target} ${ARG_SOURCES})
+        # Always STATIC: edge-tts-cpp only supports static library builds.
+        # BUILD_SHARED_LIBS is intentionally ignored for all edge_tts_* modules.
+        # See docs/CONSUMING.md — "Linkage mode".
+        add_library(${target} STATIC ${ARG_SOURCES})
         target_include_directories(${target}
             PUBLIC
-                $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
         )
         target_compile_features(${target} PUBLIC cxx_std_20)
-        target_link_libraries(${target} PRIVATE edge_tts_compile_options)
+        # Apply warning/sanitizer flags directly via TARGET_PROPERTY genex rather
+        # than target_link_libraries so edge_tts_compile_options does not appear
+        # in LINK_LIBRARIES and need not be included in the install export set.
+        target_compile_options(${target} PRIVATE
+            $<TARGET_PROPERTY:edge_tts_compile_options,INTERFACE_COMPILE_OPTIONS>)
+        target_link_options(${target} PRIVATE
+            $<TARGET_PROPERTY:edge_tts_compile_options,INTERFACE_LINK_OPTIONS>)
 
         if(ARG_PUBLIC_DEPS)
             target_link_libraries(${target} PUBLIC ${ARG_PUBLIC_DEPS})
@@ -42,7 +51,7 @@ function(edge_tts_add_module)
         add_library(${target} INTERFACE)
         target_include_directories(${target}
             INTERFACE
-                $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+                $<BUILD_INTERFACE:${EDGE_TTS_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
         )
         target_compile_features(${target} INTERFACE cxx_std_20)

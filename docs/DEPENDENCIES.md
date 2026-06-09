@@ -56,6 +56,180 @@ the release checklist.
 
 ---
 
+## add_subdirectory safety
+
+edge-tts-cpp is safe to consume via `add_subdirectory` from a parent CMake project.
+
+### Canonical directory variables
+
+All project-local file paths use `EDGE_TTS_SOURCE_DIR` and `EDGE_TTS_BINARY_DIR`
+instead of `CMAKE_SOURCE_DIR` and `CMAKE_BINARY_DIR`.
+
+These variables are defined at the top of `CMakeLists.txt`:
+
+```cmake
+set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "")
+set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "")
+```
+
+`CMAKE_CURRENT_SOURCE_DIR` and `CMAKE_CURRENT_BINARY_DIR` refer to
+edge-tts-cpp's own directory regardless of nesting depth, so the parent
+project's `CMAKE_SOURCE_DIR` is never touched.
+
+A regression check (`tests/cmake/test_cmake_source_dir_regression.py`, CTest
+name `edge_tts_cmake_source_dir_regression`) scans all of edge-tts-cpp's own
+cmake files and fails the build if any bare `${CMAKE_SOURCE_DIR}` or
+`${CMAKE_BINARY_DIR}` reference is introduced.  The check excludes the
+`submodules/` directory (third-party projects have their own conventions) and
+the consumer fixture under `tests/cmake/consumer_add_subdirectory_basic/`.
+
+### Consumer fixture
+
+A minimal consumer project lives in `tests/cmake/consumer_add_subdirectory_basic/`.
+It is a standalone CMake project that:
+
+1. Calls `add_subdirectory(edge-tts-cpp …)` with `EDGE_TTS_CPP_SOURCE_DIR` pointing
+   to the repo root.
+2. Links against `edge_tts::common` and `edge_tts::core`.
+3. Asserts at configure time that `CMAKE_SOURCE_DIR` still points to the consumer's
+   own root (not inside edge-tts-cpp).
+4. Compiles a small C++ binary that uses `edge_tts/common/Error.hpp` and
+   `edge_tts/core/Voice.hpp` to confirm that the public include path is correct.
+
+The Python test `tests/cmake/test_consumer_add_subdirectory.py` (CTest name
+`edge_tts_consumer_add_subdirectory_tests`) configures and builds this fixture in
+a temporary directory.
+
+---
+
+## cmake --install support
+
+edge-tts-cpp ships CMake install rules (enabled via `EDGE_TTS_INSTALL=ON`, the
+default when this is the top-level project).
+
+### Installed targets
+
+edge-tts-cpp only supports **static library builds**.  All compiled modules use
+an explicit `STATIC` keyword in `add_library()`; `BUILD_SHARED_LIBS` is
+intentionally ignored.  See [docs/CONSUMING.md — Linkage mode](CONSUMING.md).
+
+| Target (installed name) | Alias created by config | Type | Notes |
+|-------------------------|------------------------|------|-------|
+| `edge_tts_tts` | `edge_tts::tts` | INTERFACE (entry point) | Carries all transitive link deps |
+| `edge_tts_api` | `edge_tts::api` | STATIC | Always static |
+| `edge_tts_communication` | `edge_tts::communication` | STATIC | Always static |
+| `edge_tts_serialization` | `edge_tts::serialization` | STATIC | Always static |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | STATIC | Always static |
+| `edge_tts_core` | `edge_tts::core` | STATIC | Always static |
+| `edge_tts_common` | `edge_tts::common` | STATIC | Always static |
+| `ixwebsocket` | — | STATIC | When compiled with ixwebsocket |
+
+The export set is named `edge_tts_cpp_targets`; the CMake package name is
+`edge_tts_cpp`.  Targets are exported **without** the `edge_tts::` namespace
+prefix to avoid double-prefixing; the generated `edge_tts_cpp-config.cmake`
+creates `edge_tts::<name>` ALIAS targets from the imported `edge_tts_<name>`
+names via `set_target_properties(IMPORTED_GLOBAL TRUE)` + `add_library(ALIAS)`.
+
+### Consumer dependency model
+
+A consumer links `edge_tts::tts` and needs nothing else:
+
+```cmake
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+# No need to list: ixwebsocket, nlohmann_json, Threads, ZLIB, or any
+# internal edge_tts_* sub-target.
+```
+
+All transitive link requirements are satisfied automatically.
+
+### PUBLIC / PRIVATE / INTERFACE rules for installed targets
+
+| Dependency | Linkage | Rationale |
+|------------|---------|-----------|
+| `edge_tts::common` → `edge_tts::core` | PUBLIC | `core` types appear in `common`'s public headers |
+| `edge_tts::core` → `edge_tts::serialization` | PUBLIC dep of serialization | Types from `core` appear in serialization headers |
+| `edge_tts::communication` → `ixwebsocket` | PRIVATE (implementation) + LINK_ONLY propagation | ixwebsocket types never appear in public headers; `$<LINK_ONLY:ixwebsocket>` propagates the link dep to static consumers without leaking ixwebsocket's include dirs or compile definitions |
+| `edge_tts::serialization` → `nlohmann_json` | PRIVATE (include dirs only) | JSON types are internal; injected via `target_include_directories PRIVATE` so `nlohmann_json` never appears in `INTERFACE_LINK_LIBRARIES` |
+| Warning flags (`edge_tts_compile_options`) | PRIVATE via genex | Applied to edge-tts-cpp sources only; never propagated to consumers |
+| `cxx_std_20` | PUBLIC / INTERFACE | Consumers must compile at C++20 or later; propagated via `edge_tts::tts` |
+
+### Transitive dependencies of installed targets
+
+| Dependency | Propagation | How resolved |
+|------------|-------------|--------------|
+| `ixwebsocket` | `$<LINK_ONLY:ixwebsocket>` on `edge_tts_communication`'s INTERFACE; included in the export set | Present in `edge_tts_cpp-targets.cmake`; no separate installation needed |
+| `ZLIB::ZLIB` | ixwebsocket uses ZLIB privately; `edge_tts_cpp-config.cmake` calls `find_dependency(ZLIB QUIET)` so `ZLIB::ZLIB` is resolvable | System ZLIB |
+| `Threads::Threads` | ixwebsocket uses Threads privately; `edge_tts_cpp-config.cmake` calls `find_dependency(Threads QUIET)` | CMake's built-in `FindThreads` |
+| `nlohmann/json` | NOT propagated — header-only, PRIVATE include dirs only | Consumers do not need it |
+
+**ixwebsocket `$<LINK_ONLY:...>` detail:** Using `$<LINK_ONLY:ixwebsocket>` instead of
+a plain `INTERFACE ixwebsocket` dependency prevents ixwebsocket's own
+`INTERFACE_COMPILE_DEFINITIONS` (e.g. `IXWEBSOCKET_USE_ZLIB`) and
+`INTERFACE_INCLUDE_DIRECTORIES` from leaking into consumer compile environments,
+while still ensuring the ixwebsocket static archive is on every consumer's
+final link command.
+
+### ixwebsocket headers
+
+ixwebsocket's CMakeLists.txt sets `PUBLIC_HEADER` to relative paths
+(`ixwebsocket/IXBase64.h`, …) that are interpreted relative to the **parent**
+project root during `cmake_install.cmake` execution.  To avoid this,
+`EdgeTtsInstall.cmake` clears the `PUBLIC_HEADER` property before the
+`install(TARGETS ixwebsocket …)` call and uses a direct
+`install(DIRECTORY submodules/ixwebsocket/ixwebsocket DESTINATION include)`
+instead, producing `<prefix>/include/ixwebsocket/*.h`.
+
+### Install components
+
+The install tree is split into named CMake components so consumers can install
+only what they need.
+
+| Component | CMake option (guard) | Contents |
+|-----------|----------------------|----------|
+| `Development` | `EDGE_TTS_INSTALL_LIBRARY=ON` (default) | Headers (`include/edge_tts/`, `include/ixwebsocket/`), static archives (`lib/libedge_tts_*.a`, `lib/libixwebsocket.a`), CMake package files (`lib/cmake/edge_tts_cpp/`) |
+| `Apps` | `EDGE_TTS_INSTALL_APPS=ON` (default OFF) | `bin/edge-tts` (always); `bin/edge-playback` (POSIX only, when `EDGE_TTS_BUILD_PLAYBACK_APP=ON`) |
+| `TestSupport` | `EDGE_TTS_INSTALL_TEST_SUPPORT=ON` (default OFF) | `Fake*` test-double headers — test-only; never installed by default |
+
+**Component-based install:**
+
+```bash
+# Library only:
+cmake --install build --component Development
+
+# Apps only (requires EDGE_TTS_INSTALL_APPS=ON at configure time):
+cmake --install build --component Apps
+```
+
+`edge-playback` install notes:
+- Requires `EDGE_TTS_INSTALL_APPS=ON` **and** `EDGE_TTS_BUILD_PLAYBACK_APP=ON`.
+- `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `ON` on Linux/macOS and is forced `OFF`
+  on Windows (configuring with it `ON` on Windows is a `FATAL_ERROR`).
+- If the target was not built (e.g., `EDGE_TTS_BUILD_APPS=OFF`), the install
+  rule is silently skipped — it uses `if(TARGET edge-playback)` internally.
+
+### Consumer tests
+
+| CTest name | Script | What it checks |
+|------------|--------|---------------|
+| `edge_tts_install_tree_tests` | `test_install_tree.py` | Full install+consume cycle: headers, CMake files, no test-support leak, no build-tree paths in installed targets, relocation |
+| `edge_tts_consumer_add_subdirectory_tests` | `test_consumer_add_subdirectory.py` | add_subdirectory consumer; CMAKE_SOURCE_DIR invariant |
+| `edge_tts_public_tts_target_tests` | `test_public_tts_target.py` | edge_tts::tts target definition, no CLI leak, api link |
+| `edge_tts_consumer_strict_warnings_tests` | `test_consumer_strict_warnings.py` | No warning-flag leakage; consumer builds with -Werror using only `edge_tts::tts` (both add_subdirectory and find_package modes); no build-tree paths in installed files |
+| `edge_tts_install_components_tests` | `test_install_components.py` | Install component isolation: `Development` installs library only; `Apps` installs binaries only; `EDGE_TTS_INSTALL_LIBRARY=OFF` installs nothing; `EDGE_TTS_INSTALL_APPS=OFF` installs no binaries; playback conditional on POSIX + opt-in |
+
+`test_install_tree.py` detail:
+1. Configures edge-tts-cpp with `EDGE_TTS_BUILD_APPS=OFF -DEDGE_TTS_INSTALL=ON`.
+2. Builds all production library targets.
+3. Runs `cmake --install`.
+4. Verifies required headers and CMake package files are present.
+5. Checks no fake/test-support headers were installed.
+6. Checks no build-tree paths appear in installed CMake files.
+7. Configures `tests/cmake/consumer_install_basic/` against the install prefix
+   to verify `find_package(edge_tts_cpp)` and all `edge_tts::` aliases work.
+8. Copies the install tree to a new path and re-runs the consumer to verify relocation.
+
+---
+
 ## minigtest
 
 | Property | Value |

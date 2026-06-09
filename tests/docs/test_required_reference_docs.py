@@ -90,6 +90,8 @@ README_REQUIRED_LINKS = [
     ("docs/HIGH_LEVEL_DESIGN.md", "README.md must link to docs/HIGH_LEVEL_DESIGN.md"),
     ("docs/TESTING.md", "README.md must link to docs/TESTING.md"),
     ("docs/RELEASE_READINESS.md", "README.md must link to docs/RELEASE_READINESS.md"),
+    ("examples/consumer_add_subdirectory", "README.md must reference examples/consumer_add_subdirectory"),
+    ("examples/consumer_find_package", "README.md must reference examples/consumer_find_package"),
 ]
 
 # ---------------------------------------------------------------------------

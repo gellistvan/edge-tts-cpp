@@ -137,13 +137,37 @@ updating the submodule.
 
 ---
 
-## Checklist for a release
+## Version policy
 
-1. Tag the release: `git tag -a v<VERSION> -m "Release v<VERSION>"`
-2. Initialise submodules if not already: `git submodule update --init --recursive`
-3. Run the archive script: `./tools/make_release_archive.sh <VERSION>`
-4. Smoke-test the archive (see "Verifying the archive" above).
-5. Upload `edge-tts-cpp-<VERSION>.tar.gz` alongside the GitHub release.
-6. Note in the release description that the GitHub automatic "Source code" archives
+The project uses [Semantic Versioning](https://semver.org):
+
+| Phase | Policy |
+|-------|--------|
+| `0.x.y` (pre-1.0) | No API stability guarantee — minor bumps may break the public API |
+| `1.0.0+` | Breaking changes only on major bumps |
+
+The authoritative version lives in the `VERSION` field of `project()` in the
+root `CMakeLists.txt`.  Do not duplicate it elsewhere — every downstream artifact
+(`edge_tts_cpp-config-version.cmake`, `include/edge_tts/version.hpp`, etc.) is
+generated from this single source of truth at configure time.
+
+### Bumping the version
+
+1. Edit `CMakeLists.txt`: update the `VERSION` field in `project()`.
+2. Rebuild — `include/edge_tts/version.hpp` regenerates automatically via `configure_file`.
+3. Update the version badge in `README.md` (the `**Version: X.Y.Z**` line).
+4. Update `docs/CONSUMING.md` (the "Current version" line in the versioning section).
+5. Commit: `git commit -m "Bump version to X.Y.Z"`.
+
+### Checklist for a release
+
+1. Bump the version (see above).
+2. Verify `ctest --output-on-failure` passes — including `edge_tts_package_version_tests`.
+3. Tag the release: `git tag -a v<VERSION> -m "Release v<VERSION>"`
+4. Initialise submodules if not already: `git submodule update --init --recursive`
+5. Run the archive script: `./tools/make_release_archive.sh <VERSION>`
+6. Smoke-test the archive (see "Verifying the archive" above).
+7. Upload `edge-tts-cpp-<VERSION>.tar.gz` alongside the GitHub release.
+8. Note in the release description that the GitHub automatic "Source code" archives
    do **not** include submodule contents and require either system packages or
    `EDGE_TTS_FETCH_DEPS=ON` to build.

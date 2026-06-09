@@ -1,8 +1,70 @@
 # edge-tts-cpp
 
+**Version: 0.1.0** (pre-1.0 — API may change between minor versions; see [Versioning](#versioning))
+
 A modern C++20 implementation of a Microsoft Edge TTS client, inspired by the Python `edge-tts` project.
 
 Real networking (WebSocket + HTTP), Edge protocol parsing, DRM token generation, and voice listing are wired and functional. `ffmpeg`/`ffplay` playback integration is implemented via runtime process execution.
+
+## Use as a dependency
+
+edge-tts-cpp is ready to consume as a C++ library.  Two integration paths are
+supported and both are fully tested:
+
+### Option A — add_subdirectory (vendored submodule)
+
+```cmake
+# Set options before add_subdirectory:
+set(EDGE_TTS_INSTALL    OFF CACHE BOOL "" FORCE)
+set(EDGE_TTS_BUILD_APPS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(path/to/edge-tts-cpp ${CMAKE_CURRENT_BINARY_DIR}/edge-tts-cpp EXCLUDE_FROM_ALL)
+
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+Initialize nested submodules first (or set `EDGE_TTS_FETCH_DEPS=ON`):
+
+```bash
+git submodule update --init --recursive path/to/edge-tts-cpp
+```
+
+### Option B — install + find_package
+
+```bash
+cmake -S path/to/edge-tts-cpp -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build && cmake --install build
+```
+
+```cmake
+find_package(edge_tts_cpp CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+### In C++
+
+```cpp
+#include <edge_tts/edge_tts.hpp>   // umbrella header — full stable API
+
+edge_tts::core::TtsConfig cfg;
+cfg.voice = "en-US-EmmaMultilingualNeural";
+
+edge_tts::api::Communicate tts("Hello, world!", std::move(cfg), {});
+auto result = tts.save("hello.mp3", "hello.srt");
+if (!result) std::cerr << result.error().what() << '\n';
+```
+
+`edge_tts::tts` carries all transitive link dependencies (static archives,
+ixwebsocket, C++20 feature requirement, include paths).  No need to list any
+of them manually.
+
+> **Note:** proxy support is not functional — the ixwebsocket backend returns
+> `ErrorCode::unsupported` if `CommunicateOptions::proxy` is set.
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration guide,
+and [`examples/`](examples/) for ready-to-copy project templates.
+
+---
 
 ## Goals
 
@@ -47,25 +109,31 @@ tests/
 
 ### CMake targets
 
-Each module is a separate CMake library.  Link specific targets — do not link
-the aggregate unless writing examples.
-
-| Module | Target | Alias | Test target |
-|--------|--------|-------|-------------|
-| common | `edge_tts_common` | `edge_tts::common` | `edge_tts_common_tests` |
-| core | `edge_tts_core` | `edge_tts::core` | `edge_tts_core_tests` |
-| serialization | `edge_tts_serialization` | `edge_tts::serialization` | `edge_tts_serialization_tests` |
-| subtitle | `edge_tts_subtitle` | `edge_tts::subtitle` | `edge_tts_subtitle_tests` |
-| media | `edge_tts_media` | `edge_tts::media` | `edge_tts_media_tests` |
-| communication | `edge_tts_communication` | `edge_tts::communication` | `edge_tts_communication_tests` |
-| api | `edge_tts_api` | `edge_tts::api` | `edge_tts_api_tests` |
-| cli | `edge_tts_cli` | `edge_tts::cli` | `edge_tts_cli_tests` |
-
-The aggregate convenience target:
+**Recommended consumer target: `edge_tts::tts`**
 
 ```cmake
-target_link_libraries(my_example PRIVATE edge_tts::edge_tts)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
 ```
+
+`edge_tts::tts` is the stable, minimal public entry point for TTS consumers.
+It links `edge_tts::api`, which transitively provides the full synthesis library
+(`common`, `core`, `serialization`, `subtitle`, `communication`) without pulling
+in CLI argument parsing, playback infrastructure, or test utilities.
+
+**All available targets:**
+
+| Target | Alias | Purpose | Stability |
+|--------|-------|---------|-----------|
+| `edge_tts_tts` | `edge_tts::tts` | **Recommended consumer target.** Links the TTS API and all transitive deps. No CLI, no playback, no tests. | Stable public API |
+| `edge_tts_api` | `edge_tts::api` | Public synthesis facade (`Communicate`, `FileWriter`). | Stable public API |
+| `edge_tts_communication` | `edge_tts::communication` | WebSocket/HTTP transport, DRM tokens, voice service. | Advanced use |
+| `edge_tts_serialization` | `edge_tts::serialization` | SSML building, protocol framing, JSON parsing. | Advanced use |
+| `edge_tts_subtitle` | `edge_tts::subtitle` | SRT subtitle generation. | Advanced use |
+| `edge_tts_media` | `edge_tts::media` | ffplay/ffmpeg process runner. | Advanced use |
+| `edge_tts_core` | `edge_tts::core` | Domain types (`TtsConfig`, `Voice`, `TtsChunk`). | Advanced use |
+| `edge_tts_common` | `edge_tts::common` | Error types, `Result<T>`, `IClock`. | Advanced use |
+| `edge_tts_cli` | `edge_tts::cli` | CLI argument parsing for `edge-tts` / `edge-playback`. | Internal / app-only |
+| `edge_tts` | `edge_tts::edge_tts`, `edge_tts::all` | Broad aggregate: all modules including CLI. For internal examples only. | Internal convenience |
 
 See [`docs/DEPENDENCY_RULES.md`](docs/DEPENDENCY_RULES.md) for the enforced
 dependency matrix and [`docs/MODULES.md`](docs/MODULES.md) for per-module
@@ -134,6 +202,11 @@ for the complete lookup-order policy.
 | `EDGE_TTS_FETCH_DEPS` | `OFF` | Allow FetchContent to download missing dependencies. Set `ON` for the `developer` preset or any online CI. |
 | `EDGE_TTS_REQUIRE_NETWORKING` | `ON` when any app is enabled, else `OFF` | Treat missing ixwebsocket as a fatal configure error |
 
+> **Linkage mode:** edge-tts-cpp only supports **static library builds**.  All
+> `edge_tts_*` modules use an explicit `STATIC` keyword in `add_library()`, so
+> `BUILD_SHARED_LIBS=ON` is silently ignored.  See
+> [docs/CONSUMING.md — Linkage mode](docs/CONSUMING.md) for details.
+
 ### Platform support
 
 | Platform | Core library | `edge-tts` CLI | `edge-playback` CLI |
@@ -179,12 +252,107 @@ See [`docs/RELEASE.md`](docs/RELEASE.md) for the complete source archive policy.
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the full development guide.
 
+### Using as an add_subdirectory dependency
+
+edge-tts-cpp can be consumed from a parent CMake project via `add_subdirectory`.
+A ready-to-copy example is in [`examples/consumer_add_subdirectory/`](examples/consumer_add_subdirectory/).
+
+```cmake
+# In your parent CMakeLists.txt:
+cmake_minimum_required(VERSION 3.24)
+project(my_app LANGUAGES CXX)
+
+# Disable install rules and apps when using as a sub-project:
+set(EDGE_TTS_INSTALL    OFF CACHE BOOL "" FORCE)
+set(EDGE_TTS_BUILD_APPS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(
+    path/to/edge-tts-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/edge-tts-cpp
+    EXCLUDE_FROM_ALL
+)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE edge_tts::tts)  # recommended consumer target
+```
+
+edge-tts-cpp uses `EDGE_TTS_SOURCE_DIR` / `EDGE_TTS_BINARY_DIR` internally (set
+to `CMAKE_CURRENT_SOURCE_DIR` / `CMAKE_CURRENT_BINARY_DIR` at its own root) so
+your parent project's `CMAKE_SOURCE_DIR` is never touched.
+
+The submodules (`submodules/json`, `submodules/ixwebsocket`) must be initialized
+before the parent project configures:
+
+```bash
+git submodule update --init --recursive path/to/edge-tts-cpp
+```
+
+Or set `EDGE_TTS_FETCH_DEPS=ON` to let CMake download them automatically.
+
+### Installing and using via find_package
+
+edge-tts-cpp supports `cmake --install` to produce an install tree consumable
+via `find_package(edge_tts_cpp CONFIG REQUIRED)`.
+A ready-to-copy example is in [`examples/consumer_find_package/`](examples/consumer_find_package/).
+
+**Install:**
+
+```bash
+cmake -S . -B build -DEDGE_TTS_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+cmake --install build
+```
+
+`EDGE_TTS_INSTALL` defaults to `ON` when edge-tts-cpp is the top-level project
+and `OFF` when consumed via `add_subdirectory`.
+
+**Consume in your project:**
+
+```cmake
+find_package(edge_tts_cpp REQUIRED)
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
+**Install options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `EDGE_TTS_INSTALL` | `ON` (top-level) | Generate `cmake --install` rules |
+| `EDGE_TTS_INSTALL_LIBRARY` | `ON` | Install headers, archives, and CMake package files (`Development` component) |
+| `EDGE_TTS_INSTALL_APPS` | `OFF` | Install `edge-tts` / `edge-playback` binaries (`Apps` component) |
+| `EDGE_TTS_INSTALL_TEST_SUPPORT` | `OFF` | Install `Fake*` test-support headers (test-only) |
+
+**Component-based install (selective):**
+
+```bash
+# Library only (headers + archives + CMake package files):
+cmake --install build --component Development
+
+# CLI apps only:
+cmake --install build --component Apps
+```
+
+The installed tree layout follows GNUInstallDirs conventions:
+
+```
+<prefix>/include/edge_tts/     public headers
+<prefix>/lib/libedge_tts_*.a   compiled modules
+<prefix>/lib/cmake/edge_tts_cpp/
+    edge_tts_cpp-config.cmake
+    edge_tts_cpp-config-version.cmake
+    edge_tts_cpp-targets.cmake
+```
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration
+guide including available targets, version compatibility, and transitive
+dependency behavior.
+
 ## Usage
 
+Include the umbrella header and link `edge_tts::tts`:
+
 ```cpp
-#include "edge_tts/api/Communicate.hpp"
-#include "edge_tts/api/CommunicateOptions.hpp"  // transport options (proxy, timeouts)
-#include "edge_tts/core/TtsConfig.hpp"
+#include <edge_tts/edge_tts.hpp>
 
 // Speech config — voice, rate, volume, pitch only (no transport settings).
 edge_tts::core::TtsConfig cfg;
@@ -213,8 +381,15 @@ if (chunks) {
 }
 ```
 
+```cmake
+target_link_libraries(my_app PRIVATE edge_tts::tts)
+```
+
 Both `stream_sync()` and `save()` are single-use — a second call returns
 `ErrorCode::invalid_state`, matching Python's `RuntimeError`.
+
+Individual headers (`edge_tts/api/Communicate.hpp`, `edge_tts/core/TtsConfig.hpp`,
+etc.) remain available for consumers who need finer-grained includes.
 
 Inject a `SynthesizerFn` for testing without a live service connection.
 
@@ -381,6 +556,37 @@ Boost is intentionally not required.
 ## FFmpeg policy
 
 `ffmpeg` and optionally `ffplay` should be treated as runtime executables through the `edge_tts::media` module. The project should not link against FFmpeg libraries unless a future design decision explicitly changes that.
+
+## Versioning
+
+The project follows [Semantic Versioning](https://semver.org) with these policies:
+
+| Range | Compatibility |
+|-------|---------------|
+| `0.x.y` (current) | **No stability guarantee.** Minor version bumps (`0.x`) may break the public API. |
+| `1.0.0` and later | Full semver: breaking changes only on major bumps. |
+
+**Pre-1.0 policy:** The project is currently at `0.1.0`. Any minor version bump (`0.2`, `0.3`, …) may change or remove public API. Treat each `0.x` as a potentially breaking release. Once the API stabilizes, `1.0.0` will be tagged and the stable-API guarantee will apply.
+
+**CMake package compatibility:** `SameMajorVersion`. This means:
+- `find_package(edge_tts_cpp 0.1 REQUIRED)` — succeeds if `0.x` (x ≥ 1) is installed.
+- `find_package(edge_tts_cpp 1.0 REQUIRED)` — fails if only `0.x` is installed (different major).
+
+**Version macros (after `#include <edge_tts/edge_tts.hpp>`):**
+
+```cpp
+EDGE_TTS_CPP_VERSION_MAJOR  // int
+EDGE_TTS_CPP_VERSION_MINOR  // int
+EDGE_TTS_CPP_VERSION_PATCH  // int
+EDGE_TTS_CPP_VERSION        // string literal, e.g. "0.1.0"
+
+edge_tts::version_major     // inline constexpr int
+edge_tts::version_minor     // inline constexpr int
+edge_tts::version_patch     // inline constexpr int
+edge_tts::version_string    // inline constexpr const char*
+```
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md#versioning-and-compatibility-policy) for the full policy.
 
 ## Design documentation
 

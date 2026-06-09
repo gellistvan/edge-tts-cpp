@@ -124,6 +124,22 @@ exit codes) is identical.
 | Linux / macOS (POSIX) | Supported | `ProcessRunner` uses `fork` / `execvp` / `pipe` / `waitpid`. `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `ON`. |
 | Windows | `unsupported` | `ProcessRunner.cpp` is excluded from the Windows build. Setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows is a configure-time `FATAL_ERROR` that names the platform. Build the core library and `edge-tts` CLI with `-DEDGE_TTS_BUILD_PLAYBACK_APP=OFF` (default on Windows) or provide a Windows-specific `IProcessRunner` implementation. |
 
+### App installation policy
+
+App binaries (`edge-tts`, `edge-playback`) are **not installed by default**. Most
+library consumers only want headers and CMake package files.
+
+| Scenario | CMake options |
+|----------|---------------|
+| Library only (default) | `EDGE_TTS_INSTALL_LIBRARY=ON` (default) |
+| CLI tools only | `EDGE_TTS_INSTALL_LIBRARY=OFF -DEDGE_TTS_INSTALL_APPS=ON` |
+| Everything | `EDGE_TTS_INSTALL_LIBRARY=ON -DEDGE_TTS_INSTALL_APPS=ON` |
+| Component-based | `cmake --install build --component Development` or `--component Apps` |
+
+`edge-playback` is only installed when **both** `EDGE_TTS_INSTALL_APPS=ON` and
+`EDGE_TTS_BUILD_PLAYBACK_APP=ON` (POSIX only). It is silently omitted on Windows
+or when the target was not built.
+
 ---
 
 ## Intentional deviations from Python

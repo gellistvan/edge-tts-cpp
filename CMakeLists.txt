@@ -6,6 +6,21 @@ project(edge_tts_cpp
     LANGUAGES CXX
 )
 
+# Canonical project-local directory variables.
+# Use these instead of CMAKE_SOURCE_DIR / CMAKE_BINARY_DIR so that
+# add_subdirectory consumers keep their own CMAKE_SOURCE_DIR untouched.
+set(EDGE_TTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "edge-tts-cpp source root")
+set(EDGE_TTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "edge-tts-cpp binary root")
+
+# Generate version.hpp into the binary include tree from the single source of
+# truth — the VERSION field in the project() declaration above.
+# The file is installed alongside other public headers by EdgeTtsInstall.cmake.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/edge_tts/version.hpp"
+    @ONLY
+)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(ProjectOptions)
@@ -141,9 +156,16 @@ edge_tts_add_module(
 # EDGE_TTS_REQUIRE_NETWORKING=OFF (stub code compiles without it).
 # ---------------------------------------------------------------------------
 
-# nlohmann/json: unconditional — serialization sources always need it.
-target_link_libraries(edge_tts_serialization PUBLIC nlohmann_json::nlohmann_json)
-target_link_libraries(edge_tts_communication PUBLIC nlohmann_json::nlohmann_json)
+# nlohmann/json: add the header include path directly to the two modules that
+# use it in their .cpp files.  Using target_include_directories (not
+# target_link_libraries) avoids recording nlohmann_json::nlohmann_json in
+# LINK_LIBRARIES so it does not need to be added to the install export set.
+# nlohmann types do not appear in any public header, so consumers never need
+# the include path propagated to them.
+foreach(_tgt edge_tts_serialization edge_tts_communication)
+    target_include_directories(${_tgt} PRIVATE
+        "$<TARGET_PROPERTY:nlohmann_json::nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>")
+endforeach()
 
 # ixwebsocket: conditional — present only when real networking is available.
 if(TARGET ixwebsocket)
@@ -151,6 +173,21 @@ if(TARGET ixwebsocket)
     # Signal to HttpClient.cpp / WebSocketClient.cpp that ixwebsocket is available.
     # PRIVATE so the definition does not leak into downstream consumers.
     target_compile_definitions(edge_tts_communication PRIVATE EDGE_TTS_HAVE_IXWEBSOCKET=1)
+    # For static-library consumers: edge_tts_communication.a embeds object files
+    # that reference ixwebsocket symbols.  Consumers must link ixwebsocket at
+    # link time or the final link step will have undefined symbols.
+    #
+    # $<LINK_ONLY:...> adds the target to the consumer's link command but does
+    # NOT propagate its INTERFACE_INCLUDE_DIRECTORIES or INTERFACE_COMPILE_DEFINITIONS
+    # (e.g. IXWEBSOCKET_USE_ZLIB).  Transitive link dependencies (OpenSSL, ZLIB,
+    # Threads) from ixwebsocket's own INTERFACE_LINK_LIBRARIES are still carried.
+    #
+    # BUILD_INTERFACE:  add_subdirectory consumers (build tree).
+    # INSTALL_INTERFACE: find_package consumers (ixwebsocket is in the export set).
+    target_link_libraries(edge_tts_communication
+        INTERFACE
+            "$<BUILD_INTERFACE:$<LINK_ONLY:ixwebsocket>>"
+            "$<INSTALL_INTERFACE:$<LINK_ONLY:ixwebsocket>>")
 endif()
 
 # Guard: apps must not silently build against stub networking when real
@@ -165,11 +202,34 @@ if((EDGE_TTS_BUILD_APPS OR EDGE_TTS_BUILD_PLAYBACK_APP) AND EDGE_TTS_REQUIRE_NET
 endif()
 
 # ---------------------------------------------------------------------------
-# Aggregate convenience target — for examples and external consumers only.
-# Apps and tests should link specific module targets, not this.
+# Public consumer target — the recommended entry point for external consumers.
+#
+# Links edge_tts::api, which transitively covers the full TTS library:
+#   common, core, serialization, subtitle, communication
+# Does NOT expose edge_tts::cli, playback, or test-support utilities.
+# ---------------------------------------------------------------------------
+add_library(edge_tts_tts INTERFACE)
+add_library(edge_tts::tts ALIAS edge_tts_tts)
+# Declare cxx_std_20 directly on the entry-point target so that consumers
+# learn of the C++20 requirement without having to traverse the full
+# dependency chain.  The public headers use std::span (C++20).
+target_compile_features(edge_tts_tts INTERFACE cxx_std_20)
+target_link_libraries(edge_tts_tts INTERFACE edge_tts::api)
+# version.hpp is generated into the binary include tree; expose it for
+# build-tree consumers.  Install-tree consumers find it via the installed
+# include/ directory (covered by edge_tts::api's INSTALL_INTERFACE:include).
+target_include_directories(edge_tts_tts INTERFACE
+    $<BUILD_INTERFACE:${EDGE_TTS_BINARY_DIR}/include>
+)
+
+# ---------------------------------------------------------------------------
+# Broad aggregate — links all modules including cli and media.
+# Intended for example programs and internal convenience only.
+# External consumers should prefer edge_tts::tts.
 # ---------------------------------------------------------------------------
 add_library(edge_tts INTERFACE)
 add_library(edge_tts::edge_tts ALIAS edge_tts)
+add_library(edge_tts::all ALIAS edge_tts)
 target_link_libraries(edge_tts
     INTERFACE
         edge_tts::common
@@ -213,6 +273,13 @@ if(EDGE_TTS_BUILD_PLAYBACK_APP)
 endif()
 
 # ---------------------------------------------------------------------------
+# Install rules
+# ---------------------------------------------------------------------------
+if(EDGE_TTS_INSTALL)
+    include(EdgeTtsInstall)
+endif()
+
+# ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
 option(EDGE_TTS_BUILD_EXAMPLES "Build example programs" OFF)
@@ -235,32 +302,97 @@ if(EDGE_TTS_BUILD_TESTS)
         add_test(
             NAME edge_tts_docs_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/docs/test_required_reference_docs.py"
         )
         add_test(
             NAME edge_tts_cli_compat_docs_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/docs/test_cli_compatibility_doc.py"
         )
         add_test(
             NAME edge_tts_module_boundary_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_module_boundaries.py"
         )
         add_test(
             NAME edge_tts_dependency_config_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/cmake/test_dependency_config.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_dependency_config.py"
         )
         add_test(
             NAME edge_tts_network_hygiene_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_network_hygiene.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_network_hygiene.py"
         )
         add_test(
             NAME edge_tts_repository_hygiene_tests
             COMMAND "${PYTHON3_EXECUTABLE}"
-                    "${CMAKE_SOURCE_DIR}/tests/tools/test_repository_hygiene.py"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_repository_hygiene.py"
+        )
+        add_test(
+            NAME edge_tts_cmake_source_dir_regression
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_cmake_source_dir_regression.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_add_subdirectory_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_add_subdirectory.py"
+        )
+        add_test(
+            NAME edge_tts_public_tts_target_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_public_tts_target.py"
+        )
+        add_test(
+            NAME edge_tts_umbrella_header_hygiene_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_umbrella_header_hygiene.py"
+        )
+        add_test(
+            NAME edge_tts_public_header_hygiene_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_public_headers.py"
+        )
+        add_test(
+            NAME edge_tts_installed_header_selfcontainment_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_installed_header_selfcontainment.py"
+        )
+        add_test(
+            NAME edge_tts_install_tree_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_tree.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_strict_warnings_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_strict_warnings.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_examples_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_consumer_examples.py"
+        )
+        add_test(
+            NAME edge_tts_install_components_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_install_components.py"
+        )
+        add_test(
+            NAME edge_tts_package_version_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_package_version.py"
+        )
+        add_test(
+            NAME edge_tts_linkage_mode_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/cmake/test_linkage_mode.py"
+        )
+        add_test(
+            NAME edge_tts_consumer_readiness_tests
+            COMMAND "${PYTHON3_EXECUTABLE}"
+                    "${EDGE_TTS_SOURCE_DIR}/tests/tools/test_consumer_readiness.py"
         )
     else()
         message(WARNING "python3 not found — Python-based tests will be skipped")
