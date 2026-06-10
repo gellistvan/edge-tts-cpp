@@ -776,25 +776,37 @@ Note: `text` (lowercase) contains `Text` (uppercase) — both keys are case-sens
 
 **Status: implemented in `communication::SynthesisSession`.**
 
-The Python reference adds `self.state["offset_compensation"]` to each boundary
-offset before yielding, and calls `__compensate_offset()` at `turn.end`.
-The C++ `MetadataJsonParser` does NOT apply offset compensation — it returns raw
-ticks from the JSON.  `SynthesisSession` applies compensation in `run_one_chunk`:
+The service reports each chunk's boundary `Offset` values relative to that
+chunk's own audio start (i.e. they reset to 0 at the start of each
+`SynthesisSession::synthesize` call for multi-chunk text).  `SynthesisSession`
+converts them to absolute offsets across the full synthesis by adding an
+`offset_compensation` value derived purely from boundary metadata:
 
 ```
-// At the start of each text chunk:
-offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 / 48_000
+// cumulative subtitle end-tick from all completed chunks:
+cumulative_subtitle_ticks = 0   // before first chunk
 
-// For each BoundaryChunk received:
-bc.offset_ticks += offset_compensation    // before yielding
+// At the start of each text chunk:
+offset_compensation = cumulative_subtitle_ticks
+
+// For each BoundaryChunk received (raw = not yet compensated):
+raw_end = bc.offset_ticks + bc.duration_ticks
+if raw_end > chunk_boundary_end: chunk_boundary_end = raw_end
+bc.offset_ticks += offset_compensation    // yields absolute offset
 
 // After turn.end (chunk complete):
-cumulative_audio_bytes += chunk_audio_bytes
+cumulative_subtitle_ticks += chunk_boundary_end
 ```
 
-Constants: `TICKS_PER_SECOND = 10_000_000`, `MP3_BITRATE_BPS = 48_000`
-(from `constants.py`).  All arithmetic uses 64-bit integers (`int64_t`).
-`duration_ticks` is never modified.
+`chunk_boundary_end` equals `max(offset_ticks + duration_ticks)` over all
+boundary events in the chunk, or 0 if none were received.  All arithmetic
+uses 64-bit integers (`int64_t`).  `duration_ticks` is never modified.
+
+**Deviation from Python reference:** The Python `__compensate_offset()` used
+`cumulative_audio_bytes * 8 * 10_000_000 / 48_000` (fixed 48 kbps bitrate).
+The C++ implementation replaces this with the metadata-derived formula above,
+which is format-independent and produces identical results when boundary
+metadata is present.
 
 ### XML unescape
 
@@ -817,4 +829,4 @@ in Python. The C++ implementation uses `serialization::xml_unescape()`:
 | Tick duration | 100 nanoseconds | `drm.py`, Edge TTS wire format |
 | Ticks per second | `10,000,000` | `constants.py: TICKS_PER_SECOND` |
 | Token round-down boundary | 300 seconds (5 minutes) | `drm.py: generate_sec_ms_gec()` |
-| Audio bitrate (for offset compensation) | 48,000 bps | `constants.py: MP3_BITRATE_BPS` |
+| Audio bitrate (Python reference, not used in C++) | 48,000 bps | `constants.py: MP3_BITRATE_BPS` |

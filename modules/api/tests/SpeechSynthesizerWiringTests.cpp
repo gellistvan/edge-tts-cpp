@@ -24,6 +24,7 @@
 #include "communication/SynthesisSession.hpp"
 #include "communication/WebSocketMessage.hpp"
 #include "support/WebSocketFrameHelpers.hpp"
+#include "support/ChunkTestHelpers.hpp"
 #include "common/Clock.hpp"
 #include "common/Error.hpp"
 #include "common/IdGenerator.hpp"
@@ -57,6 +58,7 @@ using edge_tts::common::SystemClock;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
+using edge_tts::core::BoundaryChunk;
 
 using edge_tts::test::make_audio_frame;
 using edge_tts::test::make_turn_end;
@@ -174,11 +176,10 @@ TEST(CommunicateProductionWiring, MultiChunkTextProducesAudioPerChunk) {
     EXPECT_EQ(audio_count, 2);
 }
 
-TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
-    // Verify SynthesisOptions::proxy is stored and accessible when the
-    // synthesizer seam is used.  The real SynthesisSession cannot inspect proxy
-    // (it's owned by the WebSocketClient below it), but this confirms the options
-    // are present when the synthesizer runs.
+TEST(CommunicateProductionWiring, ProxyStoredInOptionsAndBlocksSession) {
+    // Proxy is stored in SpeechSynthesizer::options() but rejected at the API
+    // layer before the synthesizer function (and thus the FakeWebSocketClient
+    // session) is ever called.
     SystemClock clock;
     IdGenerator ids;
     const EdgeServiceConfig svc = edge_tts::communication::default_edge_service_config();
@@ -190,20 +191,26 @@ TEST(CommunicateProductionWiring, ProxyPassedToSessionViaOptions) {
     push_session(fake_ws, "AUDIO");
 
     SynthesisSession session{fake_ws, protocol, svc, token_provider, meta_factory, clock};
+    bool session_called = false;
 
     SynthesisOptions opts;
     opts.proxy = "http://proxy.test:3128";
 
     SpeechSynthesizer c("hello", valid_config(), opts,
-        [&session](const TtsConfig& cfg, std::span<const std::string> chunks)
+        [&session, &session_called](const TtsConfig& cfg,
+                                   std::span<const std::string> chunks)
             -> edge_tts::common::Result<std::vector<TtsChunk>>
         {
+            session_called = true;
             return session.synthesize(cfg, chunks);
         });
 
     EXPECT_EQ(c.options().proxy, opts.proxy);
     auto result = c.synthesize();
-    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
+    EXPECT_FALSE(session_called);
+    EXPECT_EQ(fake_ws.connect_count(), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -502,4 +509,101 @@ TEST(CommunicateProductionWiring, MultiByteUtf8PreservedInSsml) {
     ASSERT_TRUE(msgs.size() >= 2u);
     // The UTF-8 bytes must appear verbatim in the SSML frame
     EXPECT_NE(msgs[1].find(japanese), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// save() partial-failure behavior
+//
+// save() writes MP3 first, then SRT.  These writes are NOT atomic.
+// If the SRT write fails after the MP3 write succeeds:
+//   - save() returns an io_error.
+//   - The MP3 file remains on disk with its content intact.
+//   - The SRT file is not created (write never started).
+//
+// Tests below verify this contract using a deliberately non-writable SRT
+// path (parent directory does not exist) to trigger the failure.
+// ---------------------------------------------------------------------------
+
+using edge_tts::test::make_audio;
+using edge_tts::test::make_boundary;
+using edge_tts::test::make_fake;
+
+TEST(SavePartialFailure, SrtWriteFailureLeavesAudioOnDisk) {
+    // Make an SRT path whose parent directory does not exist so the write fails.
+    namespace fs = std::filesystem;
+    const fs::path mp3 = fs::temp_directory_path() / "partial_fail_audio.mp3";
+    const fs::path srt = fs::temp_directory_path() / "no_such_dir_xyz_abc" / "out.srt";
+
+    // Clean up MP3 in any case.
+    std::error_code ec;
+    fs::remove(mp3, ec);
+
+    // Build a fake synthesizer that returns audio + one boundary.
+    std::vector<TtsChunk> chunks2;
+    chunks2.emplace_back(make_audio("FAKE_AUDIO"));
+    chunks2.emplace_back(make_boundary("hello", 0, 10'000'000));
+    SpeechSynthesizer s("hello", valid_config(), make_fake(std::move(chunks2)));
+
+    auto r = s.save(mp3, srt);
+
+    // save() must return an error.
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::io_error);
+
+    // The MP3 must still exist and have content.
+    EXPECT_TRUE(fs::exists(mp3));
+    EXPECT_TRUE(fs::file_size(mp3) > 0u);
+
+    // The SRT must NOT exist.
+    EXPECT_FALSE(fs::exists(srt));
+
+    fs::remove(mp3, ec);
+}
+
+TEST(SavePartialFailure, Mp3WriteFailureReturnsIoError) {
+    // If the MP3 write itself fails (non-existent parent), save() returns io_error
+    // and no SRT is written.
+    namespace fs = std::filesystem;
+    const fs::path mp3 = fs::temp_directory_path() / "no_such_dir_xyz_abc" / "out.mp3";
+    const fs::path srt = fs::temp_directory_path() / "partial_fail_only.srt";
+
+    std::error_code ec;
+    fs::remove(srt, ec);
+
+    std::vector<TtsChunk> chunks1;
+    chunks1.emplace_back(make_audio("DATA"));
+    SpeechSynthesizer s("hello", valid_config(), make_fake(std::move(chunks1)));
+
+    auto r = s.save(mp3, srt);
+
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::io_error);
+    // SRT must not have been created (MP3 failed first).
+    EXPECT_FALSE(fs::exists(srt));
+
+    fs::remove(srt, ec);
+}
+
+TEST(SavePartialFailure, BothSucceedWhenPathsAreValid) {
+    // Control: verify both files are written when paths are valid.
+    namespace fs = std::filesystem;
+    const fs::path mp3 = fs::temp_directory_path() / "partial_ok.mp3";
+    const fs::path srt = fs::temp_directory_path() / "partial_ok.srt";
+
+    std::vector<TtsChunk> chunks3;
+    chunks3.emplace_back(make_audio("OK_AUDIO"));
+    chunks3.emplace_back(make_boundary("hi", 0, 5'000'000));
+    SpeechSynthesizer s("hi", valid_config(), make_fake(std::move(chunks3)));
+
+    auto r = s.save(mp3, srt);
+
+    EXPECT_TRUE(r.has_value());
+    EXPECT_TRUE(fs::exists(mp3));
+    EXPECT_TRUE(fs::exists(srt));
+    EXPECT_TRUE(fs::file_size(mp3) > 0u);
+    EXPECT_TRUE(fs::file_size(srt) > 0u);
+
+    std::error_code ec;
+    fs::remove(mp3, ec);
+    fs::remove(srt, ec);
 }

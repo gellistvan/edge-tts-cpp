@@ -16,11 +16,11 @@ namespace edge_tts::api {
 //   ws_read_timeout    = 60 s   — per-frame receive deadline
 //   http_timeout       = 30 s   — voice-list HTTP request deadline
 struct SynthesisOptions {
-    // HTTP/HTTPS proxy URL.  Accepted and validated at the CLI/API layer.
-    // Both transport backends (WebSocketClient, HttpClient) return
-    // ErrorCode::unsupported at runtime if this is set — the ixwebsocket
-    // library has no client-side proxy API.  Credentials in the URL
-    // (user:pass@host) are sanitized before appearing in any error message.
+    // HTTP/HTTPS proxy URL.  Currently unsupported — any call to synthesize(),
+    // save(), or list_voices() returns ErrorCode::unsupported immediately,
+    // before any transport call is made.  The ixwebsocket library has no
+    // client-side proxy API.  Credentials in the URL (user:pass@host) are
+    // sanitized before appearing in any error message.
     std::optional<std::string> proxy;
 
     // WebSocket upgrade connection timeout.

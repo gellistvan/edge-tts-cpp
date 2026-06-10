@@ -62,7 +62,6 @@ static communication::WebSocketClientOptions make_ws_options(
     common::IdGenerator&                     ids)
 {
     communication::WebSocketClientOptions ws;
-    ws.proxy           = opts.proxy;
     ws.connect_timeout = opts.ws_connect_timeout;
     ws.read_timeout    = opts.ws_read_timeout;
     // Build the HTTP upgrade headers (including fresh MUID cookie).
@@ -160,11 +159,17 @@ common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::run_pipeline()
             common::Error{common::ErrorCode::cancelled,
                           "synthesis was cancelled"});
 
-    // 1. Validate TTS configuration.
+    // 1. Reject unsupported options before any network work.
+    if (options_.proxy.has_value())
+        return common::Result<std::vector<core::TtsChunk>>::fail(
+            common::Error{common::ErrorCode::unsupported,
+                          "proxy is not supported"});
+
+    // 2. Validate TTS configuration.
     if (auto r = core::validate_tts_config(config_); !r)
         return common::Result<std::vector<core::TtsChunk>>::fail(r.error());
 
-    // 2. Normalize, XML-escape, and split text into service-safe chunks.
+    // 3. Normalize, XML-escape, and split text into service-safe chunks.
     serialization::TextChunker chunker;
     auto chunk_result = chunker.chunk(text_);
     if (!chunk_result)
@@ -172,11 +177,11 @@ common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::run_pipeline()
 
     const std::vector<std::string>& text_chunks = *chunk_result;
 
-    // 3. Empty input: no text chunks → no audio.
+    // 4. Empty input: no text chunks → no audio.
     if (text_chunks.empty())
         return common::Result<std::vector<core::TtsChunk>>::ok({});
 
-    // 4. Run the synthesizer (real SynthesisSession or injected test double).
+    // 5. Run the synthesizer (real SynthesisSession or injected test double).
     return synthesizer_(config_, std::span<const std::string>{text_chunks});
 }
 
@@ -226,12 +231,16 @@ common::Result<void> SpeechSynthesizer::save(
         }
     }
 
-    // Write media file (binary).
+    // Write media file first, then subtitle file (if requested).
+    //
+    // NOTE: writes are sequential, not atomic.  If the media write succeeds
+    // but the subtitle write fails, the media file remains on disk and the
+    // error from the subtitle write is returned.  Callers that need all-or-
+    // nothing semantics must perform cleanup themselves on failure.
     FileWriter writer;
     if (auto r = writer.write_binary(media_path, audio_bytes); !r)
         return r;
 
-    // Write subtitle file if requested (UTF-8 text).
     if (subtitles_path.has_value()) {
         auto srt = submaker.to_srt();
         if (!srt)

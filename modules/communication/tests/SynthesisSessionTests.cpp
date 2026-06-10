@@ -487,29 +487,34 @@ TEST(SynthesisSession, EmptyChunksReturnsEmpty) {
 // ---------------------------------------------------------------------------
 // Offset compensation across multiple chunks
 //
-//   offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
+// The service reports each chunk's boundary offsets relative to that chunk's
+// start.  SynthesisSession converts them to absolute offsets by adding the
+// cumulative subtitle end-tick from all previous chunks.
 //
-// Boundaries in the first chunk get compensation = 0.
-// Boundaries in the second chunk get compensation based on audio bytes from
-// the first chunk.  Duration is never affected.
+// Compensation for chunk N = sum of max(offset_ticks + duration_ticks) for
+// all boundary events in chunks 0..N-1.  Audio byte counts play no role.
+//
+// Duration ticks are never modified.
 // ---------------------------------------------------------------------------
 
-// Helper: build a boundary frame with the given raw offset.
+// Helper: build a boundary frame with given raw offset and 500ms duration.
 static WebSocketMessage make_boundary_at(std::int64_t raw_offset,
                                           const std::string& word = "word") {
     return make_word_boundary(raw_offset, 500'000, word);
 }
 
-// Helper: build an audio frame with exactly n_bytes of audio payload.
-static WebSocketMessage make_audio_of_size(std::size_t n_bytes) {
-    return make_audio_frame(std::vector<std::byte>(n_bytes, std::byte{0xAB}));
+// Helper: boundary frame with explicit duration.
+static WebSocketMessage make_boundary_at_dur(std::int64_t raw_offset,
+                                              std::int64_t duration,
+                                              const std::string& word = "word") {
+    return make_word_boundary(raw_offset, duration, word);
 }
 
 TEST(OffsetCompensation, FirstChunkBoundaryOffsetIsUnchanged) {
-    // First chunk: compensation = 0, so raw offset must pass through unchanged.
+    // First chunk always has compensation = 0.
     FakeWebSocketClient fake;
     fake.push_incoming(make_boundary_at(1'234'567));
-    fake.push_incoming(make_audio_of_size(6000));  // 6000 bytes audio
+    fake.push_incoming(make_audio_frame("X"));
     fake.push_incoming(make_turn_end());
     auto session = make_session(fake);
 
@@ -522,25 +527,25 @@ TEST(OffsetCompensation, FirstChunkBoundaryOffsetIsUnchanged) {
     EXPECT_EQ(bc.offset_ticks, 1'234'567);
 }
 
-TEST(OffsetCompensation, SecondChunkBoundaryOffsetIsCompensated) {
-    // First chunk: N audio bytes, boundary at raw offset 0.
-    // Second chunk: boundary at raw offset 0 must be shifted by
-    //   N * 8 * 10_000_000 / 48_000 ticks.
-    //
-    // Using N = 6000 bytes:
-    //   compensation = 6000 * 8 * 10_000_000 / 48_000 = 10_000_000 ticks (1 second)
-    constexpr std::size_t N = 6000;
-    constexpr std::int64_t expected_comp =
-        static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;
+TEST(OffsetCompensation, SecondChunkOffsetShiftedByFirstChunkBoundaryEnd) {
+    // Chunk 1: boundary at offset 2_000_000 ticks, duration 1_000_000 ticks
+    //          → raw end = 3_000_000 ticks → compensation for chunk 2 = 3_000_000
+    // Chunk 2: boundary at raw offset 500_000
+    //          → global offset = 500_000 + 3_000_000 = 3_500_000
+    constexpr std::int64_t chunk1_offset   = 2'000'000;
+    constexpr std::int64_t chunk1_duration = 1'000'000;
+    constexpr std::int64_t chunk1_end      = chunk1_offset + chunk1_duration;
+    constexpr std::int64_t chunk2_raw      = 500'000;
+    constexpr std::int64_t expected        = chunk2_raw + chunk1_end;
 
     FakeWebSocketClient fake;
-    // Chunk 1: audio (N bytes) + boundary at offset 0 + turn.end
-    fake.push_incoming(make_audio_of_size(N));
-    fake.push_incoming(make_boundary_at(0, "first"));
+    // Chunk 1: boundary + audio + turn.end
+    fake.push_incoming(make_boundary_at_dur(chunk1_offset, chunk1_duration, "first"));
+    fake.push_incoming(make_audio_frame("A1"));
     fake.push_incoming(make_turn_end());
-    // Chunk 2: audio + boundary at raw offset 0 + turn.end
-    fake.push_incoming(make_audio_of_size(100));
-    fake.push_incoming(make_boundary_at(0, "second"));
+    // Chunk 2: audio + boundary at raw offset chunk2_raw + turn.end
+    fake.push_incoming(make_audio_frame("A2"));
+    fake.push_incoming(make_boundary_at(chunk2_raw, "second"));
     fake.push_incoming(make_turn_end());
 
     auto session = make_session(fake);
@@ -550,7 +555,6 @@ TEST(OffsetCompensation, SecondChunkBoundaryOffsetIsCompensated) {
                                            std::span<const std::string>{chunks});
     ASSERT_TRUE(result.has_value());
 
-    // Find the second boundary (from chunk 2).
     std::int64_t second_boundary_offset = -1;
     int boundary_count = 0;
     for (const auto& c : *result) {
@@ -561,26 +565,26 @@ TEST(OffsetCompensation, SecondChunkBoundaryOffsetIsCompensated) {
         }
     }
     EXPECT_EQ(boundary_count, 2);
-    EXPECT_EQ(second_boundary_offset, expected_comp);
+    EXPECT_EQ(second_boundary_offset, expected);
 }
 
-TEST(OffsetCompensation, MultipleBoundariesInChunkGetSameCompensation) {
-    // Within a single chunk all boundaries get the same (pre-computed)
-    // compensation from the audio bytes of all *previous* chunks.
-    // Audio from the current chunk does not affect the current compensation.
-    constexpr std::size_t N = 12000;
-    constexpr std::int64_t comp =
-        static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;
-
+TEST(OffsetCompensation, MaxBoundaryEndDeterminesNextCompensation) {
+    // When chunk 1 has multiple boundaries, the MAXIMUM end-tick drives
+    // compensation — not the first or last received.
+    // Chunk 1 boundaries:
+    //   w1: offset=100, duration=200 → end=300
+    //   w2: offset=500, duration=800 → end=1300  ← max
+    //   w3: offset=200, duration=300 → end=500
+    // Compensation for chunk 2 = 1300.
     FakeWebSocketClient fake;
-    // Chunk 1: N bytes audio + turn.end
-    fake.push_incoming(make_audio_of_size(N));
+    fake.push_incoming(make_boundary_at_dur(100, 200, "w1"));
+    fake.push_incoming(make_boundary_at_dur(500, 800, "w2"));
+    fake.push_incoming(make_boundary_at_dur(200, 300, "w3"));
+    fake.push_incoming(make_audio_frame("A1"));
     fake.push_incoming(make_turn_end());
-    // Chunk 2: three boundaries + audio + turn.end
-    fake.push_incoming(make_boundary_at(100, "a"));
-    fake.push_incoming(make_boundary_at(200, "b"));
-    fake.push_incoming(make_boundary_at(300, "c"));
-    fake.push_incoming(make_audio_of_size(50));
+    // Chunk 2: boundary at raw offset 0
+    fake.push_incoming(make_audio_frame("A2"));
+    fake.push_incoming(make_boundary_at_dur(0, 100, "x"));
     fake.push_incoming(make_turn_end());
 
     auto session = make_session(fake);
@@ -595,18 +599,57 @@ TEST(OffsetCompensation, MultipleBoundariesInChunkGetSameCompensation) {
         if (std::holds_alternative<BoundaryChunk>(c))
             offsets.push_back(std::get<BoundaryChunk>(c).offset_ticks);
 
-    ASSERT_EQ(offsets.size(), 3u);
-    // All three boundaries get the same compensation (from chunk 1 bytes).
-    EXPECT_EQ(offsets[0], 100 + comp);
-    EXPECT_EQ(offsets[1], 200 + comp);
-    EXPECT_EQ(offsets[2], 300 + comp);
+    // chunk1 boundaries pass through unmodified (compensation = 0)
+    ASSERT_EQ(offsets.size(), 4u);
+    EXPECT_EQ(offsets[0], 100);
+    EXPECT_EQ(offsets[1], 500);
+    EXPECT_EQ(offsets[2], 200);
+    // chunk2 boundary: raw 0 + compensation 1300
+    EXPECT_EQ(offsets[3], 1300);
+}
+
+TEST(OffsetCompensation, MultipleBoundariesInSecondChunkGetSameCompensation) {
+    // All boundaries within chunk 2 receive the same compensation (derived
+    // from chunk 1's boundary metadata).
+    // Chunk 1: boundary at offset=4_000_000 ticks, duration=1_000_000 → end=5_000_000
+    constexpr std::int64_t comp = 5'000'000;
+
+    FakeWebSocketClient fake;
+    fake.push_incoming(make_boundary_at_dur(4'000'000, 1'000'000, "c1w"));
+    fake.push_incoming(make_audio_frame("A1"));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: three boundaries at raw 100, 200, 300 + audio + turn.end
+    fake.push_incoming(make_boundary_at(100, "a"));
+    fake.push_incoming(make_boundary_at(200, "b"));
+    fake.push_incoming(make_boundary_at(300, "c"));
+    fake.push_incoming(make_audio_frame("A2"));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"one", "two"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
+    std::vector<std::int64_t> offsets;
+    for (const auto& c : *result)
+        if (std::holds_alternative<BoundaryChunk>(c))
+            offsets.push_back(std::get<BoundaryChunk>(c).offset_ticks);
+
+    ASSERT_EQ(offsets.size(), 4u);
+    EXPECT_EQ(offsets[0], 4'000'000);           // chunk 1, unmodified
+    EXPECT_EQ(offsets[1], 100 + comp);
+    EXPECT_EQ(offsets[2], 200 + comp);
+    EXPECT_EQ(offsets[3], 300 + comp);
 }
 
 TEST(OffsetCompensation, DurationTicksUnchanged) {
     // duration_ticks must NEVER be modified by offset compensation.
     FakeWebSocketClient fake;
-    // Chunk 1: audio so compensation is non-zero for chunk 2.
-    fake.push_incoming(make_audio_of_size(6000));
+    // Chunk 1: boundary so compensation is non-zero for chunk 2.
+    fake.push_incoming(make_boundary_at_dur(0, 500'000, "c1"));
+    fake.push_incoming(make_audio_frame("A1"));
     fake.push_incoming(make_turn_end());
     // Chunk 2: boundary with known duration.
     constexpr std::int64_t raw_duration = 750'000;
@@ -621,7 +664,7 @@ TEST(OffsetCompensation, DurationTicksUnchanged) {
                      ",\"text\":{\"Text\":\"test\"}}}]}";
             return m;
         }());
-    fake.push_incoming(make_audio_of_size(100));
+    fake.push_incoming(make_audio_frame("A2"));
     fake.push_incoming(make_turn_end());
 
     auto session = make_session(fake);
@@ -631,57 +674,57 @@ TEST(OffsetCompensation, DurationTicksUnchanged) {
                                            std::span<const std::string>{chunks});
     ASSERT_TRUE(result.has_value());
 
+    // The last boundary (from chunk 2) must have raw_duration unchanged.
+    std::int64_t last_duration = -1;
+    for (const auto& c : *result)
+        if (std::holds_alternative<BoundaryChunk>(c))
+            last_duration = std::get<BoundaryChunk>(c).duration_ticks;
+    EXPECT_EQ(last_duration, raw_duration);
+}
+
+TEST(OffsetCompensation, NoBoundariesInChunkContributesZeroCompensation) {
+    // If chunk 1 sends no boundary events, it contributes 0 to compensation.
+    // Chunk 2's boundary at raw offset 500 should pass through as 500.
+    FakeWebSocketClient fake;
+    // Chunk 1: audio only, no boundaries.
+    fake.push_incoming(make_audio_frame("AUDIO"));
+    fake.push_incoming(make_turn_end());
+    // Chunk 2: boundary at raw offset 500.
+    fake.push_incoming(make_audio_frame("AUDIO2"));
+    fake.push_incoming(make_boundary_at(500, "word"));
+    fake.push_incoming(make_turn_end());
+
+    auto session = make_session(fake);
+
+    const std::vector<std::string> chunks{"c1", "c2"};
+    const auto result = session.synthesize(TtsConfig::defaults(),
+                                           std::span<const std::string>{chunks});
+    ASSERT_TRUE(result.has_value());
+
     for (const auto& c : *result) {
         if (std::holds_alternative<BoundaryChunk>(c)) {
-            const auto& bc = std::get<BoundaryChunk>(c);
-            EXPECT_EQ(bc.duration_ticks, raw_duration);
+            EXPECT_EQ(std::get<BoundaryChunk>(c).offset_ticks, 500);
         }
     }
 }
 
-TEST(OffsetCompensation, LargeAudioBytesNoOverflow) {
-    // Verify that 64-bit arithmetic is used for the compensation formula.
-    // Large byte count that would overflow int32_t:
-    //   2^31 = 2_147_483_648 bytes ≈ 2 GB
-    // Expected compensation = 2_147_483_648 * 8 * 10_000_000 / 48_000
-    //                       = 3_579_139_413 ticks  (> INT32_MAX = 2_147_483_647)
-    constexpr std::int64_t large_bytes = 2'147'483'648LL;  // 2 GiB
-    constexpr std::int64_t expected_comp =
-        large_bytes * 8LL * 10'000'000LL / 48'000LL;
-    static_assert(expected_comp > 2'147'483'647LL,
-                  "expected_comp must exceed INT32_MAX to prove no overflow");
-
-    // We simulate this by computing the expected value and verifying the
-    // compensation formula in isolation — a direct calculation test.
-    const std::int64_t computed =
-        large_bytes * 8LL * 10'000'000LL / 48'000LL;
-    EXPECT_EQ(computed, expected_comp);
-    EXPECT_TRUE(computed > std::int64_t{2'147'483'647LL});  // must exceed INT32_MAX
-}
-
 TEST(OffsetCompensation, ThreeChunksCumulativeCompensation) {
-    // Verify that compensation accumulates correctly over three chunks.
-    // Chunk 1: A bytes → compensation for chunk 2 = A*8*10M/48000
-    // Chunk 2: B bytes → compensation for chunk 3 = (A+B)*8*10M/48000
-    constexpr std::size_t A = 4800;  // 0.1 second of audio at 48000 B/s
-    constexpr std::size_t B = 9600;  // 0.2 seconds
-    constexpr std::int64_t comp2 =
-        static_cast<std::int64_t>(A) * 8LL * 10'000'000LL / 48'000LL;
-    constexpr std::int64_t comp3 =
-        static_cast<std::int64_t>(A + B) * 8LL * 10'000'000LL / 48'000LL;
+    // Compensation accumulates: chunk N's compensation = sum of all previous
+    // chunks' last boundary end-ticks.
+    // Chunk 1: boundary at 0, duration=1_000_000 → end=1_000_000 → comp2=1_000_000
+    // Chunk 2: boundary at 0, duration=2_000_000 → end=2_000_000 → comp3=3_000_000
+    constexpr std::int64_t comp2 = 1'000'000;
+    constexpr std::int64_t comp3 = 3'000'000;
 
     FakeWebSocketClient fake;
-    // Chunk 1: A bytes audio + boundary at 0 + turn.end
-    fake.push_incoming(make_audio_of_size(A));
-    fake.push_incoming(make_boundary_at(0, "w1"));
+    fake.push_incoming(make_boundary_at_dur(0, 1'000'000, "w1"));
+    fake.push_incoming(make_audio_frame("A1"));
     fake.push_incoming(make_turn_end());
-    // Chunk 2: B bytes audio + boundary at 0 + turn.end
-    fake.push_incoming(make_audio_of_size(B));
-    fake.push_incoming(make_boundary_at(0, "w2"));
+    fake.push_incoming(make_boundary_at_dur(0, 2'000'000, "w2"));
+    fake.push_incoming(make_audio_frame("A2"));
     fake.push_incoming(make_turn_end());
-    // Chunk 3: audio + boundary at 0 + turn.end
-    fake.push_incoming(make_audio_of_size(100));
-    fake.push_incoming(make_boundary_at(0, "w3"));
+    fake.push_incoming(make_audio_frame("A3"));
+    fake.push_incoming(make_boundary_at_dur(0, 500'000, "w3"));
     fake.push_incoming(make_turn_end());
 
     auto session = make_session(fake);
@@ -698,8 +741,43 @@ TEST(OffsetCompensation, ThreeChunksCumulativeCompensation) {
 
     ASSERT_EQ(offsets.size(), 3u);
     EXPECT_EQ(offsets[0], 0);       // chunk 1: compensation = 0
-    EXPECT_EQ(offsets[1], comp2);   // chunk 2: compensation = A bytes
-    EXPECT_EQ(offsets[2], comp3);   // chunk 3: compensation = (A+B) bytes
+    EXPECT_EQ(offsets[1], comp2);   // chunk 2: compensation = 1_000_000
+    EXPECT_EQ(offsets[2], comp3);   // chunk 3: compensation = 3_000_000
+}
+
+TEST(OffsetCompensation, AudioByteSizeDoesNotAffectSubtitleTimestamp) {
+    // Regression: changing audio byte count must NOT change the subtitle offset.
+    // Two sessions with identical boundary metadata but different audio sizes.
+    // Both must produce the same boundary offset_ticks.
+    auto run = [](std::size_t audio_size) -> std::int64_t {
+        FakeWebSocketClient fake;
+        // Chunk 1: boundary at 1_000_000 ticks (1 s), duration 500_000 (50 ms)
+        fake.push_incoming(make_boundary_at_dur(1'000'000, 500'000, "c1w"));
+        fake.push_incoming(make_audio_frame(std::string(audio_size, 'X')));
+        fake.push_incoming(make_turn_end());
+        // Chunk 2: boundary at raw offset 0
+        fake.push_incoming(make_audio_frame("A2"));
+        fake.push_incoming(make_boundary_at_dur(0, 200'000, "c2w"));
+        fake.push_incoming(make_turn_end());
+
+        auto session = make_session(fake);
+        const std::vector<std::string> chunks{"c1", "c2"};
+        auto result = session.synthesize(TtsConfig::defaults(),
+                                         std::span<const std::string>{chunks});
+        // Return the offset of the last boundary (chunk 2's boundary).
+        std::int64_t last_offset = -1;
+        for (const auto& c : *result)
+            if (std::holds_alternative<BoundaryChunk>(c))
+                last_offset = std::get<BoundaryChunk>(c).offset_ticks;
+        return last_offset;
+    };
+
+    const std::int64_t offset_small = run(100);
+    const std::int64_t offset_large = run(600'000);  // 600 KB — very different
+
+    EXPECT_EQ(offset_small, offset_large);
+    // Expected: 0 + (1_000_000 + 500_000) = 1_500_000
+    EXPECT_EQ(offset_small, 1'500'000);
 }
 
 // ---------------------------------------------------------------------------
@@ -857,11 +935,13 @@ TEST(DrmRetry, SkewIsComputedRelativeToEffectiveClientTime) {
 }
 
 // ---------------------------------------------------------------------------
-// Proxy rejection — real WebSocketClient
+// Proxy rejection — real WebSocketClient (transport-level guard, defense-in-depth)
 //
-// These tests use the real WebSocketClient (not FakeWebSocketClient) to verify
-// that a proxy set in WebSocketClientOptions is rejected at connect() time with
-// ErrorCode::unsupported, and that SynthesisSession propagates that error.
+// The primary proxy rejection is at the API layer (SpeechSynthesizer::run_pipeline).
+// These tests verify the transport-level guard: a proxy set in
+// WebSocketClientOptions is still rejected at connect() time with
+// ErrorCode::unsupported, ensuring defense-in-depth for callers that use
+// WebSocketClient or SynthesisSession directly.
 //
 // Guarded by EDGE_TTS_HAVE_IXWEBSOCKET because the proxy guard lives in the
 // ixwebsocket-backed connect() implementation.

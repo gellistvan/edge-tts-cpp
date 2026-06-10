@@ -42,7 +42,7 @@ printing and `exit()`.
 | `--pitch` | — | `PITCH` | `+0Hz` | Speech pitch. Must match `^[+-]\d+Hz$`. Same negative-value syntax caveat. | Identical. | `exact` |
 | `--write-media` | — | `PATH` | (none → stdout) | Write MP3 audio to `PATH`. If omitted, audio bytes go to `stdout`. `-` explicitly selects stdout. | Identical; `-` → stdout, omitted → stdout. | `exact` |
 | `--write-subtitles` | — | `PATH` | (none → no subtitles) | Write SRT subtitles to `PATH`. If omitted, no subtitles are written. `-` sends subtitles to **stderr**. | Identical; `-` → stderr, omitted → no SRT output. | `exact` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Parsed and format-validated (`URL` must be non-empty and contain `://`; invalid format → exit 2). Flows into `api::SynthesisOptions::proxy`. **Runtime**: the current ixwebsocket backend has no client-side proxy API; any non-absent proxy returns `ErrorCode::unsupported` (exit 1) rather than being silently ignored. **Security**: proxy URL credentials (`user:pass@`) are redacted to `[credentials]` in all CLI stderr output. | `deviation` (proxy not functional; returns explicit error) |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Parsed and format-validated (`URL` must be non-empty and contain `://`; invalid format → exit 2). Flows into `api::SynthesisOptions::proxy`. **Runtime**: rejected at the API layer before any transport call; returns `ErrorCode::unsupported` (exit 1). **Security**: proxy URL credentials (`user:pass@`) are redacted to `[credentials]` in all CLI stderr output. | `deviation` (proxy not functional; returns explicit error) |
 | `--version` | — | (flag) | — | Print `edge-tts {version}` (e.g. `edge-tts 7.2.8`) to stdout and exit 0. | Print `edge-tts-cpp {semver}` to stdout and exit 0. | `deviation` (version string differs) |
 | `--help` | `-h` | (flag) | — | Print argparse-generated help to stdout and exit 0. | Identical behavior via hand-rolled parser. | `exact` |
 
@@ -91,7 +91,7 @@ exit codes) is identical.
 | `--rate` | — | `RATE` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--volume` | — | `VOL` | `+0%` | Forwarded verbatim. | Identical. | `exact` |
 | `--pitch` | — | `PITCH` | `+0Hz` | Forwarded verbatim. | Identical. | `exact` |
-| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Format-validated at parse time (non-empty, must contain `://`); flows into `api::SynthesisOptions::proxy`. **Runtime**: same limitation as `edge-tts` — ixwebsocket backend returns `unsupported` (exit 1) rather than silently ignoring the proxy. **Security**: credentials redacted from error output as with `edge-tts`. | `deviation` (proxy not functional; returns explicit error) |
+| `--proxy` | — | `URL` | (none) | HTTP/HTTPS proxy URL. | Format-validated at parse time (non-empty, must contain `://`); flows into `api::SynthesisOptions::proxy`. **Runtime**: rejected at the API layer before any transport call; returns `unsupported` (exit 1). **Security**: credentials redacted from error output as with `edge-tts`. | `deviation` (proxy not functional; returns explicit error) |
 | `--write-media` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--write-subtitles` | — | `PATH` | N/A | **Not accepted.** | Returns parse error. | `N/A` |
 | `--list-voices` | `-l` | (flag) | N/A | **Not accepted.** | Returns parse error. | `N/A` |

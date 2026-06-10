@@ -17,9 +17,14 @@
 int main(int argc, char* argv[]) {
     using namespace edge_tts;
 
-    // Parse arguments first so --proxy is available when constructing clients.
     cli::EdgeTtsArgumentParser parser;
     auto result = parser.parse(argc, argv);
+
+    // Proxy is not supported — reject before constructing any client.
+    if (result.arguments.proxy.has_value()) {
+        std::cerr << "Error: proxy is not supported\n";
+        return 1;
+    }
 
     // Production dependencies.
     auto svc_config = communication::default_edge_service_config();
@@ -28,10 +33,7 @@ int main(int argc, char* argv[]) {
     serialization::VoiceJsonParser voice_parser;
     communication::EdgeTokenProvider tokens{svc_config, clock};
 
-    // Forward --proxy from CLI into the HTTP client.
-    // http_timeout comes from SynthesisOptions defaults (30 s).
     communication::HttpClientOptions http_opts;
-    http_opts.proxy   = result.arguments.proxy;
     http_opts.timeout = api::SynthesisOptions{}.http_timeout;
     communication::HttpClient http{std::move(http_opts)};
 

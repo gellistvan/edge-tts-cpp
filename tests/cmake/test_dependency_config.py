@@ -1054,31 +1054,31 @@ def test_high_level_design_has_error_handling_reference() -> None:
 
 
 def test_release_readiness_documents_subtitle_timing() -> None:
-    """RELEASE_READINESS.md Known limitations must mention subtitle timing approximation."""
+    """RELEASE_READINESS.md must describe the subtitle timing model."""
     rr = REPO_ROOT / "docs" / "RELEASE_READINESS.md"
     if not rr.exists():
         fail("docs/RELEASE_READINESS.md not found")
     content = rr.read_text(encoding="utf-8").lower()
     if "subtitle timing" not in content:
         fail(
-            "docs/RELEASE_READINESS.md Known limitations must document the subtitle "
-            "timing approximation (48 kbps assumption for multi-chunk offset computation)."
+            "docs/RELEASE_READINESS.md must document the subtitle timing model "
+            "(metadata-derived offset compensation for multi-chunk synthesis)."
         )
-    ok("docs/RELEASE_READINESS.md documents subtitle timing approximation as a known limitation")
+    ok("docs/RELEASE_READINESS.md documents the subtitle timing model")
 
 
 def test_consuming_md_documents_subtitle_timing() -> None:
-    """docs/CONSUMING.md must warn consumers about the subtitle timing approximation."""
+    """docs/CONSUMING.md must describe the subtitle timing model for consumers."""
     consuming = REPO_ROOT / "docs" / "CONSUMING.md"
     if not consuming.exists():
         fail("docs/CONSUMING.md not found")
     content = consuming.read_text(encoding="utf-8").lower()
     if "subtitle timing" not in content:
         fail(
-            "docs/CONSUMING.md must document the subtitle timing approximation "
-            "for multi-chunk text so library consumers are aware of the limitation."
+            "docs/CONSUMING.md must document the subtitle timing model "
+            "for multi-chunk text so library consumers understand offset compensation."
         )
-    ok("docs/CONSUMING.md documents subtitle timing approximation for multi-chunk text")
+    ok("docs/CONSUMING.md documents the subtitle timing model for multi-chunk text")
 
 
 # ---------------------------------------------------------------------------

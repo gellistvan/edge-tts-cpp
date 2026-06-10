@@ -549,10 +549,10 @@ TEST(EdgeTtsCommandDispatcher, WriteMediaFileErrorIncludesFilenameInStderr) {
 }
 
 // ---------------------------------------------------------------------------
-// proxy is forwarded into SynthesisOptions
+// proxy option is set in SynthesisOptions
 // ---------------------------------------------------------------------------
 
-TEST(EdgeTtsCommandDispatcher, ProxyIsForwardedToFactory) {
+TEST(EdgeTtsCommandDispatcher, ProxyOptionIsSetInSynthesisOptions) {
     SynthesisOptions received_opts;
     auto factory = [&received_opts](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         received_opts = opts;
@@ -575,7 +575,7 @@ TEST(EdgeTtsCommandDispatcher, ProxyIsForwardedToFactory) {
     EXPECT_EQ(received_opts.proxy, "http://proxy.test:3128");
 }
 
-TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
+TEST(EdgeTtsCommandDispatcher, ProxyAbsentWhenNotProvided) {
     SynthesisOptions received_opts;
     received_opts.proxy = "should-be-cleared";
     auto factory = [&received_opts](std::string text, TtsConfig cfg, SynthesisOptions opts) {
@@ -598,21 +598,18 @@ TEST(EdgeTtsCommandDispatcher, EmptyProxyIsForwardedToFactory) {
 }
 
 // ---------------------------------------------------------------------------
-// Proxy: runtime unsupported → exit 1, error message on stderr
+// Proxy: rejected early → exit 1, error on stderr
 // ---------------------------------------------------------------------------
 
-TEST(EdgeTtsCommandDispatcher, ProxyUnsupportedYieldsExitCode1AndErrorOnStderr) {
-    // When the synthesizer returns unsupported (proxy rejected by the transport
-    // layer), the dispatcher must propagate it: exit code 1, message on stderr.
+TEST(EdgeTtsCommandDispatcher, ProxyYieldsExitCode1AndErrorOnStderr) {
+    // Proxy is rejected at the API layer before the synthesizer function runs.
+    // The dispatcher must propagate the error: exit code 1, message on stderr.
     auto factory = [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>
             {
-                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
-                    edge_tts::common::Error{
-                        edge_tts::common::ErrorCode::unsupported,
-                        "proxy is not supported by the ixwebsocket networking backend"});
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
             });
     };
     std::ostringstream out, err;
@@ -625,21 +622,17 @@ TEST(EdgeTtsCommandDispatcher, ProxyUnsupportedYieldsExitCode1AndErrorOnStderr) 
     EXPECT_FALSE(err.str().empty());
 }
 
-TEST(EdgeTtsCommandDispatcher, ProxyIsNotSilentlyIgnored) {
-    // A transport error from the synthesizer must NOT be swallowed.
-    // The dispatcher must return non-zero when the proxy causes a failure.
-    bool synthesizer_ran = false;
-    auto factory = [&synthesizer_ran](std::string text, TtsConfig cfg,
-                                     SynthesisOptions opts) {
+TEST(EdgeTtsCommandDispatcher, ProxyRejectedBeforeSynthesizerFn) {
+    // Proxy is rejected at the API layer — the synthesizer function must
+    // never be called when proxy is set.
+    bool fn_called = false;
+    auto factory = [&fn_called](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
-            [&synthesizer_ran](const TtsConfig&, std::span<const std::string>)
+            [&fn_called](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>>
             {
-                synthesizer_ran = true;
-                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
-                    edge_tts::common::Error{
-                        edge_tts::common::ErrorCode::unsupported,
-                        "proxy not supported"});
+                fn_called = true;
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
             });
     };
     std::ostringstream out, err;
@@ -648,8 +641,8 @@ TEST(EdgeTtsCommandDispatcher, ProxyIsNotSilentlyIgnored) {
     r.arguments.proxy = "http://proxy.test:3128";
     EdgeTtsCommandDispatcher d{make_voice_svc({}), factory, out, err, in};
     int code = d.dispatch(r);
-    EXPECT_TRUE(synthesizer_ran);
     EXPECT_NE(code, 0);
+    EXPECT_FALSE(fn_called);
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,17 +1103,15 @@ TEST(EdgeTtsCommandDispatcher, ListVoicesEmptyListSucceeds) {
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
-    // Inject an error whose context is a proxy URL with embedded credentials.
-    // The dispatcher must strip "secretpassword" before printing.
+    // When a proxy URL with embedded credentials is provided, credentials must
+    // not appear in stderr.  Proxy is rejected at the API layer before the
+    // synthesizer function runs, so only a "proxy is not supported" message
+    // appears — no URL, no credentials.
     auto factory = [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
         return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
-                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
-                    edge_tts::common::Error{
-                        edge_tts::common::ErrorCode::unsupported,
-                        "proxy connection failed",
-                        "http://user:secretpassword@proxy.internal:3128"});
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
             });
     };
     std::ostringstream out, err;
@@ -1131,8 +1122,7 @@ TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
     d.dispatch(r);
 
     EXPECT_EQ(err.str().find("secretpassword"), std::string::npos);
-    // The proxy host should still appear (not redacted) so the user knows which proxy.
-    EXPECT_NE(err.str().find("proxy.internal"), std::string::npos);
+    EXPECT_NE(err.str().find("proxy"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

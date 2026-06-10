@@ -58,8 +58,7 @@ if (!result) std::cerr << result.error().what() << '\n';
 ixwebsocket, C++20 feature requirement, include paths).  No need to list any
 of them manually.
 
-> **Note:** proxy support is not functional — the ixwebsocket backend returns
-> `ErrorCode::unsupported` if `SynthesisOptions::proxy` is set.
+> **Note:** proxy support is not functional — any call to `synthesize()`, `save()`, or `list_voices()` returns `ErrorCode::unsupported` immediately if `SynthesisOptions::proxy` is set.
 
 See [`docs/CONSUMING.md`](docs/CONSUMING.md) for the complete integration guide,
 and [`examples/`](examples/) for ready-to-copy project templates.
@@ -359,8 +358,8 @@ edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 
 // Transport options — timeouts (no speech settings).
-// NOTE: proxy is not supported by the ixwebsocket backend.
-// Setting opts.proxy will cause synthesize()/save() to return unsupported.
+// NOTE: proxy is not supported — setting opts.proxy will cause
+// synthesize()/save() to return ErrorCode::unsupported immediately.
 edge_tts::api::SynthesisOptions opts;
 
 // Save audio and optional SRT subtitles.

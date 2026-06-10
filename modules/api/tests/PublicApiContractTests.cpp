@@ -6,6 +6,7 @@
 //   - Single-use behavior: second call returns ErrorCode::invalid_state
 //   - Error model: invalid config returns an error, not an exception
 //   - Chunk ownership: synthesize() returns a caller-owned vector
+//   - Proxy: rejected before any transport call (ErrorCode::unsupported)
 //   - list_voices() is declared and callable (compile-only for offline builds)
 //
 // All tests use the SynthesizerFn injection constructor so no network calls
@@ -23,6 +24,7 @@
 #include "ApiTestFixtures.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <vector>
@@ -205,6 +207,51 @@ TEST(ApiContract, ListVoices_SignatureIsCorrect) {
     // Confirm list_voices(opts) compiles with explicit options.
     SynthesisOptions opts;
     (void)opts;
+}
+
+// ---------------------------------------------------------------------------
+// Proxy: rejected at the API layer before any transport call
+// ---------------------------------------------------------------------------
+
+TEST(ApiContract, ProxyInOptionsReturnsUnsupported) {
+    SynthesisOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    SpeechSynthesizer s("hello", valid_config(), opts,
+        [](const TtsConfig&, std::span<const std::string>)
+            -> edge_tts::common::Result<std::vector<TtsChunk>>
+        { return edge_tts::common::Result<std::vector<TtsChunk>>::ok({}); });
+    auto r = s.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::unsupported);
+}
+
+TEST(ApiContract, ProxyDoesNotReachSynthesizerFn) {
+    bool fn_called = false;
+    SynthesisOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    SpeechSynthesizer s("hello", valid_config(), opts,
+        [&fn_called](const TtsConfig&, std::span<const std::string>)
+            -> edge_tts::common::Result<std::vector<TtsChunk>>
+        {
+            fn_called = true;
+            return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+        });
+    auto r = s.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_FALSE(fn_called);
+}
+
+TEST(ApiContract, ProxySaveReturnsUnsupported) {
+    SynthesisOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    SpeechSynthesizer s("hello", valid_config(), opts,
+        [](const TtsConfig&, std::span<const std::string>)
+            -> edge_tts::common::Result<std::vector<TtsChunk>>
+        { return edge_tts::common::Result<std::vector<TtsChunk>>::ok({}); });
+    namespace fs = std::filesystem;
+    auto r = s.save(fs::temp_directory_path() / "proxy_save_test.mp3");
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::unsupported);
 }
 
 // ---------------------------------------------------------------------------
