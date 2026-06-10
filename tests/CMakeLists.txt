@@ -149,6 +149,8 @@ edge_tts_add_module_test(
         ${_M}/api/tests/SpeechSynthesizerWiringTests.cpp
         ${_M}/api/tests/SpeechSynthesizerEndToEndTests.cpp
         ${_M}/api/tests/OfflineIntegrationTests.cpp
+        ${_M}/api/tests/PublicApiContractTests.cpp
+        ${_M}/api/tests/CancellationTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli edge_tts_test_support
 )
 
@@ -253,6 +255,7 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "api/SpeechSynthesizer.hpp"
     "api/SynthesisOptions.hpp"
     "api/FileWriter.hpp"
+    "api/VoiceList.hpp"
     # core
     "core/Chunk.hpp"
     "core/TtsChunk.hpp"
@@ -260,6 +263,7 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "core/Voice.hpp"
     "core/OutputFormat.hpp"
     # common
+    "common/CancellationToken.hpp"
     "common/Clock.hpp"
     "common/Error.hpp"
     "common/Errors.hpp"

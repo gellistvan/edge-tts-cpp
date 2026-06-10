@@ -62,6 +62,8 @@ printing and `exit()`.
 | 8 | **Negative-value syntax.** `--rate=-50%` works; `--rate -50%` is misinterpreted by argparse as an unknown option. The README documents this limitation explicitly. C++ parser has the same behavior; users must use `=`-form for negative values. | `README.md` | `exact` (same constraint) |
 | 9 | **Voice list sort order.** Voices are sorted ascending by `ShortName` before display. | `util.py:_print_voices()` | `exact` |
 | 10 | **Voice list columns.** `Name`, `Gender`, `ContentCategories` (comma-joined), `VoicePersonalities` (comma-joined). Formatted as a tab-aligned table using `tabulate`. | `util.py:_print_voices()` | `exact` — `VoiceFormatter` produces tabulate "simple" format: left-aligned columns padded to max width, separated by two spaces, dash separator row |
+| 11 | **Empty text accepted at parse time.** `--text ""` passes argument parsing (exit 0 from parse). The synthesizer produces no audio chunks for an empty string and exits 0 with no output written. | (implicit) | `exact` — empty string produces no audio; exit 0 |
+| 12 | **File-not-found error includes the path.** When `--file` names a path that does not exist or cannot be read, the error message printed to stderr contains the supplied path, making the error actionable without re-running with verbose flags. Exit code 1. | (implicit) | `exact` — `InputLoader` and dispatcher include the path in all `io_error` messages |
 
 ---
 
@@ -107,6 +109,8 @@ exit codes) is identical.
 | 4 | **`--mpv` flag.** Python uses mpv by default on non-Windows; `--mpv` forces it on Windows. C++ build does not implement mpv: passing `--mpv` produces `error: --mpv is not supported; only ffplay is available. Remove --mpv to use ffplay.` and exits 1. | `__main__.py:_play_media()` | `deviation` (explicit rejection, not silent ignore) |
 | 5 | **Windows playback.** `win32_playback.play_mp3_win32` when `--mpv` not set. | `__main__.py:_play_media()` | `unsupported` — `ProcessRunner.cpp` is excluded from the Windows build by CMake; setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows causes a configure-time `FATAL_ERROR` naming the platform. The core library and `edge-tts` CLI build cleanly on Windows. |
 | 6 | **Dependency check.** `FfmpegAudioConverter` returns `external_process_failed` when ffplay is not on PATH, printed to stderr with exit 1. | `__main__.py:_check_deps()` | `exact` (error at playback time) |
+| 7 | **Negative-value syntax.** Same constraint as `edge-tts` behavioral note 8: `--rate=-50%` works; `--rate -50%` is rejected with exit 2 because `-50%` is tokenized as an unknown option flag. Help text documents the `=`-form requirement. | (inherited from argparse behavior) | `exact` (same constraint) |
+| 8 | **File-not-found error includes the path.** When `--file` names a path that cannot be read, the error message on stderr contains the supplied path. Exit code 1. | (implicit) | `exact` — dispatcher includes the path in all `io_error` messages |
 
 ### `edge-playback` environment variables
 

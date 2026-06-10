@@ -33,6 +33,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
+#include "ApiTestFixtures.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -63,33 +64,16 @@ using edge_tts::core::AudioChunk;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
+using edge_tts::test::make_seam;
+using edge_tts::test::push_session;
+using edge_tts::test::read_file;
+using edge_tts::test::TestWire;
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
 // ---------------------------------------------------------------------------
 
 namespace {
-
-// All production-wiring objects except the WebSocket transport.
-// Members are declared in initialization order (referenced objects first).
-struct Wire {
-    SystemClock               clock;
-    IdGenerator               ids;
-    EdgeServiceConfig         svc{edge_tts::communication::default_edge_service_config()};
-    EdgeTokenProvider         tokens{svc, clock};
-    EdgeProtocol              protocol{clock};
-    ConnectionMetadataFactory meta{ids};
-};
-
-// Build a SynthesizerFn that delegates to the given SynthesisSession.
-// The session must outlive the returned fn.
-static SynthesizerFn make_seam(SynthesisSession& session) {
-    return [&session](const TtsConfig& cfg,
-                      std::span<const std::string> chunks)
-               -> edge_tts::common::Result<std::vector<TtsChunk>> {
-        return session.synthesize(cfg, chunks);
-    };
-}
 
 using edge_tts::test::make_audio_frame;
 using edge_tts::test::make_turn_end;
@@ -123,12 +107,6 @@ static WebSocketMessage make_unknown_path_frame() {
     return m;
 }
 
-// Queue a minimal successful session (audio + turn.end).
-static void push_session(FakeWebSocketClient& ws, const std::string& audio) {
-    ws.push_incoming(make_audio_frame(audio));
-    ws.push_incoming(make_turn_end());
-}
-
 // RAII temp-file.
 struct TempFile {
     fs::path path;
@@ -137,11 +115,6 @@ struct TempFile {
     ~TempFile() { std::error_code ec; fs::remove(path, ec); }
 };
 
-static std::string read_file(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
-}
-
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -149,7 +122,7 @@ static std::string read_file(const fs::path& p) {
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, ShortTextProducesOneAudioChunk) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIODATA");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -166,7 +139,7 @@ TEST(OfflineIntegration, ShortTextProducesOneAudioChunk) {
 }
 
 TEST(OfflineIntegration, ShortTextAudioBytesMatchFakePayload) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "HELLO_BYTES");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -188,7 +161,7 @@ TEST(OfflineIntegration, ShortTextAudioBytesMatchFakePayload) {
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, SpeechConfigFrameHasSpeechConfigPath) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -204,7 +177,7 @@ TEST(OfflineIntegration, SpeechConfigFrameHasSpeechConfigPath) {
 }
 
 TEST(OfflineIntegration, SpeechConfigFrameHasContentTypeJson) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -219,7 +192,7 @@ TEST(OfflineIntegration, SpeechConfigFrameHasContentTypeJson) {
 }
 
 TEST(OfflineIntegration, SsmlFrameHasSsmlPath) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -234,7 +207,7 @@ TEST(OfflineIntegration, SsmlFrameHasSsmlPath) {
 }
 
 TEST(OfflineIntegration, SsmlFrameHasXRequestIdHeader) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -249,7 +222,7 @@ TEST(OfflineIntegration, SsmlFrameHasXRequestIdHeader) {
 }
 
 TEST(OfflineIntegration, SsmlFrameRequestIdIs32CharHex) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -276,7 +249,7 @@ TEST(OfflineIntegration, SsmlFrameRequestIdIs32CharHex) {
 }
 
 TEST(OfflineIntegration, SsmlFrameBodyContainsSpeakTag) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -295,7 +268,7 @@ TEST(OfflineIntegration, SsmlFrameBodyContainsSpeakTag) {
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, TomAndJerryAmpersandEscapedOnce) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -312,7 +285,7 @@ TEST(OfflineIntegration, TomAndJerryAmpersandEscapedOnce) {
 }
 
 TEST(OfflineIntegration, TomAndJerryAngleBracketsEscapedOnce) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -333,7 +306,7 @@ TEST(OfflineIntegration, TomAndJerryAngleBracketsEscapedOnce) {
 }
 
 TEST(OfflineIntegration, TomAndJerryRawAmpersandAbsentFromSsml) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -352,7 +325,7 @@ TEST(OfflineIntegration, TomAndJerryRawAmpersandAbsentFromSsml) {
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, JapaneseTextPreservedVerbatimInSsml) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -370,7 +343,7 @@ TEST(OfflineIntegration, JapaneseTextPreservedVerbatimInSsml) {
 }
 
 TEST(OfflineIntegration, ArabicTextPreservedVerbatimInSsml) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "AUDIO");
     SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
@@ -390,7 +363,7 @@ TEST(OfflineIntegration, ArabicTextPreservedVerbatimInSsml) {
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, LongTextSendsTwoSpeechConfigFrames) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     // Two sessions — one per chunk.
     push_session(ws, "CHUNK_A");
@@ -412,7 +385,7 @@ TEST(OfflineIntegration, LongTextSendsTwoSpeechConfigFrames) {
 }
 
 TEST(OfflineIntegration, LongTextConnectsWebSocketTwice) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     push_session(ws, "CHUNK_A");
     push_session(ws, "CHUNK_B");
@@ -445,7 +418,7 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSynthesize) {
     constexpr std::int64_t expected_comp =
         static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;  // = 10_000_000
 
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     // Chunk 1: 6000 audio bytes + turn.end (no boundary).
     ws.push_incoming(make_audio_frame_bytes(N));
@@ -479,7 +452,7 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSrtTimestamp) {
     // 10_000_000 ticks = 1 second → SRT timestamp contains "00:00:01".
     constexpr std::size_t N = 6000;
 
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_audio_frame_bytes(N));
     ws.push_incoming(make_turn_end());
@@ -504,7 +477,7 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSrtTimestamp) {
 
 TEST(OfflineIntegration, FirstChunkBoundaryOffsetUnchanged) {
     // Boundaries in the first chunk have compensation = 0.
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_word_boundary(1'234'567, 500'000, "word"));
     ws.push_incoming(make_audio_frame("X"));
@@ -532,7 +505,7 @@ TEST(OfflineIntegration, UnknownPathFrameReturnsProtocolError) {
     // The fake server sends a text frame with an unknown Path — EdgeProtocol
     // must reject it with protocol_error, which bubbles up through
     // SynthesisSession to SpeechSynthesizer::synthesize()().
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_audio_frame("SOME_AUDIO"));
     ws.push_incoming(make_unknown_path_frame());
@@ -549,7 +522,7 @@ TEST(OfflineIntegration, UnknownPathFrameReturnsProtocolError) {
 }
 
 TEST(OfflineIntegration, ReceiveErrorPropagatesAsNetworkError) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     // Inject a receive error — simulates a mid-session connection drop.
     ws.set_receive_error(Error{ErrorCode::network_error, "simulated drop"});
@@ -565,7 +538,7 @@ TEST(OfflineIntegration, ReceiveErrorPropagatesAsNetworkError) {
 }
 
 TEST(OfflineIntegration, ProtocolErrorPropagatesFromSave) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_audio_frame("SOME_AUDIO"));
     ws.push_incoming(make_unknown_path_frame());
@@ -589,7 +562,7 @@ TEST(OfflineIntegration, ProtocolErrorPropagatesFromSave) {
 TEST(OfflineIntegration, NoAudioResponseReturnsServiceError) {
     // The fake server returns turn.end without sending any audio frame.
     // Reference: communicate.py "if not audio_was_received: raise NoAudioReceived"
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_turn_end());
 
@@ -604,7 +577,7 @@ TEST(OfflineIntegration, NoAudioResponseReturnsServiceError) {
 }
 
 TEST(OfflineIntegration, NoAudioResponseFromSaveReturnsServiceError) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_turn_end());
 
@@ -620,7 +593,7 @@ TEST(OfflineIntegration, NoAudioResponseFromSaveReturnsServiceError) {
 }
 
 TEST(OfflineIntegration, NoAudioErrorMessageMentionsAudio) {
-    Wire w;
+    TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_turn_end());
 

@@ -594,3 +594,25 @@ TEST(EdgeTtsArgumentParser, VersionStringContainsVersionNumber) {
     const auto second_dot = v.find('.', first_dot + 1);
     EXPECT_NE(second_dot, std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// Empty-string text is a valid parse (not a parse error).
+// The synthesizer accepts empty text and returns no audio — that is a runtime
+// outcome, not an argument error.  The parser must not reject it.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsArgumentParser, EmptyStringTextIsAccepted) {
+    auto r = parse({"--text", ""});
+    EXPECT_EQ(r.action, ParseAction::synthesize);
+    EXPECT_TRUE(r.arguments.text.has_value());
+    EXPECT_EQ(*r.arguments.text, "");
+}
+
+// --file "" is also a valid parse: the path is stored as-is.
+// The open will fail at dispatch time (io_error), not parse time (exit 2).
+TEST(EdgeTtsArgumentParser, EmptyStringFileIsAcceptedAtParseTime) {
+    auto r = parse({"--file", ""});
+    EXPECT_EQ(r.action, ParseAction::synthesize);
+    EXPECT_TRUE(r.arguments.file.has_value());
+    EXPECT_EQ(*r.arguments.file, "");
+}

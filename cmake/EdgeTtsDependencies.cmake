@@ -42,11 +42,15 @@
 #   4. Not found + EDGE_TTS_REQUIRE_NETWORKING=ON    → FATAL_ERROR
 #   5. Not found + EDGE_TTS_REQUIRE_NETWORKING=OFF   → silently skip (stubs compile)
 
-# --- TLS: enable by default on non-Windows --------------------------------
+# --- TLS: ON by default on all platforms -----------------------------------
 # The Edge TTS voices endpoint (https://) and WebSocket endpoint (wss://)
 # both require TLS.  ixwebsocket uses the variable name USE_TLS (not
 # IXWEBSOCKET_USE_TLS).  Default ON so production builds have HTTPS;
 # the caller can set USE_TLS=OFF before including this file to opt out.
+#
+# TLS backend selection is handled by ixwebsocket per platform:
+#   Linux / macOS: OpenSSL (system library required)
+#   Windows:       mbedtls (bundled inside ixwebsocket)
 if(NOT DEFINED USE_TLS)
     set(USE_TLS ON CACHE BOOL "Enable TLS in ixwebsocket" FORCE)
 endif()

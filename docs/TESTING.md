@@ -60,13 +60,15 @@ injection constructor; the production 2/3-arg constructors (which create a real
 `WebSocketClient`) are tested only via structural assertions that do not call
 `synthesize()` or `save()`.
 
-The three offline integration source files cover complementary areas:
+The offline integration source files cover complementary areas:
 
 | Source | Focus |
 |--------|-------|
 | `SpeechSynthesizerEndToEndTests.cpp` | Happy-path output: MP3 bytes, SRT content, XML escaping, UTF-8, long text, one-shot guarantee |
 | `SpeechSynthesizerWiringTests.cpp` | Production constructor wiring: lazy construction, no placeholder error, save() through fake transport, XML/UTF-8 regressions |
 | `OfflineIntegrationTests.cpp` | Frame-level protocol verification: sent frame structure, exact escaping, offset compensation, error propagation, no-audio error |
+| `CancellationTests.cpp` | Timeout and cancellation: `ErrorCode::timeout` propagation from connect/receive through `SynthesisSession` and `SpeechSynthesizer`; `cancel()` before and during synthesis; idempotent cancel; no shared state across objects; `CancellationToken` shared-flag semantics |
+| `PublicApiContractTests.cpp` | Public API contract: lazy construction, single-use guarantee, error model, chunk ownership, `list_voices()` signature |
 
 `OfflineIntegrationTests.cpp` specifically verifies:
 - `sent_messages()[0]` has `Path:speech.config` and `Content-Type:application/json`

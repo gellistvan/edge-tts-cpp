@@ -29,6 +29,8 @@
 #include "api/SpeechSynthesizer.hpp"
 #include "api/SynthesisOptions.hpp"
 #include "api/FileWriter.hpp"
+#include "api/VoiceList.hpp"
+#include "common/CancellationToken.hpp"
 #include "common/Error.hpp"
 #include "common/Result.hpp"
 #include "core/Chunk.hpp"

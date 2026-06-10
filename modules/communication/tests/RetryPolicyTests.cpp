@@ -81,6 +81,7 @@ static SynthesisSession make_session(FakeWebSocketClient& fake,
         get_token_provider(),
         get_meta_factory(),
         g_retry_clock,
+        {},
         policy
     };
 }

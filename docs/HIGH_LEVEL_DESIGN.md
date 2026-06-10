@@ -326,3 +326,118 @@ OfflineIntegrationTests.cpp         — protocol layer: frame structure, error p
 | `communication` | `EdgeServiceConfig`, `EdgeTokenProvider`, `ConnectionMetadataFactory`, `EdgeRequestHeaders`, `EdgeProtocol` (frame builder + parser), `RetryPolicy`, `IHttpClient` / `HttpClient` (ixwebsocket impl, Pimpl), `IWebSocketClient` / `WebSocketClient` (ixwebsocket impl, Pimpl), `VoiceService`, `SynthesisSession` (per-chunk WebSocket lifecycle, 403 retry) — fully implemented. Test doubles (`FakeHttpClient`, `FakeWebSocketClient`) live in `tests/support/`. |
 | `api` | `SpeechSynthesizer` facade implemented: validate → chunk → synthesize (via `SynthesizerFn`) → stream/save; `FileWriter` (binary + UTF-8 text writes) implemented |
 | `media` | `ProcessRunner` (fork/execvp/waitpid, POSIX-only), `FfmpegAudioConverter` (ffmpeg/ffplay via `IProcessRunner`), `ExecutableDiscovery`, `IAudioConverter` — fully implemented |
+
+## Error handling reference
+
+All recoverable failures surface as `common::Result<T>` with a `common::Error` carrying:
+- `error.code()` — a `common::ErrorCode` enum value
+- `error.message()` — a human-readable English string
+- `error.context()` — optional machine-readable diagnostic data (file path, HTTP status, etc.)
+- `error.what()` — formatted `"[code] message (context: ...)"` for logging
+
+### ErrorCode reference
+
+| Code | When it fires | Retryable? | Context contract | Consumer action |
+|------|---------------|------------|------------------|-----------------|
+| `invalid_argument` | Bad caller input: empty voice, malformed rate/pitch, negative ticks | No | Offending value or parameter name | Fix the argument before retrying |
+| `invalid_state` | `synthesize()` or `save()` called a second time on a single-use `SpeechSynthesizer` | No | — | Construct a new `SpeechSynthesizer` |
+| `io_error` | Local file open or write failure | Maybe (disk full → no; wrong path → fix path) | Absolute file path | Log the path from `context()`; check disk space and permissions |
+| `network_error` | WebSocket or HTTP transport failure (connect refused, TLS error, connection reset) | Yes (with backoff) | Optional; never contains the DRM token or raw credentials | Retry; surface the message to the user |
+| `protocol_error` | Unexpected wire message structure (unknown `Path:` header, missing `X-RequestId`, malformed frame) | No (indicates service change or library bug) | The offending wire value | Report with `what()` for diagnostics |
+| `parse_error` | JSON decode failure (voice list, metadata) or HTTP-like frame parsing failure | No | — | Report with `what()`; may indicate a service format change |
+| `timeout` | WebSocket receive or HTTP request exceeded `SynthesisOptions::ws_read_timeout` / `http_timeout` | Yes | — | Retry; consider increasing the timeout via `SynthesisOptions` |
+| `unsupported` | Proxy set but not implemented; platform-level stub (e.g. `WebSocketClient` without ixwebsocket) | No | Proxy URL with credentials replaced by `[credentials]` | Remove `--proxy` or disable the unsupported feature |
+| `external_process_failed` | `ffplay` / `ffmpeg` not found on PATH, or subprocess exited non-zero | Maybe (install deps) | Process stderr (may be empty) | Check that ffplay is installed and on PATH |
+| `service_error` | Non-200 (non-403) HTTP response; or no audio received after `turn.end` | Yes (for 5xx) | HTTP status code string, e.g. `"429"`, `"503"` | For 5xx: retry with backoff. For 4xx: check request parameters. |
+| `drm_error` | HTTP 403 during WebSocket upgrade (DRM token rejected) | Yes — handled internally | Server `Date` header (RFC 2616) for clock-skew correction | The library retries once automatically via `RetryPolicy`. Persistent `drm_error` after retry indicates a clock-skew problem that `EdgeTokenProvider::adjust_clock_skew()` cannot resolve. |
+| `cancelled` | `SpeechSynthesizer::cancel()` was called before or during synthesis | No (caller-initiated) | — | Expected — the caller requested cancellation |
+| `none` | No error (should not appear in a failed `Result<T>`) | N/A | N/A | Treat as an internal error if seen in a failed result |
+
+### Context field policy
+
+The context field carries **safe, machine-readable diagnostics** — never raw secrets:
+
+- **File paths** (`io_error`) — the absolute path of the file that failed to open or write.
+- **HTTP status codes** (`service_error`) — the numeric status as a string (`"429"`, `"503"`).
+- **Server Date header** (`drm_error`) — the RFC 2616 `Date` value from the 403 response, used for clock-skew correction.
+- **Proxy URLs** (`unsupported`) — redacted: `user:pass@host` → `[credentials]@host` at the call site before being stored. Consumers may log `context()` safely.
+- **Wire values** (`protocol_error`) — the offending `Path:` header or frame field, never a full payload.
+- **Absent by design** (`cancelled`, `timeout`, `network_error`) — no context needed; the message is sufficient.
+
+**DRM token security:** The DRM token (`Sec-MS-GEC`) is a computed hash and never stored or returned in any error field.
+
+### Consumer error handling pattern
+
+```cpp
+auto result = tts.save("hello.mp3");
+if (!result) {
+    const auto& err = result.error();
+    switch (err.code()) {
+    case edge_tts::common::ErrorCode::network_error:
+    case edge_tts::common::ErrorCode::timeout:
+        // Transient — retry with backoff
+        retry_later();
+        break;
+    case edge_tts::common::ErrorCode::invalid_argument:
+    case edge_tts::common::ErrorCode::invalid_state:
+        // Programmer error — fix the call site
+        std::cerr << "BUG: " << err.what() << '\n';
+        break;
+    case edge_tts::common::ErrorCode::cancelled:
+        // Expected — user cancelled
+        break;
+    default:
+        // Log and surface to the user
+        std::cerr << "error: " << err.what() << '\n';
+    }
+}
+```
+
+### Exception vs. Result<T>
+
+Only two call sites in the library throw exceptions — both indicate programmer errors, not runtime conditions:
+
+| Throw site | Exception type | Trigger |
+|------------|----------------|---------|
+| `TtsConfig::validate()` | `common::ConfigurationError` | Invalid voice/rate/pitch syntax — caught at the CLI layer before reaching synthesis |
+| `Result<T>::value()` on a failed result | `common::BadResultAccess` | Calling `value()` without checking success — a programming mistake |
+
+All other failure modes, including every network, service, I/O, and protocol failure, propagate via `Result<T>` and never throw.
+
+## Platform support
+
+| Component | Linux | macOS | Windows | Notes |
+|-----------|-------|-------|---------|-------|
+| Core library (`common`, `core`, `serialization`, `communication`, `api`, `subtitles`) | ✓ | ✓ | ✓ | Pure C++20; no POSIX-only APIs |
+| `media` — `ExecutableDiscovery`, `FfmpegAudioConverter`, `IAudioConverter` | ✓ | ✓ | ✓ | Cross-platform via `std::filesystem`; `IProcessRunner` interface decouples from OS |
+| `media` — `ProcessRunner` | ✓ | ✓ | ✗ | Uses `fork`/`execvp`/`waitpid`; excluded from Windows build (`if(NOT WIN32)` in CMake, `#ifndef _WIN32` in header). Implement `IProcessRunner` with `CreateProcess` to enable playback on Windows. |
+| `edge-tts` CLI app | ✓ | ✓ | ✓ | No POSIX dependencies; builds cleanly on Windows with `-DEDGE_TTS_BUILD_APPS=ON` |
+| `edge-playback` CLI app | ✓ | ✓ | ✗ | Requires `ProcessRunner`. `EDGE_TTS_BUILD_PLAYBACK_APP` defaults `OFF` on Windows. Setting it `ON` is a configure-time `FATAL_ERROR` that names the platform and suggests the fix. |
+| TLS (`USE_TLS=ON`, default) | OpenSSL | OpenSSL | mbedtls | ixwebsocket selects the backend per platform. Linux/macOS require system OpenSSL. Windows uses ixwebsocket's bundled mbedtls (no extra install needed). |
+| `FakeProcessRunner` (test support only) | ✓ | ✓ | ✓ | In-memory test double; no POSIX APIs; always cross-platform |
+
+### Library-only Windows build
+
+All modules except `ProcessRunner` compile on Windows. The recommended CMake invocation for a Windows library-only build:
+
+```cmake
+cmake -S . -B build \
+  -DEDGE_TTS_BUILD_APPS=ON \
+  -DEDGE_TTS_BUILD_PLAYBACK_APP=OFF \
+  -DEDGE_TTS_REQUIRE_NETWORKING=ON
+```
+
+`EDGE_TTS_BUILD_PLAYBACK_APP` is silently coerced to `OFF` on Windows even when not set explicitly. Setting it `ON` emits a `FATAL_ERROR` that names the cause and the fix:
+
+```
+EDGE_TTS_BUILD_PLAYBACK_APP=ON is not supported on Windows.
+ProcessRunner requires POSIX APIs (fork/execvp/pipe/waitpid) which
+are not available on Windows (platform: Windows).
+Options:
+  - Set EDGE_TTS_BUILD_PLAYBACK_APP=OFF to build the core library and
+    edge-tts CLI without playback.
+  - Provide a Windows-specific IProcessRunner implementation and set
+    EDGE_TTS_BUILD_PLAYBACK_APP=ON once it compiles.
+```
+
+To add Windows playback support, implement `IProcessRunner` using `CreateProcess` / `ReadFile` / `WaitForSingleObject` and link it to `edge_tts::media`.

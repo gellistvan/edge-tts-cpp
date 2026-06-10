@@ -30,6 +30,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
+#include "ApiTestFixtures.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -60,12 +61,9 @@ using edge_tts::core::TtsConfig;
 using edge_tts::test::make_audio_frame;
 using edge_tts::test::make_turn_end;
 using edge_tts::test::to_bytes;
-
-// Push one minimal complete session: audio frame + turn.end
-static void push_session(FakeWebSocketClient& ws, const std::string& audio_data) {
-    ws.push_incoming(make_audio_frame(to_bytes(audio_data)));
-    ws.push_incoming(make_turn_end());
-}
+using edge_tts::test::push_session;
+using edge_tts::test::valid_config;
+using edge_tts::test::read_file;
 
 // ---------------------------------------------------------------------------
 // Full production composition test (api-level, fake transport seam)
@@ -75,8 +73,6 @@ static void push_session(FakeWebSocketClient& ws, const std::string& audio_data)
 // but substitutes FakeWebSocketClient for WebSocketClient.  Calls SpeechSynthesizer
 // API and verifies audio chunks arrive.
 // ---------------------------------------------------------------------------
-
-static TtsConfig valid_config() { return TtsConfig::defaults(); }
 
 TEST(CommunicateProductionWiring, FullCompositionProducesAudioChunks) {
     // All real production objects except transport.
@@ -334,11 +330,6 @@ struct TempFileW {
         : path(fs::temp_directory_path() / ("wire_test_" + tag + ext)) {}
     ~TempFileW() { std::error_code ec; fs::remove(path, ec); }
 };
-
-static std::string read_file_w(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
-}
 }  // namespace
 
 TEST(CommunicateProductionWiring, SaveWritesAudioBytesViaFakeStack) {
@@ -364,7 +355,7 @@ TEST(CommunicateProductionWiring, SaveWritesAudioBytesViaFakeStack) {
 
     auto r = c.save(mp3.path);
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(read_file_w(mp3.path), "MP3CONTENT");
+    EXPECT_EQ(read_file(mp3.path), "MP3CONTENT");
 }
 
 TEST(CommunicateProductionWiring, SaveWritesNonEmptyMp3File) {

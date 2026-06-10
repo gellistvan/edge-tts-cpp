@@ -6,6 +6,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "media/AudioConverter.hpp"
+#include "support/ChunkTestHelpers.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <filesystem>
@@ -28,6 +29,7 @@ using edge_tts::common::ErrorCode;
 using edge_tts::core::AudioChunk;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
+using edge_tts::test::make_audio;
 
 // ---------------------------------------------------------------------------
 // Fake IAudioConverter
@@ -57,14 +59,6 @@ public:
 // ---------------------------------------------------------------------------
 
 namespace {
-
-// Build AudioChunk bytes from string.
-static AudioChunk make_audio(std::string_view s) {
-    AudioChunk ac;
-    ac.data.reserve(s.size());
-    for (char c : s) ac.data.push_back(static_cast<std::byte>(c));
-    return ac;
-}
 
 using edge_tts::api::SynthesisOptions;
 
@@ -984,4 +978,171 @@ TEST(PlaybackCommandDispatcher, FileDashReadsFromStdin) {
     int rc = d.dispatch(r);
     EXPECT_EQ(rc, 0);
     EXPECT_EQ(received_text, "hello from stdin");
+}
+
+// ---------------------------------------------------------------------------
+// Parser: negative-value-with-space is a parse error
+//
+// Reference: PlaybackArgumentParser has the same constraint as EdgeTtsArgumentParser:
+// `--rate -50%` is misinterpreted because `-50%` looks like an option token.
+// Users must use `--rate=-50%` (equals form). Exit code 2.
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, RateNegativeWithSpaceIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--rate", "-50%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, VolumeNegativeWithSpaceIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--volume", "-10%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, PitchNegativeWithSpaceIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--pitch", "-5Hz"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: negative-value equals form succeeds
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, RateEqualsNegative) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--rate=-50%"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.rate, "-50%");
+}
+
+TEST(PlaybackArgumentParser, PitchEqualsNegative) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "--pitch=-5Hz"});
+    EXPECT_EQ(r.action, PlaybackParseAction::play);
+    EXPECT_EQ(r.arguments.pitch, "-5Hz");
+}
+
+// ---------------------------------------------------------------------------
+// Parser: short-form missing-value errors
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, ShortTextMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"-t"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, ShortFileMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"-f"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+TEST(PlaybackArgumentParser, ShortVoiceMissingValueIsError) {
+    PlaybackArgumentParser parser;
+    auto r = parser.parse({"--text", "hi", "-v"});
+    EXPECT_EQ(r.action, PlaybackParseAction::error);
+    EXPECT_EQ(r.exit_code, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: help text documents negative-value syntax
+//
+// CLI_COMPATIBILITY.md behavioral note 8 (shared with edge-tts):
+// users must be told that `--rate=-50%` is the required form.
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackArgumentParser, HelpTextMentionsNegativeValueSyntax) {
+    PlaybackArgumentParser parser;
+    const std::string h = parser.help_text();
+    EXPECT_NE(h.find("="),        std::string::npos);
+    EXPECT_NE(h.find("negative"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: missing input file returns exit 1 with path in error message.
+//
+// InputLoader returns io_error with the path in the context field.
+// PlaybackCommandDispatcher::format_error forwards Error::what(), which
+// includes the context, so the path must appear in stderr.
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, FileSynthesisMissingFileReturnsError) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"pb_missing_file"};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    PlaybackCommandDispatcher d{make_factory({}), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    PlaybackParseResult r;
+    r.action    = PlaybackParseAction::play;
+    r.exit_code = 0;
+    r.arguments.file = "/no/such/playback_input.txt";
+
+    EXPECT_EQ(d.dispatch(r), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(PlaybackCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"pb_missing_file_path"};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    PlaybackCommandDispatcher d{make_factory({}), conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    PlaybackParseResult r;
+    r.action    = PlaybackParseAction::play;
+    r.exit_code = 0;
+    r.arguments.file = "/no/such/playback_unique_input.txt";
+
+    d.dispatch(r);
+    EXPECT_NE(err.str().find("playback_unique_input.txt"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher: proxy credential redaction
+//
+// When synthesis fails and the error context contains a proxy URL with
+// embedded credentials, PlaybackCommandDispatcher must not expose the raw
+// password in stderr output.
+// ---------------------------------------------------------------------------
+
+TEST(PlaybackCommandDispatcher, ProxyCredentialNotExposedInStderr) {
+    FakeAudioConverter conv;
+    KnownTempProvider  tp{"pb_proxy_redact"};
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    auto factory = [](std::string text, TtsConfig cfg, SynthesisOptions opts) {
+        return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
+            [](const TtsConfig&, std::span<const std::string>)
+                -> edge_tts::common::Result<std::vector<TtsChunk>> {
+                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
+                    edge_tts::common::Error{
+                        edge_tts::common::ErrorCode::unsupported,
+                        "proxy not supported by backend",
+                        "http://user:topsecret@proxy.internal:3128"});
+            });
+    };
+
+    PlaybackCommandDispatcher d{factory, conv, tp.provider_no_srt(),
+                                 false, out, err, in};
+
+    PlaybackParseResult r = make_play_result("hello");
+    r.arguments.proxy = "http://user:topsecret@proxy.internal:3128";
+    d.dispatch(r);
+
+    EXPECT_EQ(err.str().find("topsecret"), std::string::npos);
+    EXPECT_NE(err.str().find("proxy.internal"), std::string::npos);
 }

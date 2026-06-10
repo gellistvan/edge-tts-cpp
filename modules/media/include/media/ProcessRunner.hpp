@@ -44,10 +44,16 @@ public:
 // ---------------------------------------------------------------------------
 // ProcessRunner — real POSIX implementation (fork + execvp, no shell).
 //
+// Available on POSIX platforms only.  On Windows, IProcessRunner and the
+// data types above are cross-platform, but ProcessRunner is not declared.
+// Windows users must supply a custom IProcessRunner (e.g. CreateProcess-based)
+// and link it to edge_tts::media.
+//
 // Not marked final so tests can subclass and override make_pipe() to inject
 // pipe-creation failures without forking a real process.
 // ---------------------------------------------------------------------------
 
+#ifndef _WIN32
 class ProcessRunner : public IProcessRunner {
 public:
     // Run cmd.executable with cmd.arguments as argv[1..].
@@ -61,5 +67,6 @@ protected:
     // Override in test subclasses to inject controlled failures.
     virtual int make_pipe(int fds[2]);
 };
+#endif // _WIN32
 
 } // namespace edge_tts::media

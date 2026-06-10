@@ -6,6 +6,7 @@
 #include "serialization/ProtocolParser.hpp"
 #include "serialization/ProtocolMessage.hpp"
 #include "vendor/minigtest/minigtest.hpp"
+#include "EdgeProtocolTestFixtures.hpp"
 
 #include <chrono>
 #include <string>
@@ -18,6 +19,7 @@ using edge_tts::common::IdGenerator;
 using edge_tts::core::TtsConfig;
 using edge_tts::core::BoundaryType;
 using edge_tts::serialization::ProtocolParser;
+using edge_tts::test::make_metadata;
 
 // ---------------------------------------------------------------------------
 // Fixed test clock: 2024-01-15 10:30:45 UTC (Unix ts 1705314645)
@@ -29,12 +31,6 @@ static const auto kFixedTimePoint =
     std::chrono::system_clock::time_point{std::chrono::seconds{kFixedUnixTs}};
 static const std::string kFixedTimestamp =
     "Mon Jan 15 2024 10:30:45 GMT+0000 (Coordinated Universal Time)";
-
-static ConnectionMetadata make_metadata() {
-    IdGenerator ids;
-    ConnectionMetadataFactory factory{ids};
-    return factory.create_for_request();
-}
 
 // ---------------------------------------------------------------------------
 // Frame parses as a valid ProtocolMessage

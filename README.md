@@ -386,12 +386,27 @@ target_link_libraries(my_app PRIVATE edge_tts::tts)
 ```
 
 Both `synthesize()` and `save()` are single-use — a second call returns
-`ErrorCode::invalid_state`.
+`ErrorCode::invalid_state`.  Create a new `SpeechSynthesizer` to synthesize
+text again.
+
+To fetch the list of available voices:
+
+```cpp
+auto voices = edge_tts::api::list_voices();
+if (voices) {
+    for (const auto& v : *voices)
+        std::cout << v.short_name << "  " << v.locale << '\n';
+}
+```
 
 Individual headers (`edge_tts/api/SpeechSynthesizer.hpp`, `edge_tts/core/TtsConfig.hpp`,
 etc.) remain available for consumers who need finer-grained includes.
 
 Inject a `SynthesizerFn` for testing without a live service connection.
+
+See [`docs/CONSUMING.md`](docs/CONSUMING.md#api-contract) for the full API
+contract: object lifetime, single-use behavior, threading, error model, and
+chunk ownership.
 
 ## Applications
 
@@ -489,7 +504,7 @@ edge_tts_serialization_tests
 edge_tts_communication_tests
 edge_tts_api_tests
 edge_tts_media_tests
-edge_tts_subtitles_tests
+edge_tts_subtitle_tests
 ```
 
 Run everything with:
@@ -537,6 +552,8 @@ When `EDGE_TTS_RUN_NETWORK_TESTS` is unset every network test returns early with
 - **Escaping**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;`/`&lt;`/`&gt;` — exactly once, never double-escaped.
 - **Multi-chunk offset compensation**: long text split into two chunks; boundaries from chunk 2 are shifted by the audio duration of chunk 1, verified via both `synthesize()` chunk values and `save()` SRT timestamps.
 - **Error propagation**: unknown `Path` header → `protocol_error`; transport drop → `network_error`; no audio before `turn.end` → `service_error`.
+
+**Known limitation — subtitle timing for long text:** Boundary offsets for multi-chunk text (input > 4096 bytes escaped) are computed assuming constant 48 kbps MP3 (`bytes × 8 × 10_000_000 / 48_000` ticks).  If the service delivers audio at a different bitrate, SRT cue timestamps for chunks after the first will drift.
 
 See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy and [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for the tested data flow.
 
@@ -590,7 +607,7 @@ See [`docs/CONSUMING.md`](docs/CONSUMING.md#versioning-and-compatibility-policy)
 
 ## Design documentation
 
-See [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for module boundaries, dependency direction, and testing structure.
+See [`docs/HIGH_LEVEL_DESIGN.md`](docs/HIGH_LEVEL_DESIGN.md) for module boundaries, dependency direction, and testing structure.  The [Error handling reference](docs/HIGH_LEVEL_DESIGN.md#error-handling-reference) section documents all 13 `ErrorCode` values, their context field contracts, and credential-redaction policy.
 
 See [`docs/TESTING.md`](docs/TESTING.md) for the full testing strategy.
 

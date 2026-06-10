@@ -5,7 +5,9 @@
 #include "common/Error.hpp"
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
+#include "support/ChunkTestHelpers.hpp"
 #include "vendor/minigtest/minigtest.hpp"
+#include "ApiTestFixtures.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -29,6 +31,10 @@ using edge_tts::core::BoundaryChunk;
 using edge_tts::core::BoundaryEventType;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
+using edge_tts::test::make_audio;
+using edge_tts::test::make_boundary;
+using edge_tts::test::make_fake;
+using edge_tts::test::valid_config;
 
 namespace fs = std::filesystem;
 
@@ -36,40 +42,10 @@ namespace fs = std::filesystem;
 // Test fixtures and helpers
 // ---------------------------------------------------------------------------
 
-static TtsConfig valid_config() { return TtsConfig::defaults(); }
-
 static TtsConfig invalid_config() {
     TtsConfig cfg = TtsConfig::defaults();
     cfg.rate = "bad_rate";
     return cfg;
-}
-
-static AudioChunk make_audio(std::string_view s) {
-    AudioChunk ac;
-    ac.data.reserve(s.size());
-    for (char c : s)
-        ac.data.push_back(static_cast<std::byte>(c));
-    return ac;
-}
-
-static BoundaryChunk make_boundary(std::string text,
-                                   std::int64_t offset_ticks = 0,
-                                   std::int64_t duration_ticks = 10'000'000) {
-    BoundaryChunk bc;
-    bc.type           = BoundaryEventType::SentenceBoundary;
-    bc.text           = std::move(text);
-    bc.offset_ticks   = offset_ticks;
-    bc.duration_ticks = duration_ticks;
-    return bc;
-}
-
-static SynthesizerFn make_fake(std::vector<TtsChunk> chunks) {
-    return [chunks = std::move(chunks)](
-               const TtsConfig&,
-               std::span<const std::string>)
-               -> edge_tts::common::Result<std::vector<TtsChunk>> {
-        return edge_tts::common::Result<std::vector<TtsChunk>>::ok(chunks);
-    };
 }
 
 static SynthesizerFn make_failing(ErrorCode code, std::string msg) {

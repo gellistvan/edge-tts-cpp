@@ -32,6 +32,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "vendor/minigtest/minigtest.hpp"
+#include "ApiTestFixtures.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -58,6 +59,10 @@ using edge_tts::common::ErrorCode;
 using edge_tts::common::IdGenerator;
 using edge_tts::common::SystemClock;
 using edge_tts::core::AudioChunk;
+using edge_tts::test::make_seam;
+using edge_tts::test::push_session;
+using edge_tts::test::read_file;
+using edge_tts::test::TestWire;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
@@ -67,12 +72,6 @@ namespace {
 using edge_tts::test::make_audio_frame;
 using edge_tts::test::make_turn_end;
 using edge_tts::test::make_word_boundary;
-
-// Push a minimal session: one audio frame followed by turn.end.
-static void push_session(FakeWebSocketClient& ws, const std::string& audio) {
-    ws.push_incoming(make_audio_frame(audio));
-    ws.push_incoming(make_turn_end());
-}
 
 struct BoundarySpec { int64_t offset; int64_t duration; std::string word; };
 
@@ -94,35 +93,6 @@ struct TempFile {
     ~TempFile() { std::error_code ec; fs::remove(path, ec); }
 };
 
-// Holds all production-wiring objects that SynthesisSession needs.
-// Members are in initialization order (objects that are referenced by others
-// must be declared first so references are valid at construction time).
-struct ProductionWiring {
-    SystemClock               clock;
-    IdGenerator               ids;
-    EdgeServiceConfig         svc{edge_tts::communication::default_edge_service_config()};
-    EdgeTokenProvider         tokens{svc, clock};
-    EdgeProtocol              protocol{clock};
-    ConnectionMetadataFactory meta{ids};
-};
-
-// Build a SynthesizerFn that delegates to the given SynthesisSession.
-// The session must outlive the returned SynthesizerFn.
-static SynthesizerFn make_seam(SynthesisSession& session) {
-    return [&session](const TtsConfig& cfg,
-                      std::span<const std::string> chunks)
-               -> edge_tts::common::Result<std::vector<TtsChunk>> {
-        return session.synthesize(cfg, chunks);
-    };
-}
-
-// Read the entire contents of a file as a string.
-static std::string read_file(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    return std::string{std::istreambuf_iterator<char>(f),
-                       std::istreambuf_iterator<char>{}};
-}
-
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -132,7 +102,7 @@ static std::string read_file(const fs::path& p) {
 TEST(CommunicateEndToEnd, SaveWritesBothMp3AndSrt) {
     // Full production stack (all real objects) with fake transport.
     // Queued frames: audio + two word boundaries + turn.end.
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "FAKEMP3BYTES",
         { {50'000'000LL, 5'000'000LL, "Hello"},
@@ -159,7 +129,7 @@ TEST(CommunicateEndToEnd, SaveWritesBothMp3AndSrt) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, SaveMp3BytesMatchFakeAudio) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "EXPECTEDMP3BYTES");
 
@@ -178,7 +148,7 @@ TEST(CommunicateEndToEnd, SaveMp3BytesMatchFakeAudio) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, SaveSrtContainsWordText) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "AUDIO",
         { {10'000'000LL, 3'000'000LL, "sunshine"} });
@@ -197,7 +167,7 @@ TEST(CommunicateEndToEnd, SaveSrtContainsWordText) {
 
 TEST(CommunicateEndToEnd, SaveSrtHasTimestampAndArrow) {
     // SRT must have the standard "HH:MM:SS,mmm --> HH:MM:SS,mmm" timestamp format.
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "AUDIO",
         { {10'000'000LL, 5'000'000LL, "hello"},
@@ -222,7 +192,7 @@ TEST(CommunicateEndToEnd, SaveSrtHasTimestampAndArrow) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, SynthesizeReturnsBothAudioAndBoundaryChunks) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "AUDIODATA",
         { {50'000'000LL, 5'000'000LL, "hello"} });
@@ -251,7 +221,7 @@ TEST(CommunicateEndToEnd, SynthesizeReturnsBothAudioAndBoundaryChunks) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, AmpersandEscapedInSsmlFrame) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -268,7 +238,7 @@ TEST(CommunicateEndToEnd, AmpersandEscapedInSsmlFrame) {
 }
 
 TEST(CommunicateEndToEnd, LessThanEscapedInSsmlFrame) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -284,7 +254,7 @@ TEST(CommunicateEndToEnd, LessThanEscapedInSsmlFrame) {
 }
 
 TEST(CommunicateEndToEnd, GreaterThanEscapedInSsmlFrame) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -301,7 +271,7 @@ TEST(CommunicateEndToEnd, GreaterThanEscapedInSsmlFrame) {
 
 TEST(CommunicateEndToEnd, AllXmlSpecialCharsEscapedTogether) {
     // A single text containing &, <, > — all must appear escaped in SSML.
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -326,7 +296,7 @@ TEST(CommunicateEndToEnd, AllXmlSpecialCharsEscapedTogether) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, MultiByteUtf8PreservedInSsmlFrame) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -350,7 +320,7 @@ TEST(CommunicateEndToEnd, MultiByteUtf8PreservedInSsmlFrame) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, LongTextSavesCombinedMp3) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     // Queue two sessions — one per chunk produced by the 5000-byte input.
     push_session(fake_ws, "CHUNK_A_AUDIO");
@@ -374,7 +344,7 @@ TEST(CommunicateEndToEnd, LongTextSavesCombinedMp3) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, LongTextSrtSpansAllChunks) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session_with_boundaries(fake_ws, "CHUNK_A",
         { {10'000'000LL, 3'000'000LL, "first"} });
@@ -401,7 +371,7 @@ TEST(CommunicateEndToEnd, LongTextSrtSpansAllChunks) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, LongTextSynthesizeReturnsAudioPerChunk) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "CHUNK_A");
     push_session(fake_ws, "CHUNK_B");
@@ -426,7 +396,7 @@ TEST(CommunicateEndToEnd, LongTextSynthesizeReturnsAudioPerChunk) {
 // ---------------------------------------------------------------------------
 
 TEST(CommunicateEndToEnd, SynthesizeIsOneShot) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 
@@ -442,7 +412,7 @@ TEST(CommunicateEndToEnd, SynthesizeIsOneShot) {
 }
 
 TEST(CommunicateEndToEnd, SaveIsOneShot) {
-    ProductionWiring   w;
+    TestWire   w;
     FakeWebSocketClient fake_ws;
     push_session(fake_ws, "AUDIO");
 

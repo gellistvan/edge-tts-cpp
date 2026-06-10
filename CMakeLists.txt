@@ -127,6 +127,7 @@ edge_tts_add_module(
     SOURCES
         modules/api/src/SpeechSynthesizer.cpp
         modules/api/src/FileWriter.cpp
+        modules/api/src/VoiceList.cpp
     PUBLIC_DEPS
         edge_tts::communication
         edge_tts::serialization
