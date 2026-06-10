@@ -29,7 +29,7 @@ what "ready to release" means for each capability area.
 |------------|--------|-------|
 | Text-to-speech synthesis (`SpeechSynthesizer`) | **Implemented · Tested offline** | `api::SpeechSynthesizer`. Offline tests in `edge_tts_api_tests`. |
 | Streaming audio chunks (`synthesize`) | **Implemented · Tested offline** | |
-| Save to file (`save`) | **Implemented · Tested offline** | MP3 + SRT written atomically. |
+| Save to file (`save`) | **Implemented · Tested offline** | MP3 written first, then SRT (if requested). If SRT write fails after MP3 succeeds, the MP3 file remains on disk and an error is returned. No atomicity guarantee. |
 | Subtitle generation (SRT) | **Implemented · Tested offline** | `SubMaker` + `SrtComposer`. |
 | Voice list (`VoiceService`) | **Implemented · Tested offline** | Fetches and parses Edge TTS voice list; client-side filtering. |
 | Voice list filtering | **Implemented · Tested offline** | `VoiceFilter` supports locale, gender, short_name. |
@@ -37,8 +37,8 @@ what "ready to release" means for each capability area.
 | DRM 403 retry | **Implemented · Tested offline** | One retry with clock-skew correction. |
 | Multi-chunk long text | **Implemented · Tested offline** | `serialization::TextChunker` normalizes, XML-escapes, and splits at the 4096-byte escaped-length limit. |
 | `edge-tts` CLI | **Implemented · Tested offline** | Matches Python `edge-tts` option surface (see `docs/CLI_COMPATIBILITY.md`). |
-| `edge-playback` CLI | **Implemented · Tested offline** | Temp-file lifecycle, proxy forwarding, error on unsupported options. |
-| Proxy support | **Partial** | `SynthesisOptions::proxy` is parsed and validated at the CLI/API layer; the ixwebsocket backend has no client-side proxy API and explicitly returns `ErrorCode::unsupported` if a proxy is set. Proxy is not functional end-to-end. |
+| `edge-playback` CLI | **Implemented · Tested offline** | Temp-file lifecycle, proxy is rejected early (before transport), error on unsupported options. |
+| Proxy support | **Partial** | `SynthesisOptions::proxy` is parsed and validated at the CLI/API layer and rejected immediately (before any transport call) with `ErrorCode::unsupported`. The ixwebsocket backend has no client-side proxy API. Proxy is not functional end-to-end. |
 | ffmpeg integration | **Implemented · Tested offline** | `FfmpegAudioConverter` via injected `IProcessRunner`; real invocations not run in CI. |
 | Windows build | **Partial** | CMake guards POSIX `ProcessRunner`; `FakeProcessRunner` and protocol code compile. Full Windows CI not yet in place. |
 | Live network tests | **Tested live** | Gated behind `EDGE_TTS_ENABLE_NETWORK_TESTS=ON`; not run in default CI. |
@@ -97,7 +97,7 @@ Before tagging a release:
 ## Known limitations
 
 - **Windows:** `ProcessRunner` (POSIX fork/exec) is excluded. `edge-playback` cannot spawn `ffplay` on Windows without a Win32 `CreateProcess` implementation. Everything else compiles.
-- **Proxy:** Recognized and validated at parse time, propagated into `SynthesisOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
-- **Subtitle timing approximation:** Subtitle boundary offsets for multi-chunk text are computed assuming a constant 48 kbps MP3 bitrate (`bytes × 8 × 10_000_000 / 48_000` ticks).  If the service sends audio at a different bitrate the cue timestamps for chunks after the first will drift.  Single-chunk text (< 4096 bytes escaped) is unaffected.
+- **Proxy:** Recognized and validated at parse time, propagated into `SynthesisOptions::proxy`, then rejected at the API layer before any transport call (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
+- **Subtitle timing model:** Subtitle boundary offsets for multi-chunk text are normalized using boundary metadata only (`max(offset_ticks + duration_ticks)` per chunk).  No bitrate assumptions are made.  If a chunk has no boundary events it contributes zero to the offset compensation for subsequent chunks.
 - **Rate limiting:** No client-side rate limiter; matches Python behavior (no limiter there either).
 - **Static-only builds:** Shared library builds (`BUILD_SHARED_LIBS=ON`) are explicitly unsupported. All `edge_tts_*` modules are always compiled as static archives. No symbol-visibility (`EDGE_TTS_API`) infrastructure exists, and Windows DLL export/import has not been tested. `BUILD_SHARED_LIBS=ON` is silently ignored — static archives are produced regardless.

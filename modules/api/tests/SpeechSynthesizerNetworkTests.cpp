@@ -151,25 +151,21 @@ TEST(CommunicateNetwork, SynthesizeWithWordBoundaryReturnsBoundaryChunks) {
 }
 
 // ---------------------------------------------------------------------------
-// Proxy option: bogus proxy → connection fails, but not with an invalid_state
-// error (proves the proxy URL is forwarded and not silently discarded)
+// Proxy option: rejected at the API layer before any network call
 // ---------------------------------------------------------------------------
 
-TEST(CommunicateNetwork, BogusProxyYieldsNetworkError) {
+TEST(CommunicateNetwork, ProxyYieldsUnsupported) {
     if (!network_enabled()) return;
 
     SynthesisOptions opts;
-    opts.proxy = "http://127.0.0.1:1";  // nothing listening on port 1
+    opts.proxy = "http://127.0.0.1:1";
     SpeechSynthesizer c("Hello.", TtsConfig::defaults(), opts);
     auto result = c.synthesize();
 
-    // A real proxy attempt will fail at the transport level.
-    // We just verify it is NOT an invalid_state or protocol_error (which would
-    // indicate the proxy option was ignored and the call hit a different failure).
-    if (!result.has_value()) {
-        EXPECT_NE(result.error().code(), edge_tts::common::ErrorCode::invalid_state);
-    }
-    // If somehow the local port is open and traffic passes, accept the result.
+    // Proxy is rejected at the API layer — must return unsupported without
+    // making any network call.
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,10 +195,10 @@ TEST(CommunicateNetwork, ProductionConstructorCanSynthesizeWithRealStack) {
     EXPECT_TRUE(has_audio);
 }
 
-TEST(CommunicateNetwork, ProductionConstructorWithOptionsForwardsProxy) {
-    // Proves the 3-arg production constructor forwards SynthesisOptions to
-    // the transport layer.  A bogus proxy must cause a transport-level failure,
-    // not an invalid_state or stub error.
+TEST(CommunicateNetwork, ProductionConstructorWithProxyRejectsEarly) {
+    // Proves the 3-arg production constructor wires SynthesisOptions into
+    // SpeechSynthesizer and that proxy is rejected at the API layer before
+    // any transport call is made.
     if (!network_enabled()) return;
 
     SynthesisOptions opts;
@@ -210,14 +206,6 @@ TEST(CommunicateNetwork, ProductionConstructorWithOptionsForwardsProxy) {
     SpeechSynthesizer c("Hi.", TtsConfig::defaults(), opts);
     auto result = c.synthesize();
 
-    // The call must fail with a transport error, proving the proxy was forwarded.
-    // If it somehow succeeds (port 1 was open), that is also acceptable evidence.
-    if (!result.has_value()) {
-        const auto code = result.error().code();
-        const bool is_transport_code =
-            code == edge_tts::common::ErrorCode::network_error ||
-            code == edge_tts::common::ErrorCode::timeout       ||
-            code == edge_tts::common::ErrorCode::unsupported;
-        EXPECT_TRUE(is_transport_code);
-    }
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
 }

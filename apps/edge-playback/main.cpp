@@ -73,7 +73,8 @@ int main(int argc, char* argv[]) {
     };
 
     // Wire production dependencies — same pattern as edge-tts/main.cpp.
-    // The factory forwards SynthesisOptions (proxy, timeouts) from CLI args.
+    // The factory passes SynthesisOptions (timeouts) from CLI args.
+    // Proxy is rejected early by SpeechSynthesizer before any transport call.
     cli::PlaybackCommandDispatcher dispatcher{
         [](std::string text, core::TtsConfig cfg, api::SynthesisOptions opts) {
             return api::SpeechSynthesizer{std::move(text), std::move(cfg), std::move(opts)};

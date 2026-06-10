@@ -37,11 +37,13 @@ SynthesisSession::SynthesisSession(
 // Appends results to out_chunks.  Does NOT close the websocket.
 //
 // offset_compensation: ticks to add to each BoundaryChunk.offset_ticks.
-//   Value is computed from cumulative audio bytes of all previous chunks.
+//   Value equals the cumulative subtitle end-tick from all previous chunks.
 //   For the first chunk this is 0.
 //
-// out_audio_bytes: populated with the total audio bytes received this chunk.
-//   Caller uses this to update the cumulative count for the next compensation.
+// out_boundary_end_ticks: populated with the maximum raw (pre-compensation)
+//   (offset_ticks + duration_ticks) seen across all boundary events this chunk.
+//   Caller accumulates this to compute the next chunk's offset_compensation.
+//   0 if no boundary events were received.
 // -------------------------------------------------------------------------
 static common::Result<void> run_one_chunk(
     IWebSocketClient&                websocket,
@@ -50,11 +52,11 @@ static common::Result<void> run_one_chunk(
     const std::string&               text,
     const ConnectionMetadata&        metadata,
     std::int64_t                     offset_compensation,
-    std::int64_t&                    out_audio_bytes,
+    std::int64_t&                    out_boundary_end_ticks,
     std::vector<core::TtsChunk>&     out_chunks,
     const common::CancellationToken& cancel_token)
 {
-    out_audio_bytes = 0;
+    out_boundary_end_ticks = 0;
 
     // --- Send speech.config frame -------------------------------------------
     auto speech_cfg = protocol.build_speech_config_frame(tts_config, metadata);
@@ -96,16 +98,16 @@ static common::Result<void> run_one_chunk(
             switch (msg.kind) {
             case IncomingMessageKind::audio: {
                 audio_received = true;
-                // Count bytes before moving the chunk.
-                const auto& ac = std::get<core::AudioChunk>(*msg.chunk);
-                out_audio_bytes += static_cast<std::int64_t>(ac.data.size());
                 out_chunks.push_back(std::move(*msg.chunk));
                 break;
             }
             case IncomingMessageKind::boundary: {
-                // Apply offset compensation before yielding.
-                //   current_offset = meta_obj["Data"]["Offset"] + offset_compensation
                 auto bc = std::get<core::BoundaryChunk>(std::move(*msg.chunk));
+                // Track the raw (pre-compensation) end tick so the caller can
+                // compute the next chunk's offset_compensation from metadata alone.
+                const std::int64_t raw_end = bc.offset_ticks + bc.duration_ticks;
+                if (raw_end > out_boundary_end_ticks)
+                    out_boundary_end_ticks = raw_end;
                 bc.offset_ticks += offset_compensation;
                 out_chunks.push_back(std::move(bc));
                 break;
@@ -139,8 +141,12 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
 {
     std::vector<core::TtsChunk> all_chunks;
 
-    // Cumulative audio bytes across all completed chunks.
-    std::int64_t cumulative_audio_bytes = 0;
+    // Cumulative subtitle end-tick from all completed chunks.
+    // For each chunk this equals the maximum (offset_ticks + duration_ticks)
+    // across all boundary events received, which is used as the offset
+    // compensation for the next chunk so that boundary offsets are absolute
+    // across the whole synthesis rather than relative to each chunk's start.
+    std::int64_t cumulative_subtitle_ticks = 0;
 
     for (const auto& text : text_chunks) {
         // Check for cancellation before starting each chunk.
@@ -149,28 +155,10 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
                 common::Error{common::ErrorCode::cancelled,
                               "synthesis was cancelled"});
 
-        // Compute offset compensation for boundaries in this chunk.
-        //
-        // The Edge TTS service reports each chunk's boundary offsets relative
-        // to the start of that chunk, not the start of the full audio.  To
-        // produce absolute timings across all chunks, we add the inferred
-        // duration of all previously-received chunks.
-        //
-        // Duration is inferred from cumulative audio bytes using the formula
-        // from the Python reference (communicate.py __compensate_offset):
-        //   ticks = bytes * 8 * 10_000_000 (ticks/s) / 48_000 (bits/s)
-        //
-        // ASSUMPTION: MP3 audio at a constant 48 kbps.  This is what the Edge
-        // TTS service produces for its default output format.  If the output
-        // format changes (different bitrate or codec), this estimate drifts and
-        // multi-chunk subtitle timing will be wrong.  The service does not send
-        // an authoritative audio-duration message, so byte-count inference is
-        // the only available approximation.
-        //
-        // For single-chunk synthesis (cumulative_audio_bytes == 0 here),
-        // offset_compensation is always 0 and this assumption has no effect.
-        const std::int64_t offset_compensation =
-            cumulative_audio_bytes * 8LL * 10'000'000LL / 48'000LL;
+        // Offset compensation for boundaries in this chunk: the total subtitle
+        // duration of all previously-completed chunks, derived purely from the
+        // boundary metadata reported by the service (offset_ticks + duration_ticks).
+        const std::int64_t offset_compensation = cumulative_subtitle_ticks;
 
         // Retry loop — reference: communicate.py stream() try/except around
         // __stream(), retrying once on ClientResponseError(status=403).
@@ -216,10 +204,10 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             }
 
             // --- Run chunk (send + receive); always close after --------------
-            std::int64_t chunk_audio_bytes = 0;
+            std::int64_t chunk_boundary_end = 0;
             auto chunk_result = run_one_chunk(
                 websocket_, protocol_, tts_config, text, metadata,
-                offset_compensation, chunk_audio_bytes, all_chunks,
+                offset_compensation, chunk_boundary_end, all_chunks,
                 cancel_token_);
 
             (void)websocket_.close();
@@ -228,9 +216,8 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
                 return common::Result<std::vector<core::TtsChunk>>::fail(
                     chunk_result.error());
 
-            // Update cumulative bytes after a successful chunk.
-            // cumulative_audio_bytes before computing the next compensation.
-            cumulative_audio_bytes += chunk_audio_bytes;
+            // Accumulate the metadata-derived duration of this chunk.
+            cumulative_subtitle_ticks += chunk_boundary_end;
             break;  // chunk done, move to next
         }
     }

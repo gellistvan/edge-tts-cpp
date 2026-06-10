@@ -84,7 +84,7 @@ REQUIRED_IN_TESTING_MD = [
 ]
 
 # ---------------------------------------------------------------------------
-# RELEASE_READINESS.md must document the subtitle timing known limitation
+# RELEASE_READINESS.md must document the subtitle timing model
 # ---------------------------------------------------------------------------
 REQUIRED_IN_RELEASE_READINESS = [
     "subtitle timing",

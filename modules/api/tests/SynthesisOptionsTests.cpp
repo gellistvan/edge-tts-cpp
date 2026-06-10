@@ -118,30 +118,24 @@ TEST(SynthesisOptions, SynthesizerInjectionConstructorHasDefaultOptions) {
 //
 // The 4-arg constructor (text, config, options, synthesizer) is the injection
 // seam that lets tests verify options flow into the synthesizer path.
-// In production, the real SynthesisSession reads SpeechSynthesizer::options_ and
-// builds WebSocketClientOptions from it; this test simulates that mapping.
+// Proxy is rejected at the API layer before the synthesizer function runs,
+// so these tests verify that (a) non-proxy options are forwarded and (b)
+// proxy presence blocks synthesis before the seam is entered.
 
-TEST(SynthesisOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
+TEST(SynthesisOptions, TimeoutOptionsPassedIntoWebSocketOptionsViaSeam) {
     SynthesisOptions opts;
-    opts.proxy              = "http://proxy.example.com:8080";
     opts.ws_connect_timeout = std::chrono::milliseconds{3'000};
     opts.ws_read_timeout    = std::chrono::milliseconds{20'000};
 
-    // Capture what the synthesizer sees when it builds WebSocketClientOptions.
     WebSocketClientOptions captured;
-    bool synthesizer_ran = false;
 
-    
-    
-    SynthesizerFn syn = [&opts, &captured, &synthesizer_ran](
+    SynthesizerFn syn = [&opts, &captured](
                             const TtsConfig&,
                             std::span<const std::string>)
         -> edge_tts::common::Result<std::vector<TtsChunk>>
     {
-        captured.proxy           = opts.proxy;
         captured.connect_timeout = opts.ws_connect_timeout;
         captured.read_timeout    = opts.ws_read_timeout;
-        synthesizer_ran = true;
         return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
     };
 
@@ -149,11 +143,31 @@ TEST(SynthesisOptions, ProxyPassedIntoWebSocketOptionsViaSeam) {
     auto result = c.synthesize();
 
     EXPECT_TRUE(result.has_value());
-    EXPECT_TRUE(synthesizer_ran);
-
-    EXPECT_EQ(captured.proxy,           opts.proxy);
     EXPECT_EQ(captured.connect_timeout, opts.ws_connect_timeout);
     EXPECT_EQ(captured.read_timeout,    opts.ws_read_timeout);
+}
+
+TEST(SynthesisOptions, ProxyInOptionsBlocksSynthesisViaSeam) {
+    // Proxy is rejected at the API layer before the synthesizer fn is called.
+    SynthesisOptions opts;
+    opts.proxy = "http://proxy.example.com:8080";
+
+    bool synthesizer_ran = false;
+    SynthesizerFn syn = [&synthesizer_ran](
+                            const TtsConfig&,
+                            std::span<const std::string>)
+        -> edge_tts::common::Result<std::vector<TtsChunk>>
+    {
+        synthesizer_ran = true;
+        return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
+    };
+
+    SpeechSynthesizer c("hello world", valid_config(), opts, std::move(syn));
+    auto result = c.synthesize();
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::unsupported);
+    EXPECT_FALSE(synthesizer_ran);
 }
 
 TEST(SynthesisOptions, NoProxyLeavesWebSocketOptionsProxyAbsent) {

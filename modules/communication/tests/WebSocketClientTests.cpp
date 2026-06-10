@@ -117,7 +117,11 @@ TEST(WebSocketClient, IsAIWebSocketClient) {
 }
 
 // ---------------------------------------------------------------------------
-// Proxy: ixwebsocket backend must reject it, not silently ignore it
+// Proxy: transport-level guard (defense-in-depth)
+//
+// Primary proxy rejection is at the API layer (SpeechSynthesizer::run_pipeline).
+// These tests verify the ixwebsocket backend still rejects proxy at connect(),
+// ensuring no silent pass-through for callers that use WebSocketClient directly.
 // ---------------------------------------------------------------------------
 
 #ifdef EDGE_TTS_HAVE_IXWEBSOCKET

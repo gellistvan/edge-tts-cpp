@@ -79,26 +79,6 @@ using edge_tts::test::make_audio_frame;
 using edge_tts::test::make_turn_end;
 using edge_tts::test::make_word_boundary;
 
-// Binary audio frame from a byte-count (for size-controlled offset tests).
-static WebSocketMessage make_audio_frame_bytes(std::size_t n_bytes) {
-    const std::string hdr =
-        "X-RequestId:abc\r\nPath:audio\r\nContent-Type:audio/mpeg";
-    const auto hl = static_cast<uint16_t>(2 + hdr.size());
-    std::vector<std::byte> frame;
-    frame.reserve(2 + hdr.size() + 2 + n_bytes);
-    frame.push_back(static_cast<std::byte>(hl >> 8));
-    frame.push_back(static_cast<std::byte>(hl & 0xff));
-    for (char c : hdr)  frame.push_back(static_cast<std::byte>(c));
-    frame.push_back(static_cast<std::byte>('\r'));
-    frame.push_back(static_cast<std::byte>('\n'));
-    for (std::size_t i = 0; i < n_bytes; ++i)
-        frame.push_back(std::byte{0xAB});
-    WebSocketMessage m;
-    m.type   = WebSocketMessage::Type::binary;
-    m.binary = std::move(frame);
-    return m;
-}
-
 // A text frame with an unknown Path value — parse_incoming must reject it.
 static WebSocketMessage make_unknown_path_frame() {
     WebSocketMessage m;
@@ -403,28 +383,30 @@ TEST(OfflineIntegration, LongTextConnectsWebSocketTwice) {
 // ---------------------------------------------------------------------------
 // 6. Multi-chunk offset compensation at the SpeechSynthesizer API level
 //
-// Reference: communicate.py __compensate_offset():
-//   offset_compensation = cumulative_audio_bytes * 8 * 10_000_000 // 48_000
+// The service reports boundary offsets relative to each chunk's audio start.
+// SynthesisSession converts them to absolute offsets by accumulating the
+// max(offset_ticks + duration_ticks) from each completed chunk's boundaries.
+// Audio byte counts play no role.
 //
-// Using N = 6000 audio bytes in chunk 1:
-//   compensation = 6000 * 8 * 10_000_000 / 48_000 = 10_000_000 ticks (1 s)
-//
-// A boundary at raw offset 0 in chunk 2 must arrive at the SpeechSynthesizer API
-// with offset_ticks == 10_000_000.
+// Chunk 1: boundary at offset=5_000_000, duration=5_000_000 → end=10_000_000
+// Chunk 2: boundary at raw offset 0 → global offset = 0 + 10_000_000
 // ---------------------------------------------------------------------------
 
 TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSynthesize) {
-    constexpr std::size_t N = 6000;
-    constexpr std::int64_t expected_comp =
-        static_cast<std::int64_t>(N) * 8LL * 10'000'000LL / 48'000LL;  // = 10_000_000
+    // Chunk 1 has a boundary at 500ms (5_000_000 ticks), duration 500ms
+    // → end = 10_000_000 ticks = compensation for chunk 2.
+    constexpr std::int64_t chunk1_offset   = 5'000'000;
+    constexpr std::int64_t chunk1_duration = 5'000'000;
+    constexpr std::int64_t expected_comp   = chunk1_offset + chunk1_duration;  // 10_000_000
 
     TestWire w;
     FakeWebSocketClient ws;
-    // Chunk 1: 6000 audio bytes + turn.end (no boundary).
-    ws.push_incoming(make_audio_frame_bytes(N));
+    // Chunk 1: boundary that drives compensation + audio + turn.end
+    ws.push_incoming(make_word_boundary(chunk1_offset, chunk1_duration, "first"));
+    ws.push_incoming(make_audio_frame("AUDIO1"));
     ws.push_incoming(make_turn_end());
-    // Chunk 2: audio + boundary at raw offset 0 + turn.end.
-    ws.push_incoming(make_audio_frame("X"));
+    // Chunk 2: audio + boundary at raw offset 0 + turn.end
+    ws.push_incoming(make_audio_frame("AUDIO2"));
     ws.push_incoming(make_word_boundary(0, 500'000, "second"));
     ws.push_incoming(make_turn_end());
 
@@ -436,27 +418,33 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSynthesize) {
     auto result = c.synthesize();
     ASSERT_TRUE(result.has_value());
 
-    // Locate the BoundaryChunk that came from chunk 2 (the only one).
+    // The second boundary (from chunk 2) must be shifted by expected_comp.
     std::int64_t found_offset = -1;
+    int boundary_count = 0;
     for (const auto& chunk : *result) {
         if (std::holds_alternative<BoundaryChunk>(chunk)) {
-            found_offset = std::get<BoundaryChunk>(chunk).offset_ticks;
-            break;
+            ++boundary_count;
+            if (boundary_count == 2)
+                found_offset = std::get<BoundaryChunk>(chunk).offset_ticks;
         }
     }
+    EXPECT_EQ(boundary_count, 2);
     EXPECT_EQ(found_offset, expected_comp);
 }
 
 TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSrtTimestamp) {
-    // Same scenario but through save()/SRT generation.
-    // 10_000_000 ticks = 1 second → SRT timestamp contains "00:00:01".
-    constexpr std::size_t N = 6000;
+    // Same scenario through save()/SRT generation.
+    // Chunk 2 boundary gets compensation = 10_000_000 ticks = 1.0 s.
+    // SRT timestamp must contain "00:00:01".
+    constexpr std::int64_t chunk1_offset   = 5'000'000;
+    constexpr std::int64_t chunk1_duration = 5'000'000;
 
     TestWire w;
     FakeWebSocketClient ws;
-    ws.push_incoming(make_audio_frame_bytes(N));
+    ws.push_incoming(make_word_boundary(chunk1_offset, chunk1_duration, "first"));
+    ws.push_incoming(make_audio_frame("AUDIO1"));
     ws.push_incoming(make_turn_end());
-    ws.push_incoming(make_audio_frame("X"));
+    ws.push_incoming(make_audio_frame("AUDIO2"));
     ws.push_incoming(make_word_boundary(0, 500'000, "second"));
     ws.push_incoming(make_turn_end());
 
@@ -471,8 +459,42 @@ TEST(OfflineIntegration, MultiChunkOffsetCompensatedInSrtTimestamp) {
     ASSERT_TRUE(c.save(mp3.path, srt.path).has_value());
 
     const std::string content = read_file(srt.path);
-    // The compensated boundary starts at 10_000_000 ticks = 1.0 s.
+    // Compensated boundary starts at 10_000_000 ticks = 1.0 s.
     EXPECT_NE(content.find("00:00:01"), std::string::npos);
+}
+
+TEST(OfflineIntegration, MultiChunkAudioSizeDoesNotAffectSubtitleTimestamp) {
+    // Regression: subtitle timestamps must be identical regardless of audio
+    // byte count.  Run two sessions with different audio sizes but identical
+    // boundary metadata and assert they produce the same SRT output.
+    constexpr std::int64_t chunk1_offset   = 5'000'000;
+    constexpr std::int64_t chunk1_duration = 5'000'000;
+
+    auto run = [&](const std::string& audio_payload) -> std::string {
+        TestWire w;
+        FakeWebSocketClient ws;
+        ws.push_incoming(make_word_boundary(chunk1_offset, chunk1_duration, "first"));
+        ws.push_incoming(make_audio_frame(audio_payload));
+        ws.push_incoming(make_turn_end());
+        ws.push_incoming(make_audio_frame("X"));
+        ws.push_incoming(make_word_boundary(0, 500'000, "second"));
+        ws.push_incoming(make_turn_end());
+
+        SynthesisSession session{ws, w.protocol, w.svc, w.tokens, w.meta, w.clock};
+        TempFile mp3{"audiosize_mp3", ".mp3"};
+        TempFile srt{"audiosize_srt", ".srt"};
+        std::string long_text(5000, 'x');
+        SpeechSynthesizer c(long_text, TtsConfig::defaults(), SynthesisOptions{},
+                      make_seam(session));
+        (void)c.save(mp3.path, srt.path);
+        return read_file(srt.path);
+    };
+
+    const std::string srt_small = run(std::string(10,   'A'));
+    const std::string srt_large = run(std::string(6000, 'A'));
+
+    EXPECT_EQ(srt_small, srt_large);
+    EXPECT_NE(srt_small.find("00:00:01"), std::string::npos);
 }
 
 TEST(OfflineIntegration, FirstChunkBoundaryOffsetUnchanged) {

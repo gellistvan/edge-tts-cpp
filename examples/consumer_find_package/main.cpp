@@ -21,9 +21,9 @@ int main() {
     cfg.pitch  = "+0Hz";  // pitch delta         (e.g. "+5Hz")
 
     // ── Transport options ─────────────────────────────────────────────────
-    // NOTE: proxy is not supported by the ixwebsocket backend.
-    // Setting opts.proxy will cause save()/stream_sync() to return
-    // ErrorCode::unsupported.
+    // NOTE: proxy is not supported — setting opts.proxy will cause
+    // save() or synthesize() to return ErrorCode::unsupported immediately,
+    // before any network call is made.
     edge_tts::api::SynthesisOptions opts;
     // opts.connect_timeout = std::chrono::seconds{15};
     // opts.receive_timeout = std::chrono::seconds{60};

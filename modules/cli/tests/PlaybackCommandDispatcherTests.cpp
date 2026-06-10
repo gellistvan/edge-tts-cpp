@@ -491,10 +491,10 @@ TEST(PlaybackCommandDispatcher, PlaybackReceivesCorrectTempPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Dispatcher: proxy forwarded to SynthesisOptions
+// Dispatcher: proxy option is set in SynthesisOptions
 // ---------------------------------------------------------------------------
 
-TEST(PlaybackCommandDispatcher, ProxyReachesCommunicateOptions) {
+TEST(PlaybackCommandDispatcher, ProxyOptionIsSetInSynthesisOptions) {
     FakeAudioConverter conv;
     KnownTempProvider  tp{"proxy_test"};
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("data")}};
@@ -509,9 +509,8 @@ TEST(PlaybackCommandDispatcher, ProxyReachesCommunicateOptions) {
 
     PlaybackParseResult r = make_play_result("hello");
     r.arguments.proxy = "http://proxy.example.com:8080";
-    int rc = d.dispatch(r);
+    d.dispatch(r);
 
-    EXPECT_EQ(rc, 0);
     ASSERT_TRUE(cf.last_options.proxy.has_value());
     EXPECT_EQ(*cf.last_options.proxy, "http://proxy.example.com:8080");
 }
@@ -1119,6 +1118,10 @@ TEST(PlaybackCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
 // ---------------------------------------------------------------------------
 
 TEST(PlaybackCommandDispatcher, ProxyCredentialNotExposedInStderr) {
+    // When a proxy URL with embedded credentials is provided, credentials must
+    // not appear in stderr.  Proxy is rejected at the API layer before the
+    // synthesizer function runs, so only a "proxy is not supported" message
+    // appears — no URL, no credentials.
     FakeAudioConverter conv;
     KnownTempProvider  tp{"pb_proxy_redact"};
     std::ostringstream out, err;
@@ -1128,11 +1131,7 @@ TEST(PlaybackCommandDispatcher, ProxyCredentialNotExposedInStderr) {
         return SpeechSynthesizer(std::move(text), std::move(cfg), std::move(opts),
             [](const TtsConfig&, std::span<const std::string>)
                 -> edge_tts::common::Result<std::vector<TtsChunk>> {
-                return edge_tts::common::Result<std::vector<TtsChunk>>::fail(
-                    edge_tts::common::Error{
-                        edge_tts::common::ErrorCode::unsupported,
-                        "proxy not supported by backend",
-                        "http://user:topsecret@proxy.internal:3128"});
+                return edge_tts::common::Result<std::vector<TtsChunk>>::ok({});
             });
     };
 
@@ -1144,5 +1143,5 @@ TEST(PlaybackCommandDispatcher, ProxyCredentialNotExposedInStderr) {
     d.dispatch(r);
 
     EXPECT_EQ(err.str().find("topsecret"), std::string::npos);
-    EXPECT_NE(err.str().find("proxy.internal"), std::string::npos);
+    EXPECT_NE(err.str().find("proxy"), std::string::npos);
 }

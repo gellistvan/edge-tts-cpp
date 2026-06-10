@@ -12,6 +12,11 @@ namespace edge_tts::api {
 
 common::Result<std::vector<core::Voice>> list_voices(SynthesisOptions options)
 {
+    if (options.proxy.has_value())
+        return common::Result<std::vector<core::Voice>>::fail(
+            common::Error{common::ErrorCode::unsupported,
+                          "proxy is not supported"});
+
     common::SystemClock                    clock;
     common::IdGenerator                    ids;
     const communication::EdgeServiceConfig svc_config =
@@ -19,7 +24,6 @@ common::Result<std::vector<core::Voice>> list_voices(SynthesisOptions options)
     communication::EdgeTokenProvider       tokens{svc_config, clock};
 
     communication::HttpClientOptions http_opts;
-    http_opts.proxy   = options.proxy;
     http_opts.timeout = options.http_timeout;
     communication::HttpClient http{std::move(http_opts)};
 

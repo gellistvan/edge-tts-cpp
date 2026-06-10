@@ -214,7 +214,7 @@ For the complete error-code reference — including context field contracts and 
 
 ### Known limitations
 
-**Subtitle timing for long text:** Subtitle boundary offsets are computed assuming constant 48 kbps MP3 output (`bytes × 8 × 10_000_000 / 48_000` ticks, matching the Python reference).  For multi-chunk input (text > 4096 bytes escaped) the timestamps of chunks after the first will drift if the service delivers audio at a different bitrate.  Single-chunk text is not affected.
+**Subtitle timing model:** Subtitle boundary offsets for multi-chunk text are normalized using metadata only: `max(offset_ticks + duration_ticks)` across all boundary events in each completed chunk is accumulated as the offset compensation for subsequent chunks.  No fixed bitrate is assumed.  If a chunk produces no boundary events it contributes zero to the compensation.
 
 **Proxy:** `SynthesisOptions::proxy` is validated at the API layer but actively rejected at runtime (`ErrorCode::unsupported`).  The ixwebsocket backend has no CONNECT-tunnel proxy API.  See the [Proxy support](#proxy-support-unsupported) section below.
 
@@ -307,9 +307,9 @@ transitive link dependencies automatically.
 
 The ixwebsocket backend has no client-side CONNECT-tunnel proxy API.
 
-- Setting `SynthesisOptions::proxy` is **validated** at the API layer.
-- Any call to `save()` or `synthesize()` with a proxy set **returns
-  `ErrorCode::unsupported` immediately** — no network connection is attempted.
+- Setting `SynthesisOptions::proxy` is accepted at parse time and validated at the CLI/API layer.
+- Any call to `save()`, `synthesize()`, or `list_voices()` with a proxy set **returns
+  `ErrorCode::unsupported` immediately**, before any transport call is made.
 - The CLI propagates this as exit code 1.
 
 If proxy support is required, either route traffic through a transparent proxy
