@@ -290,3 +290,77 @@ TEST(SubMaker, EmptyCuesIsEmpty) {
     SubMaker sm;
     EXPECT_TRUE(sm.cues().empty());
 }
+
+// ---------------------------------------------------------------------------
+// Negative / invalid tick values
+// ---------------------------------------------------------------------------
+
+TEST(SubMaker, NegativeOffsetTicksRejected) {
+    // SubtitleTime::from_edge_ticks rejects negative start ticks.
+    SubMaker sm;
+    const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
+                                      -1, 500 * TICKS_PER_MS, "Bad"));
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
+}
+
+TEST(SubMaker, LargeNegativeOffsetTicksRejected) {
+    SubMaker sm;
+    const auto r = sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
+                                      -1'000'000'000LL, TICKS_PER_SECOND, "Bad"));
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
+}
+
+TEST(SubMaker, NegativeDurationMakingEndTicksNegativeRejected) {
+    // offset=100 ticks + duration=-200 ticks → end=-100 ticks (invalid).
+    SubMaker sm;
+    const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
+                                      100, -200, "Bad"));
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
+}
+
+TEST(SubMaker, ValidOffsetWithNegativeDurationNotMakingEndNegativeCreatesCue) {
+    // offset=1000ms, duration=-500ms → end=500ms ≥ 0 → cue is created
+    // (though SrtComposer will skip it because start > end).
+    SubMaker sm;
+    const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
+                                      1000 * TICKS_PER_MS, -500 * TICKS_PER_MS,
+                                      "Inverted"));
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(sm.cues().size(), 1u);
+    // start=1000ms, end=500ms → SrtComposer skips (start >= end).
+    const auto srt = sm.to_srt();
+    EXPECT_TRUE(srt.has_value());
+    EXPECT_TRUE(srt->empty());
+}
+
+// ---------------------------------------------------------------------------
+// Multiple boundaries at varied offsets — arithmetic correctness
+// ---------------------------------------------------------------------------
+
+TEST(SubMaker, VariedOffsetsDurationsArithmetic) {
+    // Three cues at different positions; verify each start/end is computed from
+    // its own metadata without interference from the others.
+    SubMaker sm;
+    //  Cue A: 250ms .. 750ms
+    (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
+                             250 * TICKS_PER_MS, 500 * TICKS_PER_MS, "A"));
+    //  Cue B: 1000ms .. 2500ms
+    (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
+                             1000 * TICKS_PER_MS, 1500 * TICKS_PER_MS, "B"));
+    //  Cue C: 3750ms .. 4000ms
+    (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
+                             3750 * TICKS_PER_MS, 250 * TICKS_PER_MS, "C"));
+
+    const auto cues = sm.cues();
+    EXPECT_EQ(cues.size(), 3u);
+
+    EXPECT_EQ(cues[0].start.milliseconds(),  250);
+    EXPECT_EQ(cues[0].end.milliseconds(),    750);
+    EXPECT_EQ(cues[1].start.milliseconds(), 1000);
+    EXPECT_EQ(cues[1].end.milliseconds(),   2500);
+    EXPECT_EQ(cues[2].start.milliseconds(), 3750);
+    EXPECT_EQ(cues[2].end.milliseconds(),   4000);
+}

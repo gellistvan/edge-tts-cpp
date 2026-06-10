@@ -158,15 +158,44 @@ TEST(ProcessRunner, ArgumentsWithSpacesPassedVerbatim) {
     EXPECT_NE(r->stdout_text.find("hello world"), std::string::npos);
 }
 
-TEST(ProcessRunner, NonExistentExecutableReturnsError) {
-    // execvp should fail if the executable does not exist.
+TEST(ProcessRunner, NonExistentExecutableReturnsExitCode127) {
+    // execvp fails when the executable does not exist; the child exits with 127
+    // (the POSIX exec-not-found convention used in ProcessRunner).
     ProcessRunner runner;
     auto r = runner.run(ProcessCommand{"/no/such/binary/does/not/exist", {}});
-    // Either a launch error (fail) or exit code 127 (exec-not-found convention).
-    if (r.has_value())
-        EXPECT_EQ(r->exit_code, 127);
-    else
-        EXPECT_EQ(r.error().code(), ErrorCode::external_process_failed);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->exit_code, 127);
+}
+
+TEST(ProcessRunner, SpecificNonZeroExitCodeIsPreserved) {
+    // A process that exits with a known non-zero code must report that exact code.
+    ProcessRunner runner;
+    auto r = runner.run(ProcessCommand{"/bin/sh", {"-c", "exit 42"}});
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->exit_code, 42);
+}
+
+TEST(ProcessRunner, LargeStdoutDoesNotDeadlock) {
+    // Output larger than a typical pipe buffer (~64 KB) exercises concurrent
+    // draining; if stderr were not drained on a background thread this would
+    // deadlock when stderr pipe also fills.
+    ProcessRunner runner;
+    auto r = runner.run(
+        ProcessCommand{"/bin/sh", {"-c", "head -c 131072 /dev/zero"}});
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->exit_code, 0);
+    EXPECT_TRUE(r->stdout_text.size() >= 131072u);
+}
+
+TEST(ProcessRunner, LargeStderrDoesNotDeadlock) {
+    // Mirrors LargeStdout but routes all output to stderr, verifying the
+    // background thread drains stderr without blocking the main thread.
+    ProcessRunner runner;
+    auto r = runner.run(
+        ProcessCommand{"/bin/sh", {"-c", "head -c 131072 /dev/zero >&2"}});
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r->exit_code, 0);
+    EXPECT_TRUE(r->stderr_text.size() >= 131072u);
 }
 
 // ---------------------------------------------------------------------------

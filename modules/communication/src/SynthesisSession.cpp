@@ -136,8 +136,25 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
 
     for (const auto& text : text_chunks) {
         // Compute offset compensation for boundaries in this chunk.
-        //   offset_compensation = cumulative_audio_bytes * 8 * TICKS_PER_SECOND
-        //                         // MP3_BITRATE_BPS
+        //
+        // The Edge TTS service reports each chunk's boundary offsets relative
+        // to the start of that chunk, not the start of the full audio.  To
+        // produce absolute timings across all chunks, we add the inferred
+        // duration of all previously-received chunks.
+        //
+        // Duration is inferred from cumulative audio bytes using the formula
+        // from the Python reference (communicate.py __compensate_offset):
+        //   ticks = bytes * 8 * 10_000_000 (ticks/s) / 48_000 (bits/s)
+        //
+        // ASSUMPTION: MP3 audio at a constant 48 kbps.  This is what the Edge
+        // TTS service produces for its default output format.  If the output
+        // format changes (different bitrate or codec), this estimate drifts and
+        // multi-chunk subtitle timing will be wrong.  The service does not send
+        // an authoritative audio-duration message, so byte-count inference is
+        // the only available approximation.
+        //
+        // For single-chunk synthesis (cumulative_audio_bytes == 0 here),
+        // offset_compensation is always 0 and this assumption has no effect.
         const std::int64_t offset_compensation =
             cumulative_audio_bytes * 8LL * 10'000'000LL / 48'000LL;
 

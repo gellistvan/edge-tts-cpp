@@ -13,6 +13,41 @@ reference:
 
 ---
 
+## Parser Compatibility Policy
+
+The Edge TTS WebSocket protocol is reverse-engineered and is not formally
+documented by Microsoft.  The service may change message shapes, add new field
+types, or introduce new event categories without notice.
+
+### General principles
+
+| Situation | Parser behaviour | Rationale |
+|-----------|-----------------|-----------|
+| **Unknown text frame Path** (not `turn.start`, `response`, `audio.metadata`, `turn.end`) | Hard error (`protocol_error`) | A completely unknown path indicates a fundamental protocol change that the caller must know about. |
+| **Unknown binary frame Path** (not `audio`) | Hard error (`protocol_error`) | Binary frames carry audio payload; a wrong path indicates unexpected data. |
+| **Unknown `audio.metadata` Type** (not `WordBoundary`, `SentenceBoundary`, `SessionEnd`) | **Silently skipped** | The service can add new event types (e.g. `VisemeBoundary`) without breaking subtitle extraction; unknown entries are dropped and synthesis continues. |
+| **`SessionEnd` metadata type** | Silently skipped | Documented reference behaviour (`continue` in `communicate.py`). |
+| **Extra JSON fields** in metadata or voice entries | Silently ignored | `nlohmann/json` ignores unknown keys by default; forward-compatible by design. |
+| **Missing required JSON fields** | Hard error (`parse_error`) | Required fields are load-bearing; their absence means we cannot produce a valid result. |
+| **Malformed frame** (bad separator, bad binary header, invalid JSON) | Hard error (`protocol_error` or `parse_error`) | Corrupt data must never be accepted silently. Error messages include truncated raw context for diagnostics. |
+| **Unknown `VoiceTag` fields** or unknown top-level voice entry fields | Silently ignored | The voice schema is stable for required fields; new optional fields from the service are irrelevant to C++ consumers. |
+
+### Safety net for empty metadata
+
+`MetadataJsonParser` may return an empty vector when every entry is either
+skipped (unknown type) or `SessionEnd`.  `EdgeProtocolIncoming` treats an
+empty result as `protocol_error("No WordBoundary metadata found")` — the
+caller never silently receives an empty synthesis.
+
+### Error context rule
+
+All parser errors that mention a specific protocol value (path name, unknown
+type, bad header line) must include that value in `Error::context()` so
+operators can diagnose service changes without additional logging.  Large
+payloads (e.g. audio bytes) are **never** included in error context.
+
+---
+
 ## WebSocket Transport
 
 **Source:** `communicate.py Communicate.__stream()`, `constants.py WSS_HEADERS`

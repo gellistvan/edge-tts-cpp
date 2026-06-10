@@ -222,3 +222,91 @@ TEST(FileWriter, WriteTextErrorIncludesPath) {
     EXPECT_TRUE(result.error().has_context());
     EXPECT_FALSE(result.error().context().empty());
 }
+
+// ---------------------------------------------------------------------------
+// Exact-byte determinism
+//
+// These tests read back files in binary mode to inspect raw on-disk bytes.
+// On Windows, text-mode writes would silently inject \r before every \n,
+// causing golden-file mismatches.  Binary mode must be used for both audio
+// and text output.
+// ---------------------------------------------------------------------------
+
+TEST(FileWriter, WriteBinaryNullBytesPreserved) {
+    // Binary mode must preserve all byte values including 0x00 and 0x0D/0x0A.
+    // A text-mode write on Windows might treat 0x1A as EOF or 0x0A as a
+    // newline trigger; binary mode passes bytes through unchanged.
+    const fs::path p = tmp_path("write_binary_nulls.bin");
+    FileGuard g{p};
+
+    FileWriter fw;
+    const std::vector<std::byte> data = {
+        std::byte{0x00}, std::byte{0xFF}, std::byte{0x0D},
+        std::byte{0x0A}, std::byte{0x00}
+    };
+    (void)fw.write_binary(p, data);
+
+    const auto raw = read_file_binary(p);
+    EXPECT_EQ(raw.size(), 5u);
+    EXPECT_EQ(raw, data);
+}
+
+TEST(FileWriter, WriteTextSrtNewlinesAreLfOnlyOnDisk) {
+    // SRT uses LF (\n = 0x0A) only; CRLF (\r\n) would break golden-file
+    // comparison and cross-platform reproducibility.  write_text_utf8 must
+    // write the exact bytes from the string_view — no newline translation.
+    const fs::path p = tmp_path("write_text_lf.srt");
+    FileGuard g{p};
+
+    FileWriter fw;
+    const std::string srt =
+        "1\n"
+        "00:00:00,000 --> 00:00:01,000\n"
+        "Hello world\n"
+        "\n";
+    (void)fw.write_text_utf8(p, srt);
+
+    // Read in binary mode — text mode on Windows would hide CRLF by converting
+    // back to \n on read, masking the bug.
+    const auto raw = read_file_binary(p);
+
+    // Size must match the source string exactly.
+    EXPECT_EQ(raw.size(), srt.size());
+
+    // No CR byte (0x0D) anywhere in the file.
+    bool found_cr = false;
+    for (const auto b : raw)
+        if (b == std::byte{0x0D}) { found_cr = true; break; }
+    EXPECT_FALSE(found_cr);
+}
+
+TEST(FileWriter, WriteTextSingleNewlineIsExactly0x0A) {
+    // A single \n in the source must produce exactly one 0x0A byte on disk,
+    // not the two-byte sequence 0x0D 0x0A that Windows text mode would emit.
+    const fs::path p = tmp_path("write_text_newline_byte.txt");
+    FileGuard g{p};
+
+    FileWriter fw;
+    (void)fw.write_text_utf8(p, "line\n");
+
+    const auto raw = read_file_binary(p);
+    // Expect exactly 5 bytes: 'l' 'i' 'n' 'e' 0x0A
+    EXPECT_EQ(raw.size(), 5u);
+    EXPECT_EQ(raw[4], std::byte{0x0A});
+}
+
+TEST(FileWriter, WriteTextMultiLineSrtExactBytes) {
+    // Verify a two-cue SRT block produces exactly the expected byte sequence.
+    const fs::path p = tmp_path("write_text_srt_exact.srt");
+    FileGuard g{p};
+
+    FileWriter fw;
+    const std::string srt =
+        "1\n00:00:00,000 --> 00:00:01,000\nFirst.\n\n"
+        "2\n00:00:02,000 --> 00:00:03,000\nSecond.\n\n";
+    (void)fw.write_text_utf8(p, srt);
+
+    const auto raw = read_file_binary(p);
+    const auto expected = to_bytes(srt);
+    EXPECT_EQ(raw, expected);
+}

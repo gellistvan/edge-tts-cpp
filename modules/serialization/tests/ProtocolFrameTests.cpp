@@ -230,6 +230,81 @@ TEST(ProtocolMessage, HeaderLookupNotFound) {
 }
 
 // ---------------------------------------------------------------------------
+// Edge cases for header values
+// ---------------------------------------------------------------------------
+
+TEST(ProtocolParser, EmptyHeaderValueAccepted) {
+    // A header with nothing after the colon is valid; value is empty string.
+    const std::string frame = "X-RequestId:\r\nPath:turn.end\r\n\r\n";
+    const auto r = parser.parse(frame);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().headers.size(), 2u);
+    EXPECT_EQ(r.value().headers[0].first,  "X-RequestId");
+    EXPECT_EQ(r.value().headers[0].second, "");
+}
+
+TEST(ProtocolParser, EmptyHeaderSectionAccepted) {
+    // Frame that starts immediately with the \r\n\r\n separator (no headers).
+    const std::string frame = "\r\n\r\nbody";
+    const auto r = parser.parse(frame);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_TRUE(r.value().headers.empty());
+    EXPECT_EQ(r.value().body, "body");
+}
+
+TEST(ProtocolParser, HeaderValueNotTrimmed) {
+    // The parser splits on the first colon only; it does not strip spaces.
+    // Edge TTS wire frames do not add a space after ':', so "value" should
+    // be returned verbatim (no leading-space stripping).
+    const std::string frame = "Path:audio.metadata\r\n\r\n";
+    const auto r = parser.parse(frame);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().headers[0].second, "audio.metadata");
+}
+
+TEST(ProtocolParser, MalformedHeaderLineContextContainsBadLine) {
+    // The error context should include the raw offending header line so
+    // callers can log it without re-parsing the frame.
+    const std::string bad_line = "NoColonInThisLine";
+    const std::string frame = bad_line + "\r\n\r\n";
+    const auto r = parser.parse(frame);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+    // context() must contain the bad line verbatim
+    const std::string ctx = std::string(r.error().context());
+    EXPECT_NE(ctx.find(bad_line), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Regression fixture: basic protocol frame (protocol_basic.txt)
+//
+// Mirrors fixtures/protocol_basic.txt — the minimal well-formed frame shape.
+// ---------------------------------------------------------------------------
+
+TEST(ProtocolParser, BasicProtocolFrameRegression) {
+    // Verbatim format used by the service for turn.start and similar control frames.
+    const std::string frame =
+        "X-RequestId:deadbeef00112233445566778899aabb\r\n"
+        "Path:turn.start\r\n"
+        "X-Timestamp:Mon Jan 01 2024 00:00:00 GMT+0000 (Coordinated Universal Time)Z\r\n"
+        "\r\n";
+
+    const auto r = parser.parse(frame);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().headers.size(), 3u);
+
+    const auto path = r.value().header("Path");
+    EXPECT_TRUE(path.has_value());
+    EXPECT_EQ(path.value(), "turn.start");
+
+    const auto req_id = r.value().header("X-RequestId");
+    EXPECT_TRUE(req_id.has_value());
+    EXPECT_EQ(req_id.value(), "deadbeef00112233445566778899aabb");
+
+    EXPECT_TRUE(r.value().body.empty());
+}
+
+// ---------------------------------------------------------------------------
 // Header order is preserved by serializer
 // ---------------------------------------------------------------------------
 

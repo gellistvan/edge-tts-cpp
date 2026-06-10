@@ -46,10 +46,15 @@ MetadataJsonParser::parse(std::string_view json_sv) const
         // SessionEnd is silently skipped (reference: `continue`)
         if (type == "SessionEnd") continue;
 
-        if (type != "WordBoundary" && type != "SentenceBoundary")
-            return common::Result<std::vector<core::BoundaryChunk>>::fail(
-                {common::ErrorCode::parse_error,
-                 "unknown metadata type: " + type});
+        if (type != "WordBoundary" && type != "SentenceBoundary") {
+            // Forward-compatibility policy: unknown metadata types are silently
+            // skipped.  The Edge TTS protocol is reverse-engineered and the
+            // service may add new event types (e.g. VisemeBoundary) at any
+            // time.  Hard-rejecting them would break synthesis on every
+            // protocol update.  The caller is responsible for deciding whether
+            // the resulting boundary list is empty (see EdgeProtocolIncoming).
+            continue;
+        }
 
         if (!item.contains("Data") || !item["Data"].is_object())
             return common::Result<std::vector<core::BoundaryChunk>>::fail(

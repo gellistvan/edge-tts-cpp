@@ -1,0 +1,32 @@
+{
+  "Metadata": [
+    {
+      "Type": "WordBoundary",
+      "Data": {
+        "Offset": 1000000,
+        "Duration": 2000000,
+        "text": { "Text": "Hello", "Length": 5, "BoundaryType": "WordBoundary" }
+      }
+    },
+    {
+      "Type": "UnknownEventType",
+      "Data": {}
+    },
+    {
+      "Type": "FutureEventType",
+      "SomeNewField": 42
+    },
+    {
+      "Type": "WordBoundary",
+      "Data": {
+        "Offset": 4000000,
+        "Duration": 3000000,
+        "text": { "Text": "world", "Length": 5, "BoundaryType": "WordBoundary" }
+      }
+    },
+    {
+      "Type": "SessionEnd",
+      "Data": {}
+    }
+  ]
+}

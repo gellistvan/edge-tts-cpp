@@ -34,9 +34,16 @@ common::Result<void> FileWriter::write_text_utf8(
     const std::filesystem::path& path,
     std::string_view text) const
 {
-    // Open in text mode; the caller supplies a UTF-8 string_view.
-    // Reference: communicate.py open(metadata_fname, "w", encoding="utf-8")
-    std::ofstream file(path, std::ios::trunc);
+    // Open in binary mode to suppress platform newline translation.
+    // SRT output from SrtComposer uses LF (\n) only; binary mode guarantees
+    // the bytes written to disk match the bytes in the string_view on every
+    // platform, including Windows where text mode would silently convert
+    // \n → \r\n and produce CRLF files that differ from the Linux/macOS output.
+    //
+    // Convention: all text written through this function uses LF (\n) only.
+    // Callers must not pass CRLF (\r\n) strings unless they intentionally want
+    // CR bytes in the file.
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file) {
         return common::Result<void>::fail(
             common::Error{common::ErrorCode::io_error,
