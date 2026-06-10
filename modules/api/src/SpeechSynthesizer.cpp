@@ -43,7 +43,8 @@ struct ProductionSynthesizer {
     communication::WebSocketClient           websocket;          // owns WS options
     communication::SynthesisSession          session;            // holds refs: all above
 
-    explicit ProductionSynthesizer(const SynthesisOptions& opts);
+    ProductionSynthesizer(const SynthesisOptions& opts,
+                          common::CancellationToken cancel_token);
 
     // Non-copyable, non-movable — members hold references to each other.
     ProductionSynthesizer(const ProductionSynthesizer&)            = delete;
@@ -69,7 +70,8 @@ static communication::WebSocketClientOptions make_ws_options(
     return ws;
 }
 
-ProductionSynthesizer::ProductionSynthesizer(const SynthesisOptions& opts)
+ProductionSynthesizer::ProductionSynthesizer(const SynthesisOptions& opts,
+                                             common::CancellationToken cancel_token)
     : clock{}
     , ids{}
     , service_config{communication::default_edge_service_config()}
@@ -77,14 +79,18 @@ ProductionSynthesizer::ProductionSynthesizer(const SynthesisOptions& opts)
     , protocol{clock}
     , metadata_factory{ids}
     , websocket{make_ws_options(opts, service_config, ids)}
-    , session{websocket, protocol, service_config, token_provider, metadata_factory, clock}
+    , session{websocket, protocol, service_config, token_provider, metadata_factory,
+              clock, std::move(cancel_token)}
 {}
 
 // Build the production SynthesizerFn that drives the real communication stack.
 // No network work is performed here — synthesis is deferred to synthesize()/save().
-static SynthesizerFn make_production_synthesizer(const SynthesisOptions& opts)
+// The cancel_token is shared with the ProductionSynthesizer so that
+// SpeechSynthesizer::cancel() propagates into the session's receive loop.
+static SynthesizerFn make_production_synthesizer(const SynthesisOptions& opts,
+                                                  common::CancellationToken cancel_token)
 {
-    auto synth = std::make_shared<ProductionSynthesizer>(opts);
+    auto synth = std::make_shared<ProductionSynthesizer>(opts, std::move(cancel_token));
     return [synth](const core::TtsConfig&       cfg,
                    std::span<const std::string> chunks)
                -> common::Result<std::vector<core::TtsChunk>>
@@ -101,7 +107,8 @@ SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config)
     : text_(std::move(text))
     , config_(std::move(config))
     , options_{}
-    , synthesizer_(make_production_synthesizer(options_))
+    , cancel_token_{}
+    , synthesizer_(make_production_synthesizer(options_, cancel_token_))
 {}
 
 SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
@@ -109,7 +116,8 @@ SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
     : text_(std::move(text))
     , config_(std::move(config))
     , options_(std::move(options))
-    , synthesizer_(make_production_synthesizer(options_))
+    , cancel_token_{}
+    , synthesizer_(make_production_synthesizer(options_, cancel_token_))
 {}
 
 SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
@@ -117,6 +125,7 @@ SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
     : text_(std::move(text))
     , config_(std::move(config))
     , options_{}
+    , cancel_token_{}
     , synthesizer_(std::move(synthesizer))
 {}
 
@@ -125,6 +134,7 @@ SpeechSynthesizer::SpeechSynthesizer(std::string text, core::TtsConfig config,
     : text_(std::move(text))
     , config_(std::move(config))
     , options_(std::move(options))
+    , cancel_token_{}
     , synthesizer_(std::move(synthesizer))
 {}
 
@@ -136,12 +146,20 @@ const std::string&      SpeechSynthesizer::text()    const noexcept { return tex
 const core::TtsConfig&  SpeechSynthesizer::config()  const noexcept { return config_; }
 const SynthesisOptions& SpeechSynthesizer::options() const noexcept { return options_; }
 
+void SpeechSynthesizer::cancel() noexcept { cancel_token_.cancel(); }
+
 // ---------------------------------------------------------------------------
 // Internal synthesis pipeline
 // ---------------------------------------------------------------------------
 
 common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::run_pipeline()
 {
+    // 0. Check for cancellation before doing any work.
+    if (cancel_token_.is_cancelled())
+        return common::Result<std::vector<core::TtsChunk>>::fail(
+            common::Error{common::ErrorCode::cancelled,
+                          "synthesis was cancelled"});
+
     // 1. Validate TTS configuration.
     if (auto r = core::validate_tts_config(config_); !r)
         return common::Result<std::vector<core::TtsChunk>>::fail(r.error());

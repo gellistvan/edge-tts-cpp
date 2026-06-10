@@ -6,6 +6,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "core/Voice.hpp"
+#include "support/ChunkTestHelpers.hpp"
 #include "vendor/minigtest/minigtest.hpp"
 
 #include <filesystem>
@@ -31,6 +32,8 @@ using edge_tts::core::TtsChunk;
 using edge_tts::core::TtsConfig;
 using edge_tts::core::Voice;
 using edge_tts::core::VoiceGender;
+using edge_tts::test::make_audio;
+using edge_tts::test::make_boundary;
 
 namespace fs = std::filesystem;
 
@@ -60,26 +63,6 @@ static std::vector<std::byte> read_binary_file(const fs::path& p) {
     for (std::size_t i = 0; i < buf.size(); ++i)
         out[i] = static_cast<std::byte>(buf[i]);
     return out;
-}
-
-// Build an AudioChunk with the given bytes.
-static AudioChunk make_audio(std::string_view s) {
-    AudioChunk ac;
-    ac.data.reserve(s.size());
-    for (char c : s) ac.data.push_back(static_cast<std::byte>(c));
-    return ac;
-}
-
-// Build a BoundaryChunk.
-static BoundaryChunk make_boundary(std::string text,
-                                   std::int64_t offset  = 0,
-                                   std::int64_t duration = 10'000'000) {
-    BoundaryChunk bc;
-    bc.type           = BoundaryEventType::SentenceBoundary;
-    bc.text           = std::move(text);
-    bc.offset_ticks   = offset;
-    bc.duration_ticks = duration;
-    return bc;
 }
 
 // Build a Voice struct.
@@ -1150,4 +1133,60 @@ TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
     EXPECT_EQ(err.str().find("secretpassword"), std::string::npos);
     // The proxy host should still appear (not redacted) so the user knows which proxy.
     EXPECT_NE(err.str().find("proxy.internal"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Empty text input: --text "" produces exit 0, no audio on stdout.
+//
+// TextChunker normalizes empty (or whitespace-only) text to an empty chunk
+// list.  The dispatcher must exit cleanly rather than treating "no chunks"
+// as an error.  This documents the boundary between a parse error (exit 2)
+// and a silent empty-result synthesis (exit 0).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, EmptyTextSynthesisSucceeds) {
+    // SpeechSynthesizer with empty text returns an empty chunk vector (no audio).
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+
+    ParseResult r = make_text_result("");
+    int rc = d.dispatch(r);
+
+    EXPECT_EQ(rc, 0);
+    EXPECT_TRUE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, EmptyTextNoAudioWrittenToStdout) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+
+    ParseResult r = make_text_result("");
+    d.dispatch(r);
+
+    EXPECT_TRUE(out.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Missing input file: error message must include the path so the user knows
+// which file could not be opened.
+//
+// The io_error from InputLoader carries the path in its context field.
+// EdgeTtsCommandDispatcher::format_error forwards Error::what(), which
+// includes the context, so the path must appear in stderr.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
+    std::ostringstream out, err;
+    std::istringstream in;
+
+    ParseResult r;
+    r.action    = ParseAction::synthesize;
+    r.exit_code = 0;
+    r.arguments.file = "/no/such/input_file_unique.txt";
+
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+    EXPECT_EQ(d.dispatch(r), 1);
+    EXPECT_NE(err.str().find("input_file_unique.txt"), std::string::npos);
 }

@@ -16,6 +16,7 @@ std::string_view to_string(ErrorCode code) noexcept {
         case ErrorCode::external_process_failed: return "external_process_failed";
         case ErrorCode::service_error:           return "service_error";
         case ErrorCode::drm_error:               return "drm_error";
+        case ErrorCode::cancelled:               return "cancelled";
     }
     return "unknown";
 }

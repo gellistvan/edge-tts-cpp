@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/CancellationToken.hpp"
 #include "common/Clock.hpp"
 #include "common/Result.hpp"
 #include "communication/ConnectionMetadata.hpp"
@@ -44,13 +45,14 @@ namespace edge_tts::communication {
 // the session.
 class SynthesisSession {
 public:
-    SynthesisSession(IWebSocketClient&          websocket,
-                     EdgeProtocol&              protocol,
-                     EdgeServiceConfig          config,
-                     EdgeTokenProvider&         token_provider,
-                     ConnectionMetadataFactory& metadata_factory,
-                     const common::IClock&      clock,
-                     RetryPolicy                retry_policy = {});
+    SynthesisSession(IWebSocketClient&              websocket,
+                     EdgeProtocol&                  protocol,
+                     EdgeServiceConfig              config,
+                     EdgeTokenProvider&             token_provider,
+                     ConnectionMetadataFactory&     metadata_factory,
+                     const common::IClock&          clock,
+                     common::CancellationToken      cancel_token = {},
+                     RetryPolicy                    retry_policy = {});
 
     // Run a synthesis session for all text_chunks.
     //
@@ -65,12 +67,14 @@ public:
     // the order they arrived from the service.
     //
     // Errors:
-    //   - token generation failure → protocol_error
-    //   - connect failure          → network_error
-    //   - send failure             → network_error
-    //   - receive failure          → network_error
-    //   - parse_incoming failure   → protocol_error
-    //   - no audio received        → service_error
+    //   - token generation failure    → protocol_error
+    //   - connect failure             → network_error
+    //   - send failure                → network_error
+    //   - receive failure             → network_error or timeout
+    //   - parse_incoming failure      → protocol_error
+    //   - no audio received           → service_error
+    //   - cancel_token.is_cancelled() → cancelled (checked before each chunk and
+    //                                   before each receive() call in the loop)
     //
     // On any error, the WebSocket is closed before returning.
     // Close errors are silently ignored.
@@ -85,6 +89,7 @@ private:
     EdgeTokenProvider&         token_provider_;
     ConnectionMetadataFactory& metadata_factory_;
     const common::IClock&      clock_;
+    common::CancellationToken  cancel_token_;
     RetryPolicy                retry_policy_;
 };
 

@@ -1,11 +1,11 @@
 #include "communication/SynthesisSession.hpp"
+#include "common/CancellationToken.hpp"
 #include "common/Error.hpp"
 #include "communication/HttpDate.hpp"
 #include "communication/IncomingMessage.hpp"
 #include "core/Chunk.hpp"
 
 #include <chrono>
-
 #include <span>
 #include <string>
 #include <variant>
@@ -14,19 +14,21 @@
 namespace edge_tts::communication {
 
 SynthesisSession::SynthesisSession(
-    IWebSocketClient&          websocket,
-    EdgeProtocol&              protocol,
-    EdgeServiceConfig          config,
-    EdgeTokenProvider&         token_provider,
-    ConnectionMetadataFactory& metadata_factory,
-    const common::IClock&      clock,
-    RetryPolicy                retry_policy)
+    IWebSocketClient&              websocket,
+    EdgeProtocol&                  protocol,
+    EdgeServiceConfig              config,
+    EdgeTokenProvider&             token_provider,
+    ConnectionMetadataFactory&     metadata_factory,
+    const common::IClock&          clock,
+    common::CancellationToken      cancel_token,
+    RetryPolicy                    retry_policy)
     : websocket_(websocket)
     , protocol_(protocol)
     , config_(std::move(config))
     , token_provider_(token_provider)
     , metadata_factory_(metadata_factory)
     , clock_(clock)
+    , cancel_token_(std::move(cancel_token))
     , retry_policy_(retry_policy)
 {}
 
@@ -42,14 +44,15 @@ SynthesisSession::SynthesisSession(
 //   Caller uses this to update the cumulative count for the next compensation.
 // -------------------------------------------------------------------------
 static common::Result<void> run_one_chunk(
-    IWebSocketClient&            websocket,
-    EdgeProtocol&                protocol,
-    const core::TtsConfig&       tts_config,
-    const std::string&           text,
-    const ConnectionMetadata&    metadata,
-    std::int64_t                 offset_compensation,
-    std::int64_t&                out_audio_bytes,
-    std::vector<core::TtsChunk>& out_chunks)
+    IWebSocketClient&                websocket,
+    EdgeProtocol&                    protocol,
+    const core::TtsConfig&           tts_config,
+    const std::string&               text,
+    const ConnectionMetadata&        metadata,
+    std::int64_t                     offset_compensation,
+    std::int64_t&                    out_audio_bytes,
+    std::vector<core::TtsChunk>&     out_chunks,
+    const common::CancellationToken& cancel_token)
 {
     out_audio_bytes = 0;
 
@@ -75,6 +78,11 @@ static common::Result<void> run_one_chunk(
     bool audio_received = false;
 
     while (true) {
+        if (cancel_token.is_cancelled())
+            return common::Result<void>::fail(
+                common::Error{common::ErrorCode::cancelled,
+                              "synthesis was cancelled"});
+
         auto recv = websocket.receive();
         if (!recv)
             return common::Result<void>::fail(recv.error());
@@ -135,6 +143,12 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
     std::int64_t cumulative_audio_bytes = 0;
 
     for (const auto& text : text_chunks) {
+        // Check for cancellation before starting each chunk.
+        if (cancel_token_.is_cancelled())
+            return common::Result<std::vector<core::TtsChunk>>::fail(
+                common::Error{common::ErrorCode::cancelled,
+                              "synthesis was cancelled"});
+
         // Compute offset compensation for boundaries in this chunk.
         //
         // The Edge TTS service reports each chunk's boundary offsets relative
@@ -205,7 +219,8 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
             std::int64_t chunk_audio_bytes = 0;
             auto chunk_result = run_one_chunk(
                 websocket_, protocol_, tts_config, text, metadata,
-                offset_compensation, chunk_audio_bytes, all_chunks);
+                offset_compensation, chunk_audio_bytes, all_chunks,
+                cancel_token_);
 
             (void)websocket_.close();
 

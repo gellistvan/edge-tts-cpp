@@ -22,6 +22,7 @@ enum class ErrorCode {
                             // Python: NoAudioReceived, HTTP 4xx/5xx
     drm_error,              // DRM token rejected (HTTP 403 during WebSocket upgrade);
                             // Python: aiohttp.ClientResponseError(status=403) → retry path
+    cancelled,              // operation was cancelled via SpeechSynthesizer::cancel()
 };
 
 // Returns a short lowercase name for the code (e.g. "network_error").

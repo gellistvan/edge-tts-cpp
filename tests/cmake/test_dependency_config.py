@@ -906,6 +906,182 @@ def test_process_runner_conditionally_compiled() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 26. ProcessRunner.hpp guards the concrete class with #ifndef _WIN32
+# ---------------------------------------------------------------------------
+
+def test_process_runner_hpp_guards_concrete_class() -> None:
+    header = REPO_ROOT / "modules" / "media" / "include" / "media" / "ProcessRunner.hpp"
+    if not header.exists():
+        fail("modules/media/include/media/ProcessRunner.hpp does not exist")
+    content = read(header)
+
+    # The concrete class declaration must be wrapped in #ifndef _WIN32 so that
+    # including the header on Windows does not expose a class with no implementation.
+    if not re.search(r'#ifndef\s+_WIN32', content):
+        fail(
+            "ProcessRunner.hpp must guard the concrete ProcessRunner class with "
+            "#ifndef _WIN32. On Windows, including this header should only give "
+            "IProcessRunner, ProcessCommand, and ProcessResult — not ProcessRunner."
+        )
+
+    # The closing #endif must follow the class definition.
+    ifndef_pos = content.find("#ifndef _WIN32")
+    class_pos = content.find("class ProcessRunner", ifndef_pos)
+    endif_pos = content.find("#endif", class_pos if class_pos >= 0 else ifndef_pos)
+
+    if ifndef_pos < 0 or class_pos < 0 or endif_pos < 0:
+        fail(
+            "ProcessRunner.hpp: could not locate #ifndef _WIN32 / class ProcessRunner / "
+            "#endif in the expected order. The concrete class must be inside the guard."
+        )
+    if not (ifndef_pos < class_pos < endif_pos):
+        fail(
+            "ProcessRunner.hpp: #ifndef _WIN32 does not wrap the ProcessRunner class "
+            "declaration. Expected order: #ifndef _WIN32 → class ProcessRunner → #endif."
+        )
+
+    ok("ProcessRunner.hpp guards the concrete ProcessRunner class with #ifndef _WIN32")
+
+
+# ---------------------------------------------------------------------------
+# 27. docs/HIGH_LEVEL_DESIGN.md contains a platform support matrix
+# ---------------------------------------------------------------------------
+
+def test_high_level_design_has_platform_matrix() -> None:
+    hld = REPO_ROOT / "docs" / "HIGH_LEVEL_DESIGN.md"
+    if not hld.exists():
+        fail("docs/HIGH_LEVEL_DESIGN.md does not exist")
+    content = read(hld)
+
+    # Must have a "Platform support" section.
+    if not re.search(r'##\s+Platform\s+support', content, re.IGNORECASE):
+        fail(
+            "docs/HIGH_LEVEL_DESIGN.md does not have a '## Platform support' section. "
+            "Add a platform support matrix so Windows users know what builds and what does not."
+        )
+
+    # Must mention Windows, Linux/macOS, and ProcessRunner.
+    for keyword in ("Windows", "Linux", "ProcessRunner"):
+        if keyword not in content:
+            fail(
+                f"docs/HIGH_LEVEL_DESIGN.md platform support section must mention '{keyword}'"
+            )
+
+    # Must mention the FATAL_ERROR behavior or the configure-time error so users
+    # know exactly what happens when they try EDGE_TTS_BUILD_PLAYBACK_APP=ON on Windows.
+    if "FATAL_ERROR" not in content and "EDGE_TTS_BUILD_PLAYBACK_APP" not in content:
+        fail(
+            "docs/HIGH_LEVEL_DESIGN.md must document the EDGE_TTS_BUILD_PLAYBACK_APP "
+            "configure-time FATAL_ERROR for Windows users."
+        )
+
+    ok("docs/HIGH_LEVEL_DESIGN.md has a Platform support section covering Windows/Linux/ProcessRunner")
+
+
+# ---------------------------------------------------------------------------
+# 28. docs/CONSUMING.md documents Windows platform support
+# ---------------------------------------------------------------------------
+
+def test_consuming_md_documents_windows_build() -> None:
+    consuming = REPO_ROOT / "docs" / "CONSUMING.md"
+    if not consuming.exists():
+        fail("docs/CONSUMING.md does not exist")
+    content = read(consuming)
+
+    if "Windows" not in content:
+        fail(
+            "docs/CONSUMING.md does not mention Windows. "
+            "Library consumers on Windows need to know what is supported."
+        )
+
+    # Must note that the library is supported but edge-playback is not.
+    if "IProcessRunner" not in content and "ProcessRunner" not in content:
+        fail(
+            "docs/CONSUMING.md does not mention IProcessRunner / ProcessRunner. "
+            "Windows users need guidance on how to extend playback support."
+        )
+
+    ok("docs/CONSUMING.md documents Windows platform support and IProcessRunner extension point")
+
+
+# ---------------------------------------------------------------------------
+# 29. docs/HIGH_LEVEL_DESIGN.md has a comprehensive error handling reference
+# ---------------------------------------------------------------------------
+
+def test_high_level_design_has_error_handling_reference() -> None:
+    hld = REPO_ROOT / "docs" / "HIGH_LEVEL_DESIGN.md"
+    if not hld.exists():
+        fail("docs/HIGH_LEVEL_DESIGN.md does not exist")
+    content = read(hld)
+
+    # Must have an "Error handling" section.
+    if not re.search(r'##\s+Error\s+handling', content, re.IGNORECASE):
+        fail(
+            "docs/HIGH_LEVEL_DESIGN.md does not have an '## Error handling' section. "
+            "Consumers need a reference for how to handle each ErrorCode."
+        )
+
+    # Must document all 13 ErrorCode values.
+    required_codes = [
+        "invalid_argument",
+        "invalid_state",
+        "io_error",
+        "network_error",
+        "protocol_error",
+        "parse_error",
+        "timeout",
+        "unsupported",
+        "external_process_failed",
+        "service_error",
+        "drm_error",
+        "cancelled",
+    ]
+    for code in required_codes:
+        if code not in content:
+            fail(
+                f"docs/HIGH_LEVEL_DESIGN.md error handling section is missing '{code}'. "
+                "All ErrorCode values must be documented."
+            )
+
+    # Must document the context field policy (security).
+    if "context" not in content.lower() or "redact" not in content.lower():
+        fail(
+            "docs/HIGH_LEVEL_DESIGN.md must document the context field policy, "
+            "including credential redaction for proxy URLs."
+        )
+
+    ok("docs/HIGH_LEVEL_DESIGN.md has a complete error handling reference covering all 12 ErrorCode values")
+
+
+def test_release_readiness_documents_subtitle_timing() -> None:
+    """RELEASE_READINESS.md Known limitations must mention subtitle timing approximation."""
+    rr = REPO_ROOT / "docs" / "RELEASE_READINESS.md"
+    if not rr.exists():
+        fail("docs/RELEASE_READINESS.md not found")
+    content = rr.read_text(encoding="utf-8").lower()
+    if "subtitle timing" not in content:
+        fail(
+            "docs/RELEASE_READINESS.md Known limitations must document the subtitle "
+            "timing approximation (48 kbps assumption for multi-chunk offset computation)."
+        )
+    ok("docs/RELEASE_READINESS.md documents subtitle timing approximation as a known limitation")
+
+
+def test_consuming_md_documents_subtitle_timing() -> None:
+    """docs/CONSUMING.md must warn consumers about the subtitle timing approximation."""
+    consuming = REPO_ROOT / "docs" / "CONSUMING.md"
+    if not consuming.exists():
+        fail("docs/CONSUMING.md not found")
+    content = consuming.read_text(encoding="utf-8").lower()
+    if "subtitle timing" not in content:
+        fail(
+            "docs/CONSUMING.md must document the subtitle timing approximation "
+            "for multi-chunk text so library consumers are aware of the limitation."
+        )
+    ok("docs/CONSUMING.md documents subtitle timing approximation for multi-chunk text")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -943,6 +1119,13 @@ def main() -> None:
         test_build_playback_app_defaults_off_on_windows,
         test_build_playback_app_fatal_error_on_windows,
         test_process_runner_conditionally_compiled,
+        test_process_runner_hpp_guards_concrete_class,
+        test_high_level_design_has_platform_matrix,
+        test_consuming_md_documents_windows_build,
+        test_high_level_design_has_error_handling_reference,
+        # Documentation completeness tests
+        test_release_readiness_documents_subtitle_timing,
+        test_consuming_md_documents_subtitle_timing,
     ]
     for t in tests:
         t()

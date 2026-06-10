@@ -84,6 +84,13 @@ REQUIRED_IN_TESTING_MD = [
 ]
 
 # ---------------------------------------------------------------------------
+# RELEASE_READINESS.md must document the subtitle timing known limitation
+# ---------------------------------------------------------------------------
+REQUIRED_IN_RELEASE_READINESS = [
+    "subtitle timing",
+]
+
+# ---------------------------------------------------------------------------
 # Required links in README.md
 # ---------------------------------------------------------------------------
 README_REQUIRED_LINKS = [
@@ -162,6 +169,17 @@ def main() -> None:
             if var not in testing_content:
                 fail(f"TESTING.md does not mention CMake/env option '{var}'")
 
+    # 5b. RELEASE_READINESS.md must document the subtitle timing known limitation
+    release_readiness = REPO_ROOT / "docs" / "RELEASE_READINESS.md"
+    if release_readiness.exists():
+        rr_text = release_readiness.read_text(encoding="utf-8").lower()
+        for phrase in REQUIRED_IN_RELEASE_READINESS:
+            if phrase.lower() not in rr_text:
+                fail(
+                    f"RELEASE_READINESS.md does not mention required topic '{phrase}' "
+                    f"in Known limitations"
+                )
+
     # 6. Broken-link check across ALL *.md files in the repo root and docs/
     all_md_files = list(docs_dir.glob("*.md")) + [REPO_ROOT / "README.md"]
     for md_file in sorted(all_md_files):
@@ -200,7 +218,8 @@ def main() -> None:
         f"OK: REFERENCE_BEHAVIOR.md found, {len(REQUIRED_HEADINGS)} headings present, "
         f"{len(found_paths)} reference paths mentioned. "
         f"No stale phrases found. No broken links. Required CMake options documented. "
-        f"README links verified. RELEASE_READINESS.md maturity label present."
+        f"README links verified. RELEASE_READINESS.md maturity label and known "
+        f"limitations present."
     )
 
 

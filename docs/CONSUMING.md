@@ -3,6 +3,15 @@
 This document describes the supported ways to integrate edge-tts-cpp into a
 CMake project.
 
+## Platform prerequisites
+
+| Platform | Library | `edge-tts` CLI | `edge-playback` CLI | Notes |
+|----------|---------|----------------|---------------------|-------|
+| Linux / macOS | ✓ | ✓ | ✓ | Full support. Requires system OpenSSL for TLS. |
+| Windows | ✓ | ✓ | ✗ | Core library and `edge-tts` CLI build cleanly. `edge-playback` is POSIX-only (`ProcessRunner` uses `fork`/`execvp`). Set `-DEDGE_TTS_BUILD_PLAYBACK_APP=OFF` (default on Windows). TLS uses ixwebsocket's bundled mbedtls — no extra install. |
+
+The entire synthesis pipeline (`SpeechSynthesizer`, `list_voices()`, all of `api`, `communication`, `core`, `serialization`, `subtitles`) is cross-platform. Only `media::ProcessRunner` (which drives `ffplay` for audio playback) is POSIX-only. To add Windows playback support, implement `edge_tts::media::IProcessRunner` using `CreateProcess` and link it to `edge_tts::media`.
+
 Ready-to-copy examples:
 - [`examples/consumer_add_subdirectory/`](../examples/consumer_add_subdirectory/) — full add_subdirectory example
 - [`examples/consumer_find_package/`](../examples/consumer_find_package/) — full find_package example
@@ -51,6 +60,7 @@ It exposes the complete stable public API:
 | `edge_tts::api::SpeechSynthesizer` | Synthesize text to audio |
 | `edge_tts::api::SynthesisOptions` | Transport options (timeouts) |
 | `edge_tts::api::FileWriter` | Write audio/subtitle files |
+| `edge_tts::api::list_voices(opts)` | Fetch available voices from the service |
 | `edge_tts::core::TtsConfig` | Voice, rate, volume, pitch |
 | `edge_tts::core::Voice` | Voice listing type |
 | `edge_tts::core::AudioChunk` | Raw MP3 bytes from `synthesize()` |
@@ -75,6 +85,7 @@ compile as the first (and only) project include in a translation unit.
 | `edge_tts/api/SpeechSynthesizer.hpp` | `SpeechSynthesizer` — single-use synthesis object |
 | `edge_tts/api/SynthesisOptions.hpp` | `SynthesisOptions` — transport options |
 | `edge_tts/api/FileWriter.hpp` | `FileWriter` — write MP3 + SRT |
+| `edge_tts/api/VoiceList.hpp` | `list_voices()` — fetch available voices |
 
 #### `edge_tts/core/` — data types
 
@@ -123,6 +134,131 @@ the library:
 | `edge_tts/serialization/` | Internal protocol framing, SSML builder, text chunker |
 | `edge_tts/media/` | ffmpeg/ffplay audio conversion (app-layer) |
 | `edge_tts/cli/` | CLI argument parsing (app-layer) |
+
+---
+
+## API contract
+
+### Object lifetime
+
+`SpeechSynthesizer` construction is **cheap**: the full networking stack is
+assembled but no connection is opened.  All network I/O is deferred to the
+first call of `synthesize()` or `save()`.
+
+```cpp
+// Cheap — no network I/O here.
+edge_tts::api::SpeechSynthesizer s("Hello world", cfg, opts);
+
+// Network I/O happens here (connects to speech.platform.bing.com).
+auto result = s.save("hello.mp3");
+```
+
+The object may be destroyed at any time after `synthesize()` or `save()`
+returns (success or failure).  Do not destroy a `SpeechSynthesizer` while a
+call to `synthesize()` or `save()` is executing on another thread.
+
+### Single-use behavior
+
+`synthesize()` and `save()` each **consume** the object.  A second call to
+either returns `ErrorCode::invalid_state` regardless of which was called first.
+
+```cpp
+auto r1 = s.synthesize();   // OK
+auto r2 = s.synthesize();   // returns ErrorCode::invalid_state
+auto r3 = s.save("out.mp3");// also returns ErrorCode::invalid_state
+```
+
+To synthesize the same text again, construct a new `SpeechSynthesizer`.
+
+### Thread safety
+
+`SpeechSynthesizer` is **not thread-safe**.  Do not call `synthesize()`,
+`save()`, or any accessor concurrently on the same object.  Constructing
+independent `SpeechSynthesizer` objects in different threads is safe — there is
+no shared global state.
+
+### Error model
+
+No exceptions are thrown for recoverable failures.  All errors are returned as
+`Result<T>::fail(Error{...})`.  Use `result.error().code()` to branch on error
+categories:
+
+| `ErrorCode` | Cause |
+|-------------|-------|
+| `invalid_argument` | Bad `TtsConfig` fields (bad voice name, rate, etc.) |
+| `invalid_state` | `synthesize()` or `save()` called a second time |
+| `network_error` | WebSocket connection failed |
+| `service_error` | Remote service returned no audio or an error status |
+| `timeout` | Connect or receive timeout exceeded |
+| `io_error` | Local file write failed (for `save()`) |
+| `unsupported` | `SynthesisOptions::proxy` is set (proxy not supported) |
+| `parse_error` | Malformed JSON from voice-list endpoint |
+
+```cpp
+auto result = s.save("hello.mp3");
+if (!result) {
+    switch (result.error().code()) {
+    case edge_tts::common::ErrorCode::network_error:
+        // retry or report
+        break;
+    case edge_tts::common::ErrorCode::invalid_argument:
+        // bad config — fix TtsConfig fields
+        break;
+    default:
+        std::cerr << result.error().what() << '\n';
+    }
+}
+```
+
+For the complete error-code reference — including context field contracts and credential-redaction policy — see the [Error handling reference](HIGH_LEVEL_DESIGN.md#error-handling-reference) section in `docs/HIGH_LEVEL_DESIGN.md`.
+
+### Known limitations
+
+**Subtitle timing for long text:** Subtitle boundary offsets are computed assuming constant 48 kbps MP3 output (`bytes × 8 × 10_000_000 / 48_000` ticks, matching the Python reference).  For multi-chunk input (text > 4096 bytes escaped) the timestamps of chunks after the first will drift if the service delivers audio at a different bitrate.  Single-chunk text is not affected.
+
+**Proxy:** `SynthesisOptions::proxy` is validated at the API layer but actively rejected at runtime (`ErrorCode::unsupported`).  The ixwebsocket backend has no CONNECT-tunnel proxy API.  See the [Proxy support](#proxy-support-unsupported) section below.
+
+### Chunk ownership
+
+`synthesize()` returns `Result<vector<TtsChunk>>`.  The caller **owns** the
+returned vector — it has no references back into the `SpeechSynthesizer` and
+safely outlives the synthesizer object.
+
+```cpp
+std::vector<edge_tts::core::TtsChunk> chunks;
+{
+    edge_tts::api::SpeechSynthesizer s("Hello", cfg);
+    auto r = s.synthesize();
+    if (r) chunks = std::move(*r);
+}
+// s is destroyed here; chunks remain valid.
+for (const auto& chunk : chunks) {
+    if (edge_tts::core::is_audio(chunk)) {
+        const auto& audio = std::get<edge_tts::core::AudioChunk>(chunk);
+        // audio.data is std::vector<std::byte> owned by chunks
+    }
+}
+```
+
+### Voice listing
+
+```cpp
+#include <edge_tts/edge_tts.hpp>
+
+// No SynthesisOptions needed for a basic fetch.
+auto result = edge_tts::api::list_voices();
+if (!result) {
+    std::cerr << result.error().what() << '\n';
+    return 1;
+}
+for (const auto& v : *result) {
+    std::cout << v.short_name << "  " << v.locale << '\n';
+}
+```
+
+`list_voices()` makes a single HTTP GET request, parses the JSON response, and
+returns a `Result<vector<Voice>>`.  It is not thread-safe; call it from a
+single thread or create one call site per thread.
 
 ---
 

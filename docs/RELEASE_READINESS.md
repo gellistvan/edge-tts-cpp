@@ -58,7 +58,7 @@ what "ready to release" means for each capability area.
 | Duplicate helper functions in tests | **Resolved** — shared `WebSocketFrameHelpers.hpp` |
 | Stale "Stub:" labels in conditional-compile paths | **Resolved** — relabelled as "ixwebsocket not available" |
 | `tools/README.md` placeholder text | **Resolved** — describes actual tools |
-| All C++ tests pass | **Yes** — 19/19 CTest targets |
+| All C++ tests pass | **Yes** — 32 CTest targets |
 | All Python quality-gate tests pass | **Yes** — 8/8 gates (docs, module-boundary, dependency-config, hygiene, cmake-source-dir-regression, consumer-add-subdirectory, public-tts-target, umbrella-header-hygiene) |
 | Safe as add_subdirectory dependency | **Done** — EDGE_TTS_SOURCE_DIR/BINARY_DIR used throughout; regression check enforced by CTest |
 | Public `edge_tts::tts` consumer target | **Done** — INTERFACE target linking `edge_tts::api`; does not expose CLI/playback/tests; consumer fixture and hygiene tests enforce it |
@@ -98,5 +98,6 @@ Before tagging a release:
 
 - **Windows:** `ProcessRunner` (POSIX fork/exec) is excluded. `edge-playback` cannot spawn `ffplay` on Windows without a Win32 `CreateProcess` implementation. Everything else compiles.
 - **Proxy:** Recognized and validated at parse time, propagated into `SynthesisOptions::proxy`, but actively rejected at runtime by the ixwebsocket backend (`ErrorCode::unsupported`). The ixwebsocket library has no client-side CONNECT-tunnel proxy API. Any synthesis or voice-list call with a proxy set will fail with exit 1.
+- **Subtitle timing approximation:** Subtitle boundary offsets for multi-chunk text are computed assuming a constant 48 kbps MP3 bitrate (`bytes × 8 × 10_000_000 / 48_000` ticks).  If the service sends audio at a different bitrate the cue timestamps for chunks after the first will drift.  Single-chunk text (< 4096 bytes escaped) is unaffected.
 - **Rate limiting:** No client-side rate limiter; matches Python behavior (no limiter there either).
 - **Static-only builds:** Shared library builds (`BUILD_SHARED_LIBS=ON`) are explicitly unsupported. All `edge_tts_*` modules are always compiled as static archives. No symbol-visibility (`EDGE_TTS_API`) infrastructure exists, and Windows DLL export/import has not been tested. `BUILD_SHARED_LIBS=ON` is silently ignored — static archives are produced regardless.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/SynthesisOptions.hpp"
+#include "common/CancellationToken.hpp"
 #include "common/Result.hpp"
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
@@ -36,8 +37,35 @@ using SynthesizerFn = std::function<
 //   - subtitle generation (subtitles::SubMaker — optional, for save())
 //   - file writing        (api::FileWriter)
 //
-// synthesize() and save() are each single-use. Calling either a second time
-// returns ErrorCode::invalid_state.
+// ── Object lifetime ───────────────────────────────────────────────────────────
+//   Construction is cheap: the full networking stack is assembled but no
+//   connection is opened.  All network I/O is deferred to synthesize()/save().
+//   The object owns its text, config, options, and internal networking stack.
+//   The synthesizer may be destroyed at any point after synthesize()/save()
+//   returns (success or failure).  Do NOT destroy a synthesizer while
+//   synthesize() or save() is running on another thread (see Thread Safety).
+//
+// ── Single-use ────────────────────────────────────────────────────────────────
+//   synthesize() and save() each consume the object. A second call to either
+//   returns ErrorCode::invalid_state regardless of which was called first.
+//   To synthesize the same text again, construct a new SpeechSynthesizer.
+//
+// ── Thread safety ─────────────────────────────────────────────────────────────
+//   Not thread-safe. Accessing or mutating a single SpeechSynthesizer from
+//   multiple threads simultaneously produces undefined behavior.
+//   Constructing independent SpeechSynthesizer objects in different threads is
+//   safe — there is no shared global state.
+//
+// ── Error model ───────────────────────────────────────────────────────────────
+//   No exceptions are thrown for recoverable failures. All errors are returned
+//   as Result<T>::fail(Error{...}).  The only exceptions that may propagate are
+//   std::bad_alloc (out of memory) and logic errors from the standard library.
+//   Use result.error().code() to branch on error categories (ErrorCode enum).
+//
+// ── Chunk ownership ───────────────────────────────────────────────────────────
+//   synthesize() returns Result<vector<TtsChunk>>; the caller owns the vector.
+//   The vector has no references back into the SpeechSynthesizer and outlives
+//   the synthesizer object safely.
 //
 // No protocol parsing, no WebSocket logic, no ffmpeg logic here.
 class SpeechSynthesizer final {
@@ -70,6 +98,20 @@ public:
     [[nodiscard]] const core::TtsConfig&   config()  const noexcept;
     [[nodiscard]] const SynthesisOptions&  options() const noexcept;
 
+    // Request cancellation of any in-progress synthesize() or save() call.
+    //
+    // cancel() is idempotent and thread-safe.  It may be called from any
+    // thread at any time, including before synthesis begins.
+    //
+    // The ongoing operation checks the cancellation flag before each
+    // WebSocket receive() call and before each text-chunk iteration.
+    // On detection, synthesis stops and returns ErrorCode::cancelled.
+    //
+    // Cancellation after synthesize()/save() has already returned is a no-op.
+    // Cancellation before synthesize()/save() is called causes the first call
+    // to return ErrorCode::cancelled immediately (pre-synthesis check).
+    void cancel() noexcept;
+
     // Synthesize and return all TtsChunk events (AudioChunk + BoundaryChunk).
     // Single-use: returns ErrorCode::invalid_state if called more than once.
     [[nodiscard]] common::Result<std::vector<core::TtsChunk>> synthesize();
@@ -81,11 +123,14 @@ public:
         std::optional<std::filesystem::path> subtitles_path = std::nullopt);
 
 private:
-    std::string       text_;
-    core::TtsConfig   config_;
-    SynthesisOptions  options_;
-    SynthesizerFn     synthesizer_;
-    bool              called_{false};
+    std::string                 text_;
+    core::TtsConfig             config_;
+    SynthesisOptions            options_;
+    // cancel_token_ must be declared before synthesizer_ so it is initialized
+    // first; make_production_synthesizer() receives a reference to it.
+    common::CancellationToken   cancel_token_;
+    SynthesizerFn               synthesizer_;
+    bool                        called_{false};
 
     // Shared synthesis pipeline: validate → chunk → synthesize.
     // Called by both synthesize() and save() after the single-use guard.
