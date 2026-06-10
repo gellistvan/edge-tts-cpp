@@ -1,5 +1,6 @@
 #include "communication/WebSocketClient.hpp"
 #include "common/Error.hpp"
+#include "ProxyUtils.hpp"
 
 // ixwebsocket headers are included here only, never in the public header.
 // Guard ensures the translation unit compiles when the submodule is absent.
@@ -20,21 +21,7 @@
 
 namespace edge_tts::communication {
 
-// Replace user:password credentials in a URL with [credentials] so the URL
-// is safe to include in error messages.  No-op when no credentials are present.
-static std::string sanitize_proxy_url(std::string_view url) {
-    const auto scheme_end = url.find("://");
-    if (scheme_end == std::string_view::npos) return std::string(url);
-    const auto auth_start = scheme_end + 3;
-    const auto at_pos     = url.find('@', auth_start);
-    if (at_pos == std::string_view::npos) return std::string(url);
-    std::string out;
-    out.reserve(url.size());
-    out.append(url.data(), auth_start);
-    out.append("[credentials]");
-    out.append(url.data() + at_pos, url.size() - at_pos);
-    return out;
-}
+using internal::sanitize_proxy_url;
 
 // ---------------------------------------------------------------------------
 // Pimpl implementation

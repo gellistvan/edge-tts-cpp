@@ -42,7 +42,10 @@ std::string drain_fd(int fd) {
 struct FdCloser {
     int fd{-1};
     ~FdCloser() { if (fd >= 0) ::close(fd); }
+    // Give up ownership without closing — caller takes responsibility.
     void release() { fd = -1; }
+    // Close immediately and disarm the destructor.
+    void close_now() { if (fd >= 0) { ::close(fd); fd = -1; } }
 };
 
 } // namespace
@@ -61,33 +64,30 @@ common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
         argv.push_back(arg.c_str());
     argv.push_back(nullptr);
 
-    // Create stdout pipe.
+    // Create stdout pipe. Both ends are RAII-protected from here on.
     int stdout_fds[2];
     if (make_pipe(stdout_fds) < 0) {
         return common::Result<ProcessResult>::fail(
             common::Error{common::ErrorCode::external_process_failed,
-                          "pipe() failed",
+                          "pipe() failed for stdout",
                           std::strerror(errno)});
     }
-    // RAII for the parent's stdout read end; write end transferred to child.
     FdCloser stdout_read{stdout_fds[0]};
+    FdCloser stdout_write{stdout_fds[1]};
 
-    // Create stderr pipe.  If it fails, close the already-open stdout fds.
+    // Create stderr pipe.
     int stderr_fds[2];
     if (make_pipe(stderr_fds) < 0) {
-        ::close(stdout_fds[1]);  // write end not yet RAII-protected
         return common::Result<ProcessResult>::fail(
             common::Error{common::ErrorCode::external_process_failed,
-                          "pipe() failed",
+                          "pipe() failed for stderr",
                           std::strerror(errno)});
     }
-    // RAII for the parent's stderr read end.
     FdCloser stderr_read{stderr_fds[0]};
+    FdCloser stderr_write{stderr_fds[1]};
 
     const pid_t pid = ::fork();
     if (pid < 0) {
-        ::close(stdout_fds[1]);
-        ::close(stderr_fds[1]);
         return common::Result<ProcessResult>::fail(
             common::Error{common::ErrorCode::external_process_failed,
                           "fork() failed",
@@ -95,14 +95,15 @@ common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
     }
 
     if (pid == 0) {
-        // Child process.
-        // Redirect stdout and stderr to the write ends of the pipes.
+        // Child process — _exit() means C++ destructors do not run here.
         ::close(stdout_fds[0]);
-        ::dup2(stdout_fds[1], STDOUT_FILENO);
+        ::close(stderr_fds[0]);
+
+        // Exit code 126: dup2 setup failure (distinct from 127 exec-not-found).
+        if (::dup2(stdout_fds[1], STDOUT_FILENO) < 0) ::_exit(126);
         ::close(stdout_fds[1]);
 
-        ::close(stderr_fds[0]);
-        ::dup2(stderr_fds[1], STDERR_FILENO);
+        if (::dup2(stderr_fds[1], STDERR_FILENO) < 0) ::_exit(126);
         ::close(stderr_fds[1]);
 
         // execvp searches $PATH; arguments are passed as separate tokens
@@ -114,11 +115,13 @@ common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
         ::_exit(127);
     }
 
-    // Parent: close write ends so reads will see EOF when the child exits.
-    ::close(stdout_fds[1]);
-    ::close(stderr_fds[1]);
+    // Parent: close write ends immediately so the pipes reach EOF when the
+    // child exits.  The read ends remain open for draining below.
+    stdout_write.close_now();
+    stderr_write.close_now();
 
-    // Drain stderr on a background thread so neither pipe blocks the parent.
+    // Drain stderr on a background thread so neither pipe blocks the parent
+    // when both stdout and stderr produce large output simultaneously.
     std::string stderr_text;
     std::thread stderr_thread([&stderr_text, fd = stderr_fds[0]] {
         stderr_text = drain_fd(fd);
@@ -127,9 +130,20 @@ common::Result<ProcessResult> ProcessRunner::run(const ProcessCommand& cmd) {
     std::string stdout_text = drain_fd(stdout_fds[0]);
     stderr_thread.join();
 
-    // Wait for the child and collect its exit status.
+    // Wait for the child; retry on EINTR (signal delivery during wait).
     int wstatus = 0;
-    ::waitpid(pid, &wstatus, 0);
+    pid_t wait_result;
+    do {
+        wait_result = ::waitpid(pid, &wstatus, 0);
+    } while (wait_result < 0 && errno == EINTR);
+
+    if (wait_result < 0) {
+        return common::Result<ProcessResult>::fail(
+            common::Error{common::ErrorCode::external_process_failed,
+                          "waitpid() failed",
+                          std::strerror(errno)});
+    }
+
     const int exit_code = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
 
     return common::Result<ProcessResult>::ok(

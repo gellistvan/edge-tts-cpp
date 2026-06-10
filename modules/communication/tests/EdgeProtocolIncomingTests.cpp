@@ -461,3 +461,189 @@ TEST(EdgeProtocolIncoming, BinaryWrongSeparatorBytesIsError) {
     const auto result = proto.parse_incoming(msg);
     EXPECT_FALSE(result.has_value());
 }
+
+// ---------------------------------------------------------------------------
+// Error codes are protocol_error on all text/binary parser failures
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, UnknownTextPathErrorCodeIsProtocolError) {
+    const std::string frame = "X-RequestId:abc\r\nPath:future.event\r\n\r\n{}";
+    const auto result = proto.parse_incoming(text_msg(frame));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::protocol_error);
+}
+
+TEST(EdgeProtocolIncoming, UnknownTextPathContextContainsPathValue) {
+    // The unknown path value ("future.event") must appear in the error context
+    // so operators can diagnose what the service sent without additional logging.
+    const std::string frame = "X-RequestId:abc\r\nPath:future.event\r\n\r\n{}";
+    const auto result = proto.parse_incoming(text_msg(frame));
+    EXPECT_FALSE(result.has_value());
+    const std::string ctx = std::string(result.error().context());
+    EXPECT_NE(ctx.find("future.event"), std::string::npos);
+}
+
+TEST(EdgeProtocolIncoming, MalformedTextFrameErrorCodeIsProtocolError) {
+    const auto result = proto.parse_incoming(text_msg("NoSeparatorHere"));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::protocol_error);
+}
+
+TEST(EdgeProtocolIncoming, BinaryNonAudioPathErrorCodeIsProtocolError) {
+    const auto result = proto.parse_incoming(
+        make_audio_frame("Path:ssml\r\nContent-Type:audio/mpeg", to_bytes("x")));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::protocol_error);
+}
+
+TEST(EdgeProtocolIncoming, BinaryNonAudioPathContextContainsReceivedPath) {
+    // The path value received ("ssml") must appear in the error context.
+    const auto result = proto.parse_incoming(
+        make_audio_frame("Path:ssml\r\nContent-Type:audio/mpeg", to_bytes("x")));
+    EXPECT_FALSE(result.has_value());
+    const std::string ctx = std::string(result.error().context());
+    EXPECT_NE(ctx.find("ssml"), std::string::npos);
+}
+
+TEST(EdgeProtocolIncoming, MissingBinaryPathContextMentionsAbsent) {
+    // Binary frame with no Path header — error context must say "(absent)".
+    const auto result = proto.parse_incoming(
+        make_audio_frame("X-RequestId:abc\r\nContent-Type:audio/mpeg", to_bytes("x")));
+    EXPECT_FALSE(result.has_value());
+    const std::string ctx = std::string(result.error().context());
+    EXPECT_NE(ctx.find("absent"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Forward-compatibility: unknown metadata type in text frame is skipped.
+//
+// A metadata frame containing only unknown types (plus optional SessionEnd)
+// yields an empty boundary list, which EdgeProtocolIncoming converts to the
+// "No WordBoundary metadata found" protocol_error (safety net).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, UnknownMetadataTypeAloneIsError) {
+    // Unknown type → parser skips it → empty list → protocol_error from the
+    // "No WordBoundary metadata found" guard.
+    const std::string frame =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[{"Type":"VisemeBoundary","Data":{}}]})";
+    const auto result = proto.parse_incoming(text_msg(frame));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), edge_tts::common::ErrorCode::protocol_error);
+}
+
+TEST(EdgeProtocolIncoming, UnknownMetadataTypeMixedWithBoundarySucceeds) {
+    // Unknown type is skipped; the WordBoundary is extracted normally.
+    const std::string frame =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[)"
+        R"({"Type":"VisemeBoundary","Data":{}},)"
+        R"({"Type":"WordBoundary","Data":{"Offset":500,"Duration":1000,"text":{"Text":"hi"}}})"
+        R"(]})";
+    const auto result = proto.parse_incoming(text_msg(frame));
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result->size(), 1u);
+    EXPECT_EQ((*result)[0].kind, IncomingMessageKind::boundary);
+    const auto& bc = std::get<BoundaryChunk>(*(*result)[0].chunk);
+    EXPECT_EQ(bc.text, "hi");
+    EXPECT_EQ(bc.offset_ticks, 500);
+}
+
+// ---------------------------------------------------------------------------
+// Audio and boundary frame interleaving
+//
+// In a real synthesis session, audio frames and audio.metadata frames arrive
+// interleaved.  parse_incoming must handle each independently — there is no
+// state shared between calls.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, AudioThenBoundaryThenAudioInterleaving) {
+    // Three calls in sequence: audio → boundary → audio.
+    // Each must parse correctly regardless of what came before.
+    const auto audio1 = proto.parse_incoming(
+        standard_audio_frame(to_bytes("CHUNK1")));
+    EXPECT_TRUE(audio1.has_value());
+    EXPECT_EQ((*audio1)[0].kind, IncomingMessageKind::audio);
+
+    const std::string meta_frame =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[{"Type":"WordBoundary","Data":{"Offset":100,"Duration":200,"text":{"Text":"foo"}}}]})";
+    const auto boundary = proto.parse_incoming(text_msg(meta_frame));
+    EXPECT_TRUE(boundary.has_value());
+    EXPECT_EQ((*boundary)[0].kind, IncomingMessageKind::boundary);
+
+    const auto audio2 = proto.parse_incoming(
+        standard_audio_frame(to_bytes("CHUNK2")));
+    EXPECT_TRUE(audio2.has_value());
+    EXPECT_EQ((*audio2)[0].kind, IncomingMessageKind::audio);
+    // Verify audio bytes from the second call are distinct from the first.
+    const auto& a1 = std::get<AudioChunk>(*(*audio1)[0].chunk);
+    const auto& a2 = std::get<AudioChunk>(*(*audio2)[0].chunk);
+    EXPECT_NE(a1.data, a2.data);
+}
+
+TEST(EdgeProtocolIncoming, MultipleBoundaryFramesThenTurnEnd) {
+    // Sequence: boundary, boundary, turn.end — models the tail of a synthesis.
+    const std::string m1 =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[{"Type":"WordBoundary","Data":{"Offset":10,"Duration":20,"text":{"Text":"a"}}}]})";
+    const std::string m2 =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[{"Type":"WordBoundary","Data":{"Offset":30,"Duration":40,"text":{"Text":"b"}}}]})";
+    const std::string te = "X-RequestId:abc\r\nPath:turn.end\r\n\r\n";
+
+    const auto r1 = proto.parse_incoming(text_msg(m1));
+    EXPECT_TRUE(r1.has_value());
+    EXPECT_EQ((*r1)[0].kind, IncomingMessageKind::boundary);
+
+    const auto r2 = proto.parse_incoming(text_msg(m2));
+    EXPECT_TRUE(r2.has_value());
+    EXPECT_EQ((*r2)[0].kind, IncomingMessageKind::boundary);
+
+    const auto r3 = proto.parse_incoming(text_msg(te));
+    EXPECT_TRUE(r3.has_value());
+    EXPECT_EQ((*r3)[0].kind, IncomingMessageKind::turn_end);
+}
+
+// ---------------------------------------------------------------------------
+// Regression fixture: full known-protocol-shape sequence
+//
+// Models the complete frame sequence for a single-chunk synthesis, matching
+// the shapes observed in production traffic:
+//   turn.start → response → audio(s) → audio.metadata → turn.end
+// ---------------------------------------------------------------------------
+
+TEST(EdgeProtocolIncoming, FullSynthesisProtocolShapeRegression) {
+    // turn.start
+    EXPECT_TRUE(proto.parse_incoming(
+        text_msg("X-RequestId:abc\r\nPath:turn.start\r\n\r\n")).has_value());
+
+    // response (with JSON body — should be ignored)
+    EXPECT_TRUE(proto.parse_incoming(
+        text_msg("X-RequestId:abc\r\nPath:response\r\n\r\n{\"context\":{}}")).has_value());
+
+    // audio frame
+    const auto audio = proto.parse_incoming(
+        standard_audio_frame(to_bytes("MPEGDATA")));
+    EXPECT_TRUE(audio.has_value());
+    EXPECT_EQ((*audio)[0].kind, IncomingMessageKind::audio);
+
+    // audio.metadata frame
+    const std::string meta =
+        "X-RequestId:abc\r\nPath:audio.metadata\r\n\r\n"
+        R"({"Metadata":[{"Type":"WordBoundary","Data":{"Offset":6250000,"Duration":5000000,"text":{"Text":"Hello","Length":5,"BoundaryType":"WordBoundary"}}}]})";
+    const auto boundary = proto.parse_incoming(text_msg(meta));
+    EXPECT_TRUE(boundary.has_value());
+    EXPECT_EQ((*boundary)[0].kind, IncomingMessageKind::boundary);
+    const auto& bc = std::get<BoundaryChunk>(*(*boundary)[0].chunk);
+    EXPECT_EQ(bc.text, "Hello");
+    EXPECT_EQ(bc.offset_ticks, 6250000);
+    EXPECT_EQ(bc.duration_ticks, 5000000);
+
+    // turn.end
+    const auto te = proto.parse_incoming(
+        text_msg("X-RequestId:abc\r\nPath:turn.end\r\n\r\n"));
+    EXPECT_TRUE(te.has_value());
+    EXPECT_EQ((*te)[0].kind, IncomingMessageKind::turn_end);
+}

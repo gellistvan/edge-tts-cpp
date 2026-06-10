@@ -1,0 +1,20 @@
+{
+  "Metadata": [
+    {
+      "Type": "WordBoundary",
+      "Data": {
+        "Offset": 6250000,
+        "Duration": 5000000,
+        "text": {
+          "Text": "Hello",
+          "Length": 5,
+          "BoundaryType": "WordBoundary",
+          "UnknownTextField": "ignored"
+        },
+        "UnknownDataField": 99,
+        "AnotherExtra": { "nested": true }
+      },
+      "UnknownItemField": "also ignored"
+    }
+  ]
+}

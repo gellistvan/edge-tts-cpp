@@ -1,5 +1,6 @@
 #include "communication/SynthesisSession.hpp"
 #include "communication/FakeWebSocketClient.hpp"
+#include "communication/WebSocketClient.hpp"
 #include "communication/EdgeProtocol.hpp"
 #include "communication/EdgeServiceConfig.hpp"
 #include "communication/EdgeTokenProvider.hpp"
@@ -854,3 +855,108 @@ TEST(DrmRetry, SkewIsComputedRelativeToEffectiveClientTime) {
     // After adjustment: total_skew = 30 - 5 = 25.0
     EXPECT_EQ(tp.clock_skew_seconds(), 25.0);
 }
+
+// ---------------------------------------------------------------------------
+// Proxy rejection — real WebSocketClient
+//
+// These tests use the real WebSocketClient (not FakeWebSocketClient) to verify
+// that a proxy set in WebSocketClientOptions is rejected at connect() time with
+// ErrorCode::unsupported, and that SynthesisSession propagates that error.
+//
+// Guarded by EDGE_TTS_HAVE_IXWEBSOCKET because the proxy guard lives in the
+// ixwebsocket-backed connect() implementation.
+// ---------------------------------------------------------------------------
+
+#ifdef EDGE_TTS_HAVE_IXWEBSOCKET
+
+using edge_tts::communication::WebSocketClient;
+using edge_tts::communication::WebSocketClientOptions;
+
+// Helper: build a SynthesisSession backed by a real WebSocketClient.
+static SynthesisSession make_session_real_ws(WebSocketClient& ws) {
+    return SynthesisSession{
+        ws, get_protocol(), make_test_config(),
+        get_token_provider(), get_meta_factory(), g_clock};
+}
+
+// ---------------------------------------------------------------------------
+// Proxy rejection — real WebSocketClient wired into SynthesisSession.
+//
+// These tests verify that a proxy URL set in WebSocketClientOptions is
+// rejected at connect() time with ErrorCode::unsupported, and that
+// SynthesisSession propagates the error rather than swallowing it.
+// ---------------------------------------------------------------------------
+
+TEST(SynthesisSession, ProxyRejectedByRealWebSocketClient) {
+    // connect() fires the proxy guard before any network call — the error code
+    // must be unsupported (not network_error or anything else).
+    WebSocketClientOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    WebSocketClient real_ws{std::move(opts)};
+    auto session = make_session_real_ws(real_ws);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().code(), ErrorCode::unsupported);
+}
+
+TEST(SynthesisSession, ProxyErrorMessageMentionsProxy) {
+    WebSocketClientOptions opts;
+    opts.proxy = "http://proxy.example.com:3128";
+    WebSocketClient real_ws{std::move(opts)};
+    auto session = make_session_real_ws(real_ws);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+
+    EXPECT_FALSE(result.has_value());
+    const std::string msg = result.error().what();
+    const bool mentions_proxy = msg.find("proxy") != std::string::npos
+                             || msg.find("Proxy") != std::string::npos;
+    EXPECT_TRUE(mentions_proxy);
+}
+
+TEST(SynthesisSession, ProxyCredentialsRedactedInErrorContext) {
+    // Credentials (user:pass@) in the proxy URL must be replaced by
+    // [credentials] before appearing in any error field.
+    WebSocketClientOptions opts;
+    opts.proxy = "http://user:s3cr3t@proxy.internal:3128";
+    WebSocketClient real_ws{std::move(opts)};
+    auto session = make_session_real_ws(real_ws);
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+
+    EXPECT_FALSE(result.has_value());
+    const std::string ctx = std::string(result.error().context());
+    EXPECT_EQ(ctx.find("s3cr3t"), std::string::npos);
+    EXPECT_NE(ctx.find("[credentials]"), std::string::npos);
+}
+
+TEST(SynthesisSession, NoProxyDoesNotTriggerUnsupported) {
+    // Without a proxy, connect() reaches the network and will fail on a fake
+    // host — but the error must NOT be unsupported (proxy guard must not fire).
+    WebSocketClient real_ws;  // default WebSocketClientOptions — proxy absent
+
+    // Redirect to a guaranteed-unreachable host so the test is fast.
+    EdgeServiceConfig cfg = make_test_config();
+    cfg.websocket_endpoint = "wss://this-host-does-not-exist-edge-tts.invalid?x=1";
+
+    SynthesisSession session{
+        real_ws, get_protocol(), cfg,
+        get_token_provider(), get_meta_factory(), g_clock};
+
+    const std::vector<std::string> chunks{"hello"};
+    auto result = session.synthesize(TtsConfig::defaults(),
+                                     std::span<const std::string>{chunks});
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_NE(result.error().code(), ErrorCode::unsupported);
+}
+
+#endif  // EDGE_TTS_HAVE_IXWEBSOCKET

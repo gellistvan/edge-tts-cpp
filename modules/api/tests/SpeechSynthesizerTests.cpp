@@ -361,6 +361,50 @@ TEST(SpeechSynthesizer, SaveWithNoBoundariesProducesEmptySrt) {
     EXPECT_TRUE(fs::exists(srt));
 }
 
+TEST(SpeechSynthesizer, SubtitleTimingUnchangedByAudioByteSize) {
+    // Regression guard: SubMaker derives cue times from BoundaryChunk::offset_ticks
+    // and duration_ticks only.  Changing the audio payload size must not alter
+    // SRT output when boundary metadata is identical.
+    //
+    // This covers the single-chunk case where offset_compensation is always 0
+    // regardless of audio byte count (cumulative_audio_bytes is zero when chunk 1
+    // starts).  For multi-chunk timing the SynthesisSession comment documents
+    // the MP3/48kbps approximation used there.
+
+    // 500ms start, 1000ms end → expected timestamp line.
+    static constexpr std::int64_t TICKS_PER_MS = 10'000;
+    const std::int64_t offset_ticks   = 500  * TICKS_PER_MS;
+    const std::int64_t duration_ticks = 1000 * TICKS_PER_MS;
+
+    auto make_chunks = [&](std::size_t n_audio_bytes) -> std::vector<TtsChunk> {
+        AudioChunk ac;
+        ac.data = std::vector<std::byte>(n_audio_bytes, std::byte{0xAB});
+        return {TtsChunk{std::move(ac)},
+                TtsChunk{make_boundary("Hello", offset_ticks, duration_ticks)}};
+    };
+
+    const fs::path mp1  = tmp_path("srt_bytes1.mp3");
+    const fs::path srt1 = tmp_path("srt_bytes1.srt");
+    const fs::path mp2  = tmp_path("srt_bytes2.mp3");
+    const fs::path srt2 = tmp_path("srt_bytes2.srt");
+    FileGuard g1m{mp1}; FileGuard g1s{srt1};
+    FileGuard g2m{mp2}; FileGuard g2s{srt2};
+
+    SpeechSynthesizer a("Hello", valid_config(), make_fake(make_chunks(100)));
+    EXPECT_TRUE(a.save(mp1, srt1).has_value());
+
+    SpeechSynthesizer b("Hello", valid_config(), make_fake(make_chunks(10'000)));
+    EXPECT_TRUE(b.save(mp2, srt2).has_value());
+
+    const std::string srt_a = read_text(srt1);
+    const std::string srt_b = read_text(srt2);
+
+    // Bit-for-bit identical SRT regardless of audio payload size.
+    EXPECT_EQ(srt_a, srt_b);
+    // Sanity: the expected timestamps are present.
+    EXPECT_NE(srt_a.find("00:00:00,500 --> 00:00:01,500"), std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // Error propagation
 // ---------------------------------------------------------------------------

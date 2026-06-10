@@ -357,6 +357,146 @@ TEST(VoiceJsonParser, LocaleWithMultipleDashesLanguageIsFirstSegment) {
 }
 
 // ---------------------------------------------------------------------------
+// Array element that is not an object → rejected
+// ---------------------------------------------------------------------------
+
+TEST(VoiceJsonParser, ArrayElementNotObjectRejected) {
+    const auto r = parser.parse(R"json(["not-an-object", 42])json");
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+// ---------------------------------------------------------------------------
+// Required field present but wrong type → rejected
+// ---------------------------------------------------------------------------
+
+TEST(VoiceJsonParser, GenderNotStringRejected) {
+    const std::string json = R"json([
+      {
+        "Name": "N",
+        "ShortName": "en-US-Test",
+        "Gender": 42,
+        "Locale": "en-US",
+        "SuggestedCodec": "mp3",
+        "FriendlyName": "Test",
+        "Status": "GA"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(VoiceJsonParser, NameNotStringRejected) {
+    const std::string json = R"json([
+      {
+        "Name": 99,
+        "ShortName": "en-US-Test",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "mp3",
+        "FriendlyName": "Test",
+        "Status": "GA"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+// ---------------------------------------------------------------------------
+// Extra / forward-compatible fields in VoiceTag sub-objects are ignored.
+// Fixture: fixtures/voices_extra_fields.json
+// ---------------------------------------------------------------------------
+
+TEST(VoiceJsonParser, ExtraFieldsInVoiceTagIgnored) {
+    // "UnknownVoiceTagField" inside VoiceTag is not a recognised key.
+    // The parser extracts ContentCategories and VoicePersonalities and ignores the rest.
+    const std::string json = R"json([
+      {
+        "Name": "N",
+        "ShortName": "en-US-Test",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "mp3",
+        "FriendlyName": "Test",
+        "Status": "GA",
+        "VoiceTag": {
+          "ContentCategories": ["General"],
+          "VoicePersonalities": ["Friendly"],
+          "UnknownVoiceTagField": "ignored"
+        }
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value()[0].content_categories.size(), 1u);
+    EXPECT_EQ(r.value()[0].voice_personalities.size(), 1u);
+}
+
+TEST(VoiceJsonParser, NewTopLevelFieldsInVoiceEntryIgnored) {
+    // "NewServiceField" and "AnotherNewField" are unknown top-level keys
+    // on a voice entry — they must be silently ignored.
+    const std::string json = R"json([
+      {
+        "Name": "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)",
+        "ShortName": "en-US-GuyNeural",
+        "Gender": "Male",
+        "Locale": "en-US",
+        "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+        "FriendlyName": "Microsoft Guy Online (Natural) - English (United States)",
+        "Status": "GA",
+        "NewServiceField": "future addition",
+        "AnotherNewField": 42
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value()[0].short_name, "en-US-GuyNeural");
+}
+
+// ---------------------------------------------------------------------------
+// Regression fixture: current known voice list shape (voices_valid.json)
+// ---------------------------------------------------------------------------
+
+TEST(VoiceJsonParser, KnownVoiceShapeRegression) {
+    // This is the verbatim shape observed in production voice list responses.
+    // If this test starts failing, the service has changed its JSON schema.
+    const std::string json = R"json([
+      {
+        "Name": "Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)",
+        "ShortName": "en-US-EmmaMultilingualNeural",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+        "FriendlyName": "Microsoft Emma Online (Natural) - English (United States)",
+        "Status": "GA",
+        "VoiceTag": {
+          "ContentCategories": ["General"],
+          "VoicePersonalities": ["Friendly", "Positive"]
+        }
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().size(), 1u);
+
+    const Voice& v = r.value()[0];
+    EXPECT_EQ(v.name,            "Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)");
+    EXPECT_EQ(v.short_name,      "en-US-EmmaMultilingualNeural");
+    EXPECT_EQ(v.gender,          VoiceGender::female);
+    EXPECT_EQ(v.locale,          "en-US");
+    EXPECT_EQ(v.language,        "en");
+    EXPECT_EQ(v.suggested_codec, "audio-24khz-48kbitrate-mono-mp3");
+    EXPECT_EQ(v.status,          "GA");
+    EXPECT_EQ(v.content_categories.size(),  1u);
+    EXPECT_EQ(v.content_categories[0],      "General");
+    EXPECT_EQ(v.voice_personalities.size(), 2u);
+    EXPECT_EQ(v.voice_personalities[0],     "Friendly");
+    EXPECT_EQ(v.voice_personalities[1],     "Positive");
+}
+
+// ---------------------------------------------------------------------------
 // Ordering preserved (reference list_voices returns array in wire order)
 // ---------------------------------------------------------------------------
 
