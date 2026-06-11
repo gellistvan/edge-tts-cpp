@@ -218,6 +218,35 @@ TEST(InputLoader, FilePrecedenceOverStdin) {
 }
 
 // ---------------------------------------------------------------------------
+// Directory passed as --file → io_error, not a crash
+//
+// On Linux, std::ifstream opens a directory descriptor "successfully" but
+// throws std::ios_failure on the first read.  InputLoader must detect this
+// before reading and return io_error so the dispatcher can print a clean
+// error instead of terminating.
+// ---------------------------------------------------------------------------
+
+TEST(InputLoader, FileOptionDirectoryPathReturnsIoError) {
+    EdgeTtsArguments args;
+    args.file = fs::temp_directory_path().string();
+    auto ss = empty_stdin();
+    auto r = loader.load(args, ss);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::io_error);
+}
+
+TEST(InputLoader, FileOptionDirectoryPathIncludesPathInContext) {
+    const std::string dir = fs::temp_directory_path().string();
+    EdgeTtsArguments args;
+    args.file = dir;
+    auto ss = empty_stdin();
+    auto r = loader.load(args, ss);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_TRUE(r.error().has_context());
+    EXPECT_FALSE(r.error().context().empty());
+}
+
+// ---------------------------------------------------------------------------
 // Neither --text nor --file set
 // ---------------------------------------------------------------------------
 

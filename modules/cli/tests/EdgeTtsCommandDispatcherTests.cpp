@@ -1180,3 +1180,111 @@ TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
     EXPECT_EQ(d.dispatch(r), 1);
     EXPECT_NE(err.str().find("input_file_unique.txt"), std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// invalid_argument synthesis error → exit 1, not exit 2
+//
+// An invalid voice/rate/pitch/volume is only detected at synthesis time (the
+// parser accepts any string for these options).  The synthesizer returns
+// invalid_argument.  The dispatcher must still exit 1 with a message on
+// stderr — not silently swallow the error or exit 2 (which is reserved for
+// argument parser failures).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisReturns1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::invalid_argument, "unknown voice 'bad-voice'"),
+        out, err, in};
+
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+}
+
+TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisPrintsMessageToStderr) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::invalid_argument, "unknown voice 'bad-voice'"),
+        out, err, in};
+
+    d.dispatch(make_text_result("hello"));
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Output overwrite behavior: --write-media to an existing file succeeds.
+//
+// The CLI does not protect against overwriting existing output files.  This
+// test documents the current behavior so a future change that adds a --force
+// flag (or raises an error) is visible as a deliberate, tested change.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, WriteMediaOverwritesExistingFile) {
+    const fs::path out_path = tmp_path("overwrite_test.mp3");
+    FileGuard guard{out_path};
+
+    // Pre-create the file with different content.
+    { std::ofstream f(out_path); f << "OLD CONTENT"; }
+
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("NEW")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+
+    int rc = d.dispatch(make_text_result("hello", out_path.string()));
+
+    EXPECT_EQ(rc, 0);
+    const auto written = read_binary_file(out_path);
+    // New content must have replaced the old content.
+    EXPECT_NE(std::string(reinterpret_cast<const char*>(written.data()),
+                          written.size()).find("NEW"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// --write-media path is an existing directory → exit 1, path in stderr.
+//
+// Attempting to write audio to a path that already exists as a directory
+// must fail cleanly.  The dispatcher must not silently succeed (writing
+// nothing) or crash; it must report an io_error and include the path in
+// stderr so the user can identify the bad argument.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, WriteMediaToDirectoryReturns1) {
+    // Use the system temp directory as a guaranteed-existing directory target.
+    const std::string dir_path = fs::temp_directory_path().string();
+
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("mp3")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+
+    EXPECT_EQ(d.dispatch(make_text_result("hello", dir_path)), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// --file path is an existing directory → exit 1, path in stderr.
+//
+// Passing a directory as the input file must fail with io_error.  The
+// InputLoader attempts to open the path as a regular file, which fails on a
+// directory; the error context must contain the path.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, FileInputFromDirectoryReturns1) {
+    const std::string dir_path = fs::temp_directory_path().string();
+
+    ParseResult r;
+    r.action    = ParseAction::synthesize;
+    r.exit_code = 0;
+    r.arguments.file = dir_path;
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+
+    EXPECT_EQ(d.dispatch(r), 1);
+    EXPECT_FALSE(err.str().empty());
+}
