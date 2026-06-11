@@ -213,6 +213,72 @@ TEST(VoiceJsonParser, MissingLocaleRejected) {
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
 }
 
+TEST(VoiceJsonParser, MissingShortNameRejected) {
+    // ShortName is required — it is the voice identifier used for lookups and CLI output.
+    // Fixture: fixtures/voices_missing_shortname.json
+    const std::string json = R"json([
+      {
+        "Name": "Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+        "FriendlyName": "Microsoft Emma Online (Natural) - English (United States)",
+        "Status": "GA"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(VoiceJsonParser, MissingSuggestedCodecRejected) {
+    const std::string json = R"json([
+      {
+        "Name": "N",
+        "ShortName": "en-US-Test",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "FriendlyName": "Test",
+        "Status": "GA"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(VoiceJsonParser, MissingFriendlyNameRejected) {
+    const std::string json = R"json([
+      {
+        "Name": "N",
+        "ShortName": "en-US-Test",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "mp3",
+        "Status": "GA"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(VoiceJsonParser, MissingStatusRejected) {
+    const std::string json = R"json([
+      {
+        "Name": "N",
+        "ShortName": "en-US-Test",
+        "Gender": "Female",
+        "Locale": "en-US",
+        "SuggestedCodec": "mp3",
+        "FriendlyName": "Test"
+      }
+    ])json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
 // ---------------------------------------------------------------------------
 // Malformed JSON
 // ---------------------------------------------------------------------------

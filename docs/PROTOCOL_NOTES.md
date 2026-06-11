@@ -770,7 +770,15 @@ Note: `text` (lowercase) contains `Text` (uppercase) — both keys are case-sens
 | `"WordBoundary"` | Parsed → `BoundaryEventType::WordBoundary` |
 | `"SentenceBoundary"` | Parsed → `BoundaryEventType::SentenceBoundary` |
 | `"SessionEnd"` | Silently skipped (`continue` in reference) |
-| anything else | `parse_error` (reference: `UnknownResponse`) |
+| anything else | **Silently skipped** — see Parser Compatibility Policy |
+
+Note: the Python reference raises `UnknownResponse` for unknown types; the C++
+implementation deviates intentionally by skipping them at the `MetadataJsonParser`
+level.  `EdgeProtocol` applies a safety net: if the resulting boundary list is
+empty it returns `protocol_error("No WordBoundary metadata found")`, which
+matches the reference error for the all-unknown and all-`SessionEnd` cases.
+This deviation enables forward compatibility when the service introduces new event
+types (e.g. `VisemeBoundary`) without breaking synthesis.
 
 ### Offset compensation
 
