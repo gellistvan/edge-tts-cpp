@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/StreamCallbacks.hpp"
 #include "api/SynthesisOptions.hpp"
 #include "common/CancellationToken.hpp"
 #include "common/Result.hpp"
@@ -121,6 +122,25 @@ public:
     [[nodiscard]] common::Result<void> save(
         const std::filesystem::path& media_path,
         std::optional<std::filesystem::path> subtitles_path = std::nullopt);
+
+    // Synthesize and deliver chunks progressively via callbacks.
+    //
+    // Single-use: returns ErrorCode::invalid_state if called after synthesize(),
+    // save(), or synthesize_stream() has already been called.
+    //
+    // on_audio and on_boundary are invoked in arrival order on the calling
+    // thread.  Exactly one of on_complete or on_error fires last.
+    // All fields of callbacks are optional — null std::function is skipped.
+    //
+    // The return value mirrors the completion status (success → ok(); error or
+    // cancellation → fail(...)) for callers who prefer a Result-based flow.
+    // on_complete / on_error carry the same outcome for callers who prefer a
+    // callback-based flow.
+    //
+    // Cancellation: call cancel() at any time, including from inside a callback.
+    // Dispatch stops before the next chunk; on_error fires with
+    // ErrorCode::cancelled.
+    [[nodiscard]] common::Result<void> synthesize_stream(StreamCallbacks callbacks);
 
 private:
     std::string                 text_;

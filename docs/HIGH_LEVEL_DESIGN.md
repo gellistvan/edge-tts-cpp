@@ -151,7 +151,7 @@ if (!result) {
     std::cerr << result.error().what() << '\n';
 }
 
-// OR stream chunks for custom processing.
+// OR batch-collect all chunks.
 edge_tts::api::SpeechSynthesizer c2("Hello again!");
 auto chunks = c2.synthesize();
 if (chunks) {
@@ -160,11 +160,51 @@ if (chunks) {
         else                                  { /* process boundary event */ }
     }
 }
+
+// OR use the progressive callback API (streaming).
+#include "edge_tts/api/StreamCallbacks.hpp"
+
+edge_tts::api::SpeechSynthesizer c3("Streaming example!");
+edge_tts::api::StreamCallbacks cbs;
+cbs.on_audio = [](std::span<const std::byte> data) {
+    // Write data to a file, pipe, or audio device as it arrives.
+};
+cbs.on_boundary = [](const edge_tts::core::BoundaryChunk& b) {
+    // Accumulate subtitle cues in arrival order.
+};
+cbs.on_complete = []() { /* synthesis finished */ };
+cbs.on_error    = [](const edge_tts::common::Error& e) {
+    std::cerr << e.what() << '\n';
+};
+auto result = c3.synthesize_stream(std::move(cbs));
 ```
 
-**Note:** `synthesize()` and `save()` are each single-use. Calling either
-a second time returns `ErrorCode::invalid_state`. Inject a `SynthesizerFn` for
-unit testing without a live service connection.
+**Note:** `synthesize()`, `save()`, and `synthesize_stream()` are all single-use.
+Calling any of them a second time returns `ErrorCode::invalid_state`. Inject a
+`SynthesizerFn` for unit testing without a live service connection.
+
+### `synthesize_stream()` — progressive callback API
+
+`SpeechSynthesizer::synthesize_stream(StreamCallbacks)` delivers chunks one at a
+time via callbacks instead of accumulating them in a vector.  This lets callers
+write a file writer, audio player, or subtitle builder without holding all audio
+bytes in memory simultaneously.
+
+| Callback | When called | Optional? |
+|----------|-------------|-----------|
+| `on_audio(span<const byte>)` | Each audio chunk, in order | yes |
+| `on_boundary(const BoundaryChunk&)` | Each word/sentence boundary, in order | yes |
+| `on_complete()` | Once, on success | yes |
+| `on_error(const Error&)` | Once, on failure or cancellation | yes |
+
+Exactly one of `on_complete` / `on_error` fires last.  All callbacks are invoked
+synchronously on the calling thread.  Null `std::function` members are silently
+skipped.  The `span` passed to `on_audio` is valid only for the duration of that
+call — copy the bytes if they must outlive it.
+
+**Cancellation:** call `SpeechSynthesizer::cancel()` at any time, including from
+inside a callback.  Dispatch stops before the next chunk; `on_error` fires with
+`ErrorCode::cancelled`.
 
 ## Core domain type ownership
 

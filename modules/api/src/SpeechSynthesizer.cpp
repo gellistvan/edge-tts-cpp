@@ -199,6 +199,48 @@ common::Result<std::vector<core::TtsChunk>> SpeechSynthesizer::synthesize()
     return run_pipeline();
 }
 
+common::Result<void> SpeechSynthesizer::synthesize_stream(StreamCallbacks callbacks)
+{
+    if (called_)
+        return common::Result<void>::fail(
+            common::Error{common::ErrorCode::invalid_state,
+                          "synthesize can only be called once"});
+    called_ = true;
+
+    auto synthesis = run_pipeline();
+    if (!synthesis) {
+        if (callbacks.on_error) callbacks.on_error(synthesis.error());
+        return common::Result<void>::fail(synthesis.error());
+    }
+
+    for (const auto& chunk : *synthesis) {
+        if (cancel_token_.is_cancelled()) {
+            common::Error e{common::ErrorCode::cancelled, "synthesis was cancelled"};
+            if (callbacks.on_error) callbacks.on_error(e);
+            return common::Result<void>::fail(e);
+        }
+        if (core::is_audio(chunk)) {
+            if (callbacks.on_audio) {
+                const auto& ac = std::get<core::AudioChunk>(chunk);
+                callbacks.on_audio(std::span<const std::byte>{ac.data});
+            }
+        } else if (core::is_boundary(chunk)) {
+            if (callbacks.on_boundary) {
+                callbacks.on_boundary(std::get<core::BoundaryChunk>(chunk));
+            }
+        }
+    }
+
+    if (cancel_token_.is_cancelled()) {
+        common::Error e{common::ErrorCode::cancelled, "synthesis was cancelled"};
+        if (callbacks.on_error) callbacks.on_error(e);
+        return common::Result<void>::fail(e);
+    }
+
+    if (callbacks.on_complete) callbacks.on_complete();
+    return common::Result<void>::ok();
+}
+
 common::Result<void> SpeechSynthesizer::save(
     const std::filesystem::path& media_path,
     std::optional<std::filesystem::path> subtitles_path)

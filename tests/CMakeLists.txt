@@ -151,6 +151,7 @@ edge_tts_add_module_test(
         ${_M}/api/tests/OfflineIntegrationTests.cpp
         ${_M}/api/tests/PublicApiContractTests.cpp
         ${_M}/api/tests/CancellationTests.cpp
+        ${_M}/api/tests/StreamingApiTests.cpp
     LIBRARIES edge_tts::api edge_tts::cli edge_tts_test_support
 )
 
@@ -253,6 +254,7 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "edge_tts/version.hpp"
     # api
     "api/SpeechSynthesizer.hpp"
+    "api/StreamCallbacks.hpp"
     "api/SynthesisOptions.hpp"
     "api/FileWriter.hpp"
     "api/VoiceList.hpp"
