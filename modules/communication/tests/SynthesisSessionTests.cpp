@@ -294,7 +294,6 @@ TEST(SynthesisSession, StopsOnTurnEnd) {
 
 // ---------------------------------------------------------------------------
 // Closes on success
-// Reference: context manager __aexit__ always closes
 // ---------------------------------------------------------------------------
 
 TEST(SynthesisSession, ClosesAfterSuccessfulChunk) {
@@ -355,7 +354,6 @@ TEST(SynthesisSession, ClosesWhenSendErrors) {
 
 // ---------------------------------------------------------------------------
 // Connect error propagates (no close because connect failed)
-// Reference: connect failure happens before the context manager enters
 // ---------------------------------------------------------------------------
 
 TEST(SynthesisSession, ConnectErrorPropagates) {

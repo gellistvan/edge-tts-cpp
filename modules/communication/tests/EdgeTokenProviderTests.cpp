@@ -21,17 +21,14 @@ static FixedClock make_clock(long long unix_seconds)
 // ---------------------------------------------------------------------------
 // Fixed-clock deterministic tests
 //
-// All expected tokens computed by running the reference Python drm.py algorithm:
-//   ticks = unix + WIN_EPOCH
-//   ticks -= ticks % 300
-//   ticks *= 1e9 / 100
-//   hashlib.sha256(f"{ticks:.0f}6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-//                  .encode("ascii")).hexdigest().upper()
+// Expected tokens computed by the Sec-MS-GEC algorithm:
+//   ticks = (unix + 11644473600) rounded down to 300s boundary * 1e7
+//   token = SHA-256(ticks_decimal + "6A5AA1D4EAFF4E9FB37E23D68491D6F4").upper()
 //
-// Verified independently with: echo -n "<str_to_hash>" | sha256sum | tr a-z A-Z
+// Verified with: echo -n "<str_to_hash>" | sha256sum | tr a-z A-Z
 // ---------------------------------------------------------------------------
 
-TEST(EdgeTokenProvider, FixedClockUnix0MatchesPythonReference) {
+TEST(EdgeTokenProvider, FixedClockUnix0) {
     // unix=0, str_to_hash="1164447360000000006A5AA1D4EAFF4E9FB37E23D68491D6F4"
     const auto clock = make_clock(0);
     const EdgeTokenProvider tp{default_edge_service_config(), clock};
@@ -42,7 +39,7 @@ TEST(EdgeTokenProvider, FixedClockUnix0MatchesPythonReference) {
         "7ECB79D14E3AA576D2D79E6D487A1388156D91E614B1BE11C64226A29BC8DD8C");
 }
 
-TEST(EdgeTokenProvider, FixedClockUnix1000000000MatchesPythonReference) {
+TEST(EdgeTokenProvider, FixedClockUnix1000000000) {
     // unix=1000000000, str_to_hash="1264447350000000006A5AA1D4EAFF4E9FB37E23D68491D6F4"
     const auto clock = make_clock(1000000000LL);
     const EdgeTokenProvider tp{default_edge_service_config(), clock};
@@ -53,7 +50,7 @@ TEST(EdgeTokenProvider, FixedClockUnix1000000000MatchesPythonReference) {
         "6594DCF2D741A251B0EDFB71C0034EBFEBF6D413CC1EA5D1B23E60B118A2F0E1");
 }
 
-TEST(EdgeTokenProvider, FixedClockUnix1700000000MatchesPythonReference) {
+TEST(EdgeTokenProvider, FixedClockUnix1700000000) {
     // unix=1700000000, str_to_hash="1334447340000000006A5AA1D4EAFF4E9FB37E23D68491D6F4"
     const auto clock = make_clock(1700000000LL);
     const EdgeTokenProvider tp{default_edge_service_config(), clock};
@@ -94,7 +91,6 @@ TEST(EdgeTokenProvider, TokenIsUppercaseHex) {
 TEST(EdgeTokenProvider, VersionMatchesReference) {
     const auto clock = make_clock(0);
     const EdgeTokenProvider tp{default_edge_service_config(), clock};
-    // Reference: constants.py SEC_MS_GEC_VERSION = "1-143.0.3650.75"
     EXPECT_EQ(tp.sec_ms_gec_version(), "1-143.0.3650.75");
 }
 
@@ -109,7 +105,6 @@ TEST(EdgeTokenProvider, VersionMatchesConfig) {
 // Bucket boundary behaviour
 // Timestamps within the same 300-second window produce the same token.
 // Timestamps in different windows produce different tokens.
-// Reference: ticks -= ticks % 300  (round down to 5-minute boundary)
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTokenProvider, SameBucketSameToken) {
@@ -125,7 +120,6 @@ TEST(EdgeTokenProvider, SameBucketSameToken) {
     EXPECT_TRUE(ra.has_value());
     EXPECT_TRUE(rb.has_value());
     EXPECT_EQ(ra.value(), rb.value());
-    // Exact value confirmed by Python reference
     EXPECT_EQ(ra.value(),
         "AE4CF72E466874182A75878E20EADA83D29A1C12CAD9C3E0E014CCE0BFA55880");
 }

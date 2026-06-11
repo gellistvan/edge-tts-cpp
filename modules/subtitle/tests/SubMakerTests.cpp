@@ -28,7 +28,6 @@ static BoundaryChunk make_chunk(
     return c;
 }
 
-// Shorthand constants matching reference constants.py
 static constexpr std::int64_t TICKS_PER_SECOND = 10'000'000;
 static constexpr std::int64_t TICKS_PER_MS     = 10'000;
 

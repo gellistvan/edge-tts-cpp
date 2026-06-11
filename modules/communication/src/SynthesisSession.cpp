@@ -160,8 +160,7 @@ common::Result<std::vector<core::TtsChunk>> SynthesisSession::synthesize(
         // boundary metadata reported by the service (offset_ticks + duration_ticks).
         const std::int64_t offset_compensation = cumulative_subtitle_ticks;
 
-        // Retry loop — reference: communicate.py stream() try/except around
-        // __stream(), retrying once on ClientResponseError(status=403).
+        // Retry loop — retries once on drm_error (HTTP 403 token rejection).
         for (int attempt = 0; ; ++attempt) {
             // --- Generate metadata for this chunk ----------------------------
             // New metadata per attempt → new ConnectionId each time.

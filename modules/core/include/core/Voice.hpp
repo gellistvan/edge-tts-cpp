@@ -8,7 +8,7 @@
 
 namespace edge_tts::core {
 
-// Matches the Python Voice TypedDict Gender field: "Female" | "Male".
+// Gender field from the Edge TTS voice-list wire format: "Female" | "Male".
 // unknown is used when the field is absent or unrecognised (not a wire value).
 enum class VoiceGender {
     unknown,
@@ -20,14 +20,14 @@ enum class VoiceGender {
 // "Unknown" is never sent to the service; it is used only for logging.
 [[nodiscard]] std::string_view to_string(VoiceGender gender) noexcept;
 
-// Parses "Female" or "Male" (case-sensitive, matching the Python wire value).
+// Parses "Female" or "Male" (case-sensitive, matching the wire value).
 // Returns an error for any other value including empty.
 [[nodiscard]] common::Result<VoiceGender> voice_gender_from_string(
         std::string_view value);
 
 // Represents one voice entry returned by the Edge TTS voice-list endpoint.
 //
-// Field mapping from the Python Voice TypedDict (typing.py):
+// Wire field names (JSON key → C++ field):
 //   Name              → name
 //   ShortName         → short_name
 //   Gender            → gender (VoiceGender enum)
@@ -37,7 +37,6 @@ enum class VoiceGender {
 //   Status            → status  ("GA" | "Preview" | "Deprecated")
 //   VoiceTag.ContentCategories   → content_categories
 //   VoiceTag.VoicePersonalities  → voice_personalities
-//   Language (VoicesManagerVoice) → language  (= locale prefix before first '-')
 //
 // All fields default to empty / unknown so the struct can be built incrementally
 // by the JSON parser without requiring every field to be present.

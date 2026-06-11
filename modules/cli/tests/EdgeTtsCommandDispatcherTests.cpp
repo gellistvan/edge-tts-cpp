@@ -478,6 +478,66 @@ TEST(EdgeTtsCommandDispatcher, SynthesisErrorDoesNotWriteToStdout) {
 }
 
 // ---------------------------------------------------------------------------
+// Exit-code taxonomy — one test per remaining ErrorCode.  All runtime errors
+// map to exit 1.  See docs/MODULES.md — CLI exit code mapping.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ProtocolErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::protocol_error, "unexpected message path"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, ParseErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::parse_error, "invalid JSON in metadata"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, TimeoutErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::timeout, "receive timeout after 60 s"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, DrmErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::drm_error, "HTTP 403 after retry"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, CancelledErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::cancelled, "synthesis was cancelled"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
 // help / version / error actions (dispatched by EdgeTtsCommandDispatcher)
 // ---------------------------------------------------------------------------
 
@@ -771,7 +831,7 @@ TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenTtyCheckFalse) {
 
 TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenWriteMediaIsDash) {
     // --write-media=- selects stdout explicitly; user knowingly chose stdout.
-    // Python: `not args.write_media` is False when write_media=="-", so no warning.
+    // --write-media=- selects stdout explicitly; write_media is set, so no warning.
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
     std::ostringstream out, err;
     std::istringstream in;
@@ -1017,9 +1077,6 @@ TEST(EdgeTtsCommandDispatcher, WriteSubtitlesFileErrorIncludesFilenameInStderr) 
 
 // ---------------------------------------------------------------------------
 // --file=- reads text from the injected stdin stream
-//
-// Reference: InputLoader reads from stdin_stream when file path is "-" or
-// "/dev/stdin".  The dispatcher injects in_ into InputLoader.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, FileDashReadsFromStdin) {
@@ -1126,16 +1183,10 @@ TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty text input: --text "" produces exit 0, no audio on stdout.
-//
-// TextChunker normalizes empty (or whitespace-only) text to an empty chunk
-// list.  The dispatcher must exit cleanly rather than treating "no chunks"
-// as an error.  This documents the boundary between a parse error (exit 2)
-// and a silent empty-result synthesis (exit 0).
+// Empty text input: exit 0, no audio — not a parse error (exit 2).
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, EmptyTextSynthesisSucceeds) {
-    // SpeechSynthesizer with empty text returns an empty chunk vector (no audio).
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
@@ -1159,12 +1210,7 @@ TEST(EdgeTtsCommandDispatcher, EmptyTextNoAudioWrittenToStdout) {
 }
 
 // ---------------------------------------------------------------------------
-// Missing input file: error message must include the path so the user knows
-// which file could not be opened.
-//
-// The io_error from InputLoader carries the path in its context field.
-// EdgeTtsCommandDispatcher::format_error forwards Error::what(), which
-// includes the context, so the path must appear in stderr.
+// Missing input file: io_error carries path in context → path appears in stderr.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
@@ -1179,4 +1225,102 @@ TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
     EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
     EXPECT_EQ(d.dispatch(r), 1);
     EXPECT_NE(err.str().find("input_file_unique.txt"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// invalid_argument from synthesis → exit 1 (not exit 2; parser accepts any
+// string for voice/rate/pitch/volume, validation happens at synthesis time).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisReturns1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::invalid_argument, "unknown voice 'bad-voice'"),
+        out, err, in};
+
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+}
+
+TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisPrintsMessageToStderr) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::invalid_argument, "unknown voice 'bad-voice'"),
+        out, err, in};
+
+    d.dispatch(make_text_result("hello"));
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// --write-media silently overwrites an existing file (no --force guard).
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, WriteMediaOverwritesExistingFile) {
+    const fs::path out_path = tmp_path("overwrite_test.mp3");
+    FileGuard guard{out_path};
+
+    // Pre-create the file with different content.
+    { std::ofstream f(out_path); f << "OLD CONTENT"; }
+
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("NEW")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+
+    int rc = d.dispatch(make_text_result("hello", out_path.string()));
+
+    EXPECT_EQ(rc, 0);
+    const auto written = read_binary_file(out_path);
+    EXPECT_NE(std::string(reinterpret_cast<const char*>(written.data()),
+                          written.size()).find("NEW"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// --write-media path is an existing directory → exit 1, path in stderr.
+//
+// Attempting to write audio to a path that already exists as a directory
+// must fail cleanly.  The dispatcher must not silently succeed (writing
+// nothing) or crash; it must report an io_error and include the path in
+// stderr so the user can identify the bad argument.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, WriteMediaToDirectoryReturns1) {
+    // Use the system temp directory as a guaranteed-existing directory target.
+    const std::string dir_path = fs::temp_directory_path().string();
+
+    std::vector<TtsChunk> chunks{TtsChunk{make_audio("mp3")}};
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory(chunks), out, err, in};
+
+    EXPECT_EQ(d.dispatch(make_text_result("hello", dir_path)), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
+// --file path is an existing directory → exit 1, path in stderr.
+//
+// Passing a directory as the input file must fail with io_error.  The
+// InputLoader attempts to open the path as a regular file, which fails on a
+// directory; the error context must contain the path.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, FileInputFromDirectoryReturns1) {
+    const std::string dir_path = fs::temp_directory_path().string();
+
+    ParseResult r;
+    r.action    = ParseAction::synthesize;
+    r.exit_code = 0;
+    r.arguments.file = dir_path;
+
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
+
+    EXPECT_EQ(d.dispatch(r), 1);
+    EXPECT_FALSE(err.str().empty());
 }

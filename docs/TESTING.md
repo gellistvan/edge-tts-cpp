@@ -76,7 +76,7 @@ The offline integration source files cover complementary areas:
 - Multi-chunk input sends 4 frames (2×speech.config + 2×ssml) and connects twice
 - "Tom & Jerry `<test>`" is escaped exactly once (`&amp;`, `&lt;`, `&gt;`) — not double-escaped
 - Japanese and Arabic text pass through the encoding pipeline verbatim
-- Chunk-2 boundary offsets are shifted by `N*8*10_000_000/48_000` ticks matching the Python reference
+- Chunk-2 boundary offsets are shifted by the cumulative `max(offset_ticks + duration_ticks)` from chunk-1
 - Unknown Path header from the fake server → `ErrorCode::protocol_error`
 - `set_receive_error` injection → `ErrorCode::network_error`
 - turn.end without audio → `ErrorCode::service_error` with message containing "audio"
@@ -281,13 +281,41 @@ with a descriptive error.  To disable TLS (for LAN testing only):
 cmake -S . -B build -DEDGE_TTS_ENABLE_NETWORK_TESTS=ON -DUSE_TLS=OFF
 ```
 
+## Protocol parser fixture coverage
+
+JSON fixture files live in `modules/serialization/tests/fixtures/`.  Each file
+documents a specific protocol shape (known-good, forward-compatible, or invalid)
+and is referenced in comments inside the corresponding test.  Tests use inline
+JSON strings that mirror the fixture files — they do not load from disk — so
+the fixtures serve as canonical documentation of expected wire shapes.
+
+| Fixture file | What it documents | Parser test |
+|---|---|---|
+| `voices_valid.json` | One complete voice entry, all required + optional fields | `VoiceJsonParser::KnownVoiceShapeRegression` |
+| `voices_extra_fields.json` | Voice with unknown top-level + VoiceTag fields | `VoiceJsonParser::NewTopLevelFieldsInVoiceEntryIgnored`, `ExtraFieldsInVoiceTagIgnored` |
+| `voices_missing_optional.json` | Voice without VoiceTag | `VoiceJsonParser::MissingVoiceTagDefaultsToEmpty` |
+| `voices_missing_shortname.json` | Voice missing required ShortName | `VoiceJsonParser::MissingShortNameRejected` |
+| `voices_invalid.json` | Malformed JSON | `VoiceJsonParser::MalformedJsonRejected` |
+| `metadata_word.json` | WordBoundary, full known shape | `MetadataJsonParser::KnownWordBoundaryShapeRegression` |
+| `metadata_sentence.json` | SentenceBoundary, full known shape | `MetadataJsonParser::KnownSentenceBoundaryShapeRegression` |
+| `metadata_extra_fields.json` | WordBoundary with extra fields at all nesting levels | `MetadataJsonParser::ExtraFieldsIn*Ignored` |
+| `metadata_unknown.json` | Single unknown metadata event type | `MetadataJsonParser::UnknownTypeSkipped` |
+| `metadata_interleaved.json` | Mix of WordBoundary, unknown types, SessionEnd | `MetadataJsonParser::InterleavedKnownAndUnknownTypesRegression` |
+| `metadata_missing_text_field.json` | WordBoundary missing required `Data.text.Text` | `MetadataJsonParser::MissingTextTextField` |
+
+**Parser compatibility policy** — documented fully in `docs/PROTOCOL_NOTES.md`:
+- Unknown `audio.metadata` Type values are **silently skipped** (forward-compatible).
+- Extra JSON fields at any nesting level are **silently ignored** (nlohmann/json default).
+- Missing required fields produce **`parse_error`** (hard error).
+- Malformed frames (bad separator, invalid JSON, wrong binary header) produce
+  **`protocol_error`** or **`parse_error`**.
+
 ## Compatibility testing
 
 Before implementing any networking, protocol, or text-processing feature, consult
-`docs/REFERENCE_BEHAVIOR.md`.  That document describes the exact observed behavior
-of the Python `edge-tts` v7.2.8 reference implementation.  Tests for the
-communication and serialization layers must be written against the behaviors
-documented there, not against assumptions.
+`docs/REFERENCE_BEHAVIOR.md`.  That document is the authoritative behavior spec.
+Tests for the communication and serialization layers must be written against the
+behaviors documented there, not against assumptions.
 
 ## CLI tests — avoiding real network calls
 

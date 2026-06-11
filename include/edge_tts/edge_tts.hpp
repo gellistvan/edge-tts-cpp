@@ -27,6 +27,7 @@
 
 #include "edge_tts/version.hpp"
 #include "api/SpeechSynthesizer.hpp"
+#include "api/StreamCallbacks.hpp"
 #include "api/SynthesisOptions.hpp"
 #include "api/FileWriter.hpp"
 #include "api/VoiceList.hpp"

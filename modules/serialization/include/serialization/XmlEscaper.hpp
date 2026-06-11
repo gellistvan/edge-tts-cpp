@@ -13,8 +13,8 @@ namespace edge_tts::serialization {
 //   &  →  &amp;
 //   <  →  &lt;
 //   >  →  &gt;
-//   "  →  " (unchanged — Python escape() does NOT quote double-quotes)
-//   '  →  ' (unchanged — Python escape() does NOT quote single-quotes)
+//   "  →  " (unchanged — double-quotes are not XML-escaped)
+//   '  →  ' (unchanged — single-quotes are not XML-escaped)
 //
 // Note: xml_escape is NOT idempotent.  Calling it twice double-escapes:
 //   xml_escape("&amp;")  →  "&amp;amp;"

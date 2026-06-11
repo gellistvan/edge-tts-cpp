@@ -73,17 +73,14 @@ EdgeTtsCommandDispatcher::EdgeTtsCommandDispatcher(
 int EdgeTtsCommandDispatcher::dispatch(const ParseResult& result) {
     switch (result.action) {
     case ParseAction::help:
-        // Reference: --help prints and exits 0.
         out_ << result.message;
         return 0;
 
     case ParseAction::version:
-        // Reference: --version prints "edge-tts {ver}" and exits 0.
         out_ << result.message << '\n';
         return 0;
 
     case ParseAction::error:
-        // Reference: argparse invalid-arg exits with code 2.
         err_ << "edge-tts: " << result.message << '\n';
         return 2;
 
@@ -102,7 +99,6 @@ int EdgeTtsCommandDispatcher::dispatch(const ParseResult& result) {
 // ---------------------------------------------------------------------------
 
 int EdgeTtsCommandDispatcher::dispatch_list_voices() {
-    // Reference: _print_voices() — fetch, sort, format, print to stdout.
     auto voices = voice_service_();
     if (!voices) {
         err_ << "error: " << format_error(voices.error()) << '\n';
@@ -143,11 +139,11 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     // 4. Create SpeechSynthesizer via the injected factory.
     api::SpeechSynthesizer synthesizer = synthesizer_factory_(*text, config, opts);
 
-    // 5. Determine routing per reference util.py _run_tts():
-    //      write_media  absent | "-" → audio → out_ (stdout)
+    // 5. Determine routing:
+    //      write_media  absent | "-" → audio → stdout
     //      write_media  non-dash     → audio → file
     //      write_subtitles absent    → no SRT
-    //      write_subtitles "-"       → SRT → err_ (stderr)
+    //      write_subtitles "-"       → SRT → stderr
     //      write_subtitles non-dash  → SRT → file
     const bool media_to_file =
         args.write_media.has_value() && *args.write_media != "-";
@@ -156,15 +152,8 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     const bool srt_to_stderr =
         args.write_subtitles.has_value() && *args.write_subtitles == "-";
 
-    // 5a. Interactive TTY warning.
-    //
-    //   and not write_media: warn on stderr and wait for Enter.
-    //
-    // The check fires only when write_media is absent (not when it is "-"),
-    // for None, not for the string "-".
-    //
-    // If the user provides EOF on stdin (Ctrl-C on a real terminal or an empty
-    // injected stream in tests), we print "Operation canceled." and return 0,
+    // 5a. Interactive TTY warning: fires only when write_media is absent.
+    //     On EOF (Ctrl+C / empty stream), print "Operation canceled." and return 0.
     if (!args.write_media.has_value() && tty_check_ && tty_check_()) {
         err_ << "Warning: TTS output will be written to the terminal. "
                 "Use --write-media to write to a file.\n"
@@ -195,7 +184,6 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
                 audio_bytes_for_file.insert(
                     audio_bytes_for_file.end(), ac.data.begin(), ac.data.end());
             } else {
-                // Reference: audio_file.write(chunk["data"]) — write raw bytes.
                 out_.write(reinterpret_cast<const char*>(ac.data.data()),
                            static_cast<std::streamsize>(ac.data.size()));
             }
@@ -219,7 +207,6 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
     }
 
     // 9. Route SRT if subtitles were requested.
-    //    Reference: if sub_file is not None: sub_file.write(submaker.get_srt())
     if (srt_to_file || srt_to_stderr) {
         auto srt = submaker.to_srt();
         if (!srt) {
@@ -235,7 +222,6 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
                 return 1;
             }
         } else {
-            // srt_to_stderr: reference sends to sys.stderr.
             err_ << *srt;
         }
     }

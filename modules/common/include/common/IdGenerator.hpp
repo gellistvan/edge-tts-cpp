@@ -24,12 +24,10 @@ public:
     [[nodiscard]] std::string uuid_v4();
 
     // Returns a UUID v4 string without hyphens: 32 lowercase hex characters.
-    // Equivalent to Python's uuid.uuid4().hex.
     [[nodiscard]] std::string uuid_v4_without_hyphens();
 
     // Returns 32 random lowercase hex characters generated from 16 random bytes.
     // Not a UUID — no version or variant bits are set.
-    // Equivalent to Python's secrets.token_hex(16).
     [[nodiscard]] std::string random_32_hex();
 
 private:

@@ -13,7 +13,7 @@ namespace edge_tts::serialization {
 // already XML-safe (either freshly escaped by build(), or pre-escaped by the
 // caller in build_from_escaped_text()).
 //
-// Template mirrors Python communicate.py mkssml() exactly:
+// SSML template:
 //   <speak version='1.0' xmlns='...' xml:lang='en-US'>
 //   <voice name='{voice}'>
 //   <prosody pitch='{pitch}' rate='{rate}' volume='{volume}'>
@@ -21,9 +21,9 @@ namespace edge_tts::serialization {
 //   </prosody></voice></speak>
 //
 // Notes:
-//   - Single-quoted attribute values (matches Python f-string literals).
+//   - Single-quoted attribute values.
 //   - xml:lang is hardcoded 'en-US' regardless of the voice locale.
-//   - Prosody attribute order: pitch, rate, volume (reference order).
+//   - Prosody attribute order: pitch, rate, volume.
 //   - All on one line — no inter-element whitespace.
 static std::string assemble_ssml(const std::string&     voice,
                                   const core::TtsConfig& config,

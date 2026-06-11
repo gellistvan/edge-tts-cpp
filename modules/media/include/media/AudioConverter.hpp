@@ -7,10 +7,7 @@
 namespace edge_tts::media {
 
 // Abstract audio converter/player interface.
-//
-// Reference: edge_playback/__main__.py uses mpv for playback on non-Windows and
-// subprocess.Popen() for launching external tools — no FFmpeg library linking.
-// This interface is the single abstraction point for all audio I/O so that the
+// This is the single abstraction point for all audio I/O so that the
 // CLI and api layers never name a concrete tool directly.
 class IAudioConverter {
 public:

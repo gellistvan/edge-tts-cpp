@@ -83,8 +83,6 @@ TEST(EdgeProtocolSpeechConfig, ContentTypeHeaderMatchesReference) {
 
 // ---------------------------------------------------------------------------
 // X-RequestId is absent (speech.config carries no request ID)
-// Reference: communicate.py ConnectionMetadata docstring — "speech.config frame
-// does NOT carry X-RequestId"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, NoXRequestIdHeader) {
@@ -131,8 +129,7 @@ TEST(EdgeProtocolSpeechConfig, XTimestampMatchesFixedClock) {
 }
 
 // ---------------------------------------------------------------------------
-// X-Timestamp does NOT have a trailing 'Z'
-// Reference: only the SSML frame appends 'Z' (documented as a Microsoft Edge bug)
+// X-Timestamp does NOT have a trailing 'Z' (only the SSML frame does)
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, XTimestampHasNoTrailingZ) {
@@ -181,8 +178,7 @@ TEST(EdgeProtocolSpeechConfig, BodyContainsMetadataoptionsKeys) {
 }
 
 // ---------------------------------------------------------------------------
-// Boundary type: SentenceBoundary (default)
-// Reference: sq="true", wd="false" when word_boundary=False
+// Boundary type: SentenceBoundary (default) — sq="true", wd="false"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, SentenceBoundaryDefaultValues) {
@@ -201,8 +197,7 @@ TEST(EdgeProtocolSpeechConfig, SentenceBoundaryDefaultValues) {
 }
 
 // ---------------------------------------------------------------------------
-// Boundary type: WordBoundary
-// Reference: wd="true", sq="false" when word_boundary=True
+// Boundary type: WordBoundary — wd="true", sq="false"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, WordBoundaryValues) {
@@ -221,8 +216,7 @@ TEST(EdgeProtocolSpeechConfig, WordBoundaryValues) {
 }
 
 // ---------------------------------------------------------------------------
-// Boundary values are JSON strings, not JSON booleans
-// Reference: Python uses f'"sentenceBoundaryEnabled":"{sq}"' with string quotes
+// Boundary values are JSON strings ("true"/"false"), not JSON booleans
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, BoundaryValuesAreJsonStringsNotBooleans) {
@@ -240,7 +234,7 @@ TEST(EdgeProtocolSpeechConfig, BoundaryValuesAreJsonStringsNotBooleans) {
 
 // ---------------------------------------------------------------------------
 // Golden fixture: full frame for default config with fixed clock
-// Verifies exact wire format against the Python reference.
+// Verifies exact wire format.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, GoldenFixtureDefaultConfig) {
@@ -263,8 +257,7 @@ TEST(EdgeProtocolSpeechConfig, GoldenFixtureDefaultConfig) {
 }
 
 // ---------------------------------------------------------------------------
-// Header ordering matches reference
-// Reference: X-Timestamp, Content-Type, Path (in that order)
+// Header ordering: X-Timestamp, Content-Type, Path
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSpeechConfig, HeaderOrderMatchesReference) {

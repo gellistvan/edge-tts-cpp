@@ -13,8 +13,8 @@
 // Do not enable in CI unless the environment has reliable outbound TLS access to
 //   wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
 //
-// Reference: communicate.py SpeechSynthesizer.__stream() — complete per-chunk lifecycle:
-//   1. ws_connect(url, headers=WSS_HEADERS)
+// Per-chunk lifecycle:
+//   1. connect with WSS_HEADERS
 //   2. send speech.config frame
 //   3. send SSML frame
 //   4. receive loop until Path:turn.end
@@ -63,7 +63,7 @@ static bool network_enabled() {
 // Builds the WebSocketClientOptions with the headers the Edge TTS service
 // expects on the upgrade request.
 //
-// Reference: communicate.py WSS_HEADERS (constants.py)
+// Builds WebSocketClientOptions with the headers the Edge TTS service expects.
 static WebSocketClientOptions make_edge_tts_options()
 {
     auto cfg = default_edge_service_config();
@@ -72,10 +72,9 @@ static WebSocketClientOptions make_edge_tts_options()
     opts.connect_timeout = std::chrono::milliseconds{15'000};
     opts.read_timeout    = std::chrono::milliseconds{60'000};
 
-    // Reference: constants.py WSS_HEADERS
-    // The Cookie muid value uses a random hex string in the Python reference
-    // (token_hex(16)).  Here we use a fixed-looking value since the service
-    // does not validate its content — it is present only to resemble a browser.
+    // WSS_HEADERS for the Edge TTS WebSocket upgrade.
+    // The Cookie muid is a random 32-hex value; here we use a fixed-looking
+    // value since the service does not validate its content.
     opts.extra_headers = {
         {"Pragma",          "no-cache"},
         {"Cache-Control",   "no-cache"},
@@ -187,7 +186,7 @@ TEST(WebSocketClientNetwork, SynthesisWithWordBoundaryMetadata) {
     if (!network_enabled()) return;
     // The word boundary metadata path exercises the audio.metadata text frame
     // branch of the receive loop in addition to the binary audio frames.
-    // Reference: communicate.py — TtsConfig with WordBoundary boundary type.
+    // TtsConfig with WordBoundary boundary type.
     auto cfg = default_edge_service_config();
 
     WebSocketClient client{make_edge_tts_options()};

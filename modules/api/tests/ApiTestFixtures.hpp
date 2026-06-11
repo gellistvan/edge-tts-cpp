@@ -15,6 +15,7 @@
 #include "core/TtsConfig.hpp"
 #include "support/WebSocketFrameHelpers.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <span>
@@ -56,10 +57,27 @@ inline api::SynthesizerFn make_fake(std::vector<core::TtsChunk> chunks = {}) {
     };
 }
 
-// Read the entire contents of a file as a binary string.
+// RAII guard: removes a file (if it exists) when the guard goes out of scope.
+struct FileGuard {
+    std::filesystem::path path;
+    ~FileGuard() { std::filesystem::remove(path); }
+};
+
+// Read the entire contents of a file as text.
 inline std::string read_file(const std::filesystem::path& p) {
-    std::ifstream f(p, std::ios::binary);
+    std::ifstream f(p);
     return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
+}
+
+// Read the entire contents of a file as raw bytes.
+inline std::vector<std::byte> read_file_binary(const std::filesystem::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    const std::vector<char> buf{std::istreambuf_iterator<char>(f),
+                                std::istreambuf_iterator<char>{}};
+    std::vector<std::byte> out(buf.size());
+    for (std::size_t i = 0; i < buf.size(); ++i)
+        out[i] = static_cast<std::byte>(buf[i]);
+    return out;
 }
 
 // All real production objects except the WebSocket transport, in initialization

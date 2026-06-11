@@ -281,6 +281,58 @@ TEST(MetadataJsonParser, MissingMetadataKeyRejected) {
     EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
 }
 
+TEST(MetadataJsonParser, MissingTypeKeyRejected) {
+    // A Metadata item with no "Type" key at all → parse_error.
+    // The "Type" field is the discriminator for all known and unknown event types.
+    const std::string json = R"json({
+      "Metadata": [
+        {
+          "Data": {
+            "Offset": 100, "Duration": 200,
+            "text": {"Text": "Hi", "Length": 2, "BoundaryType": "WordBoundary"}
+          }
+        }
+      ]
+    })json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(MetadataJsonParser, MissingDataObjectForKnownTypeRejected) {
+    // A WordBoundary with no "Data" key → parse_error.
+    // "Data" is required for all known (non-skipped) types.
+    const std::string json = R"json({
+      "Metadata": [
+        {
+          "Type": "WordBoundary"
+        }
+      ]
+    })json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(MetadataJsonParser, MissingTextTextField) {
+    // Data.text object exists but the "Text" key inside it is absent.
+    // Fixture: fixtures/metadata_missing_text_field.json
+    const std::string json = R"json({
+      "Metadata": [
+        {
+          "Type": "WordBoundary",
+          "Data": {
+            "Offset": 100, "Duration": 200,
+            "text": {"Length": 5, "BoundaryType": "WordBoundary"}
+          }
+        }
+      ]
+    })json";
+    const auto r = parser.parse(json);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
 // ---------------------------------------------------------------------------
 // Invalid numeric fields
 // ---------------------------------------------------------------------------
@@ -328,7 +380,7 @@ TEST(MetadataJsonParser, DurationNotIntegerRejected) {
 // ---------------------------------------------------------------------------
 
 TEST(MetadataJsonParser, XmlUnescapeApplied) {
-    // Reference: unescape(meta_obj["Data"]["text"]["Text"])
+    // XML unescape is applied to Data.text.Text field
     // &amp; → &,  &lt; → <,  &gt; → >
     const std::string json = R"json({
       "Metadata": [
@@ -569,6 +621,42 @@ TEST(MetadataJsonParser, KnownWordBoundaryShapeRegression) {
     EXPECT_EQ(r.value()[0].offset_ticks,   6250000);
     EXPECT_EQ(r.value()[0].duration_ticks, 5000000);
     EXPECT_EQ(r.value()[0].text, "Hello");
+}
+
+// ---------------------------------------------------------------------------
+// Regression fixture: current known protocol shape (metadata_sentence.json)
+//
+// Mirrors fixtures/metadata_sentence.json — the exact JSON shape currently
+// observed from the service for a SentenceBoundary event.
+// ---------------------------------------------------------------------------
+
+TEST(MetadataJsonParser, KnownSentenceBoundaryShapeRegression) {
+    // Verbatim shape observed in production traffic for sentence boundaries.
+    // If this test starts failing, the service has changed its metadata format.
+    const std::string json = R"json({
+      "Metadata": [
+        {
+          "Type": "SentenceBoundary",
+          "Data": {
+            "Offset": 0,
+            "Duration": 35000000,
+            "text": {
+              "Text": "Hello, world.",
+              "Length": 13,
+              "BoundaryType": "SentenceBoundary"
+            }
+          }
+        }
+      ]
+    })json";
+
+    const auto r = parser.parse(json);
+    EXPECT_TRUE(r.has_value());
+    EXPECT_EQ(r.value().size(), 1u);
+    EXPECT_EQ(r.value()[0].type,           BoundaryEventType::SentenceBoundary);
+    EXPECT_EQ(r.value()[0].offset_ticks,   0);
+    EXPECT_EQ(r.value()[0].duration_ticks, 35000000);
+    EXPECT_EQ(r.value()[0].text,           "Hello, world.");
 }
 
 // ---------------------------------------------------------------------------

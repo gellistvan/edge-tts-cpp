@@ -13,7 +13,7 @@ static SsmlBuilder builder{};
 // Expected SSML for TtsConfig::defaults() + "Hello, world!".
 // Mirrors tests/serialization/fixtures/ssml_default.xml exactly.
 // Single-quoted attributes, prosody order: pitch, rate, volume.
-// xml:lang is hardcoded 'en-US' per the Python reference.
+// xml:lang is hardcoded 'en-US' regardless of voice locale.
 static const std::string k_default_ssml =
     "<speak version='1.0'"
     " xmlns='http://www.w3.org/2001/10/synthesis'"
@@ -94,7 +94,7 @@ TEST(SsmlBuilder, PitchAppearsInProsody) {
 }
 
 TEST(SsmlBuilder, ProsodyAttributeOrderMatchesReference) {
-    // Reference: pitch, rate, volume (in that order).
+    // Prosody attribute order: pitch, rate, volume.
     TtsConfig cfg = TtsConfig::defaults();
     cfg.pitch  = "+10Hz";
     cfg.rate   = "+5%";

@@ -21,7 +21,6 @@ int main(int argc, char* argv[]) {
     auto result = parser.parse(argc, argv);
 
     // Read environment variables.
-    // Reference: edge_playback/__main__.py — EDGE_PLAYBACK_KEEP_TEMP, EDGE_PLAYBACK_DEBUG
     const bool keep_temp =
         (std::getenv("EDGE_PLAYBACK_KEEP_TEMP") != nullptr);
     const bool debug =
@@ -33,12 +32,8 @@ int main(int argc, char* argv[]) {
     media::ProcessRunner        runner;
     media::FfmpegAudioConverter converter{runner, path_env};
 
-    // Temp file provider.
-    // Reference: _create_temp_files() uses NamedTemporaryFile(suffix=".mp3", delete=False)
-    //   For ".srt", creates a temp file only when use_mpv is true (Python always
-    //   uses mpv on non-Windows).  In C++, we default to no SRT unless the user
-    //   sets EDGE_PLAYBACK_SRT_FILE.
-    // Honours EDGE_PLAYBACK_MP3_FILE and EDGE_PLAYBACK_SRT_FILE env var overrides.
+    // Temp file provider. Honours EDGE_PLAYBACK_MP3_FILE and EDGE_PLAYBACK_SRT_FILE
+    // env var overrides for testing. SRT is only created when EDGE_PLAYBACK_SRT_FILE is set.
     auto temp_provider =
         [debug](std::string_view suffix) -> std::optional<std::filesystem::path> {
         if (suffix == ".mp3") {

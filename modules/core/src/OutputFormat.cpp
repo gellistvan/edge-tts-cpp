@@ -8,9 +8,8 @@ namespace edge_tts::core {
 
 namespace {
 
-// Formats observed from the Python reference and Microsoft's Edge TTS service.
-// Only "audio-24khz-48kbitrate-mono-mp3" is used by the Python client.
-// The others are documented by Microsoft but not exercised by the reference.
+// Formats supported by the Edge TTS service.
+// Only "audio-24khz-48kbitrate-mono-mp3" is currently used.
 constexpr std::array<std::string_view, 1> KNOWN_FORMATS{
     "audio-24khz-48kbitrate-mono-mp3",
 };

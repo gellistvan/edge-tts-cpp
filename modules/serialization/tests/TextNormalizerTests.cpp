@@ -46,7 +46,7 @@ TEST(TextNormalizer, CRPreserved) {
 }
 
 TEST(TextNormalizer, CRLFPreservedNotNormalised) {
-    // CRLF is preserved intact — Python does NOT convert \r\n to \n
+    // CRLF is preserved intact.
     const auto r = normalizer.normalize("a\r\nb");
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(r.value(), "a\r\nb");
@@ -60,7 +60,7 @@ TEST(TextNormalizer, SpacesPreserved) {
 }
 
 // ---------------------------------------------------------------------------
-// Control character replacement (matching Python ranges)
+// Control character replacement
 // ---------------------------------------------------------------------------
 
 TEST(TextNormalizer, NulBecomesSpace) {

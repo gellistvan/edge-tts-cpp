@@ -10,7 +10,7 @@ namespace edge_tts::serialization {
 
 // Parses the JSON voice-list payload returned by the Edge TTS voice-list endpoint.
 //
-// Wire format (reference: voices.py list_voices(), typing.py Voice TypedDict):
+// Wire format:
 //   JSON array of objects, each with:
 //     Required: Name, ShortName, Gender, Locale, SuggestedCodec, FriendlyName, Status
 //     Optional: VoiceTag (object)
@@ -21,7 +21,7 @@ namespace edge_tts::serialization {
 //   - Rejects malformed JSON (parse_error).
 //   - Rejects non-array root (parse_error).
 //   - Rejects entries with missing required fields (parse_error).
-//   - Defaults VoiceTag and its sub-lists if absent, matching reference voices.py.
+//   - Defaults VoiceTag and its sub-lists if absent.
 //   - Ignores unknown fields.
 //   - Preserves ordering from the wire — callers sort if needed (reference CLI sorts
 //     by ShortName only for display, not for storage).

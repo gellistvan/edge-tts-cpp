@@ -288,7 +288,7 @@ is not built.
 
 Setting `EDGE_TTS_BUILD_PLAYBACK_APP=ON` on Windows triggers a fatal CMake error that names the platform (`${CMAKE_SYSTEM_NAME}`) and explains the POSIX requirement. The core library (`common`, `core`, `serialization`, `communication`, `api`, `cli`) and the `edge-tts` CLI build cleanly on Windows without any POSIX dependency.
 
-Reference behavior: Python's `subprocess.Popen(list_of_args)` — list-form prevents shell injection and word-splitting of arguments containing spaces.  `ProcessRunner::run()` uses the same safe pattern via `execvp()`.
+`ProcessRunner::run()` takes an argument list to prevent shell injection and word-splitting of arguments containing spaces. This maps to `execvp()` directly.
 
 `ProcessRunner` is not marked `final` so tests can subclass it and override `make_pipe(int fds[2])` to inject pipe-creation failures without spawning real child processes.
 
@@ -308,7 +308,7 @@ If the stdout pipe succeeds but the stderr pipe fails, the stdout write-end is c
 | Consumers | `edge_tts::media` (`ExecutableDiscovery`) |
 | License | System library; no additional license obligation |
 
-Reference behavior: Python's `shutil.which()` used in `edge_playback/__main__.py _check_deps()` to verify `mpv` and `edge-tts` are installed.  `ExecutableDiscovery::find_on_path()` replicates that PATH scan deterministically without process execution.
+`ExecutableDiscovery::find_on_path()` performs a deterministic PATH scan to verify that `ffmpeg`, `ffplay`, or other tools are installed, without process execution.
 
 `FfmpegAudioConverter` uses this to locate `ffmpeg` (format conversion) and `ffplay` (audio playback) at runtime.  No `libavcodec`, `libavformat`, or any other FFmpeg library is ever linked — all interaction goes through `IProcessRunner`.
 
@@ -454,5 +454,5 @@ The following libraries were considered during the initial design and are **not*
 
 | Library | Reason not used |
 |---------|----------------|
-| CLI11 | Hand-rolled argument parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) matches the Python `argparse` behavior exactly; a third-party CLI framework is not needed. |
+| CLI11 | Hand-rolled argument parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`) implements only the required option surface; a third-party CLI framework is not needed. |
 | googletest | Replaced by `minigtest` — a self-contained GTest-compatible single-header at `tests/vendor/minigtest/minigtest.hpp`. No external test framework installation is required. |

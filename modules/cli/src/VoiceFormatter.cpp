@@ -11,7 +11,7 @@ namespace edge_tts::cli {
 
 namespace {
 
-// Join a vector of strings with ", " — matches Python's ", ".join(...).
+// Join a vector of strings with ", ".
 std::string join(const std::vector<std::string>& parts) {
     if (parts.empty()) return {};
     std::string out;
@@ -30,8 +30,6 @@ std::string pad(const std::string& str, std::size_t width) {
 }
 
 // Produce one output line: cells joined by two spaces, no trailing spaces.
-// Reference: tabulate uses two spaces between columns and does NOT add
-// trailing spaces after the last column.
 std::string make_row(const std::vector<std::string>& cells,
                      const std::vector<std::size_t>& widths,
                      bool last_col_raw = false) {
@@ -51,7 +49,6 @@ std::string make_row(const std::vector<std::string>& cells,
 
 std::string VoiceFormatter::format(std::span<const core::Voice> voices) const {
     // --- 1. Sort by ShortName ascending. -----------------------------------
-    // Reference: voices = sorted(voices, key=lambda voice: voice["ShortName"])
     std::vector<std::size_t> order(voices.size());
     std::iota(order.begin(), order.end(), 0u);
     std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
@@ -59,7 +56,6 @@ std::string VoiceFormatter::format(std::span<const core::Voice> voices) const {
     });
 
     // --- 2. Build cell rows. -----------------------------------------------
-    // Reference columns: ShortName, Gender, ContentCategories, VoicePersonalities
     const std::vector<std::string> headers = {
         "Name", "Gender", "ContentCategories", "VoicePersonalities"};
 

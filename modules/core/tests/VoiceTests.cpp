@@ -159,12 +159,11 @@ TEST(VoiceEquality, DifferentLanguageNotEqual) {
 // ---------------------------------------------------------------------------
 
 TEST(VoiceGenderToString, IsExactWireValue) {
-    // The wire values must match the Python TypedDict Literal exactly.
+    // Wire values: "Female" / "Male" (first letter uppercase, rest lowercase).
     const auto f = to_string(VoiceGender::female);
     const auto m = to_string(VoiceGender::male);
     EXPECT_EQ(f, "Female");
     EXPECT_EQ(m, "Male");
-    // First letter uppercase, rest lowercase — matches Python's "Female"/"Male"
     EXPECT_EQ(f[0], 'F');
     EXPECT_EQ(m[0], 'M');
 }

@@ -15,8 +15,6 @@ namespace edge_tts::communication {
 //     mapping 403 to a DRM retry or 5xx to service_error) is the caller's
 //     responsibility.
 //
-// Reference: voices.py — aiohttp.ClientSession.get() returns a response object
-// for any HTTP status; callers check e.status for 403 retry logic.
 class IHttpClient {
 public:
     virtual ~IHttpClient() = default;

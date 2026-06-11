@@ -85,7 +85,7 @@ independently.
 | `Clock.hpp` | `IClock` abstract interface (UTC `time_point`), `SystemClock` (wraps `system_clock::now()`), `FixedClock` (deterministic test double). No protocol-specific epoch conversions — those live in the communication/serialization layer. |
 | `Hex.hpp` | `hex_encode_lower(span<byte>)`, `hex_encode_upper(span<byte>)`, `is_hex(string_view)`. Used by `IdGenerator` and the communication/DRM layer for encoding. |
 | `Utf8.hpp` | `is_continuation(char)` (constexpr), `safe_boundary(sv, pos)` (constexpr, backward compat). Full API: `is_valid_utf8(sv)` (rejects overlong, surrogates, truncated, >U+10FFFF), `previous_code_point_boundary(sv, i)`, `next_code_point_boundary(sv, i)`, `split_utf8_by_byte_limit(sv, max_bytes)`. `split_utf8_by_byte_limit` is the canonical source for safe UTF-8 slicing; used by `serialization::TextChunker`. |
-| `IdGenerator.hpp` | `IdGenerator` class: `uuid_v4()` (36-char hyphenated lowercase UUID v4), `uuid_v4_without_hyphens()` (32-char, matches Python `uuid.uuid4().hex`), `random_32_hex()` (32-char lowercase, matches Python `secrets.token_hex(16)`). Edge-specific header assignments (ConnectionId, X-RequestId, MUID) are in the communication layer. |
+| `IdGenerator.hpp` | `IdGenerator` class: `uuid_v4()` (36-char hyphenated lowercase UUID v4), `uuid_v4_without_hyphens()` (32-char, no hyphens), `random_32_hex()` (32-char lowercase hex). Edge-specific header assignments (ConnectionId, X-RequestId, MUID) are in the communication layer. |
 | `Expected.hpp` | Generic `Expected<T,E>` / `Unexpected<E>` for cases that need a custom error type. |
 | `Utf8.hpp` | Constexpr UTF-8 byte utilities: `is_continuation(char)`, `safe_boundary(string_view, pos)`, `is_valid(string_view)`. Used by `serialization::TextChunker` to avoid splitting mid-sequence. |
 
@@ -93,8 +93,7 @@ independently.
 
 ### `IClock` contract
 
-`IClock::now()` returns a `std::chrono::system_clock::time_point` in UTC —
-the same epoch as Python's `datetime.now(timezone.utc).timestamp()`.
+`IClock::now()` returns a `std::chrono::system_clock::time_point` in UTC.
 
 **Do not** add Edge protocol constants (Windows epoch offset, 100 ns tick
 conversion, 5-minute round-down) to `Clock.hpp`.  Those belong in the token
@@ -109,22 +108,52 @@ Two error propagation styles are used:
 | Exceptions (`throw`) | Programmer errors at API boundaries — invalid constructor arguments, pre-condition violations.  These are bugs, not recoverable conditions. | `ConfigurationError`, `NetworkError`, `ProtocolError`, `AudioError`, `SubtitleError` (all final, inherit `Exception`) |
 | `Result<T>` (return value) | Runtime failures that the caller can handle — I/O errors, network failures, parse errors, service refusals. | `Result<T>`, `Result<void>`, `Error`, `ErrorCode` |
 
-**Python → C++ ErrorCode mapping:**
+**ErrorCode causes:**
 
-| Python exception | `ErrorCode` | Notes |
-|-----------------|-------------|-------|
-| `TypeError`, `ValueError` | `invalid_argument` | Validation failures on caller input |
-| `RuntimeError` (stream reuse) | `invalid_state` | Operation not permitted in current state |
-| `WebSocketError` | `network_error` | Transport-level failure |
-| `SkewAdjustmentError` | `network_error` | Clock skew; recoverable via retry |
-| `UnknownResponse` | `protocol_error` | Unexpected wire message type |
-| `UnexpectedResponse` | `protocol_error` | Well-formed but semantically unexpected |
-| `NoAudioReceived` | `service_error` | Service returned no audio data |
-| HTTP 4xx/5xx | `service_error` | Service refused the request |
-| File I/O failure | `io_error` | Local filesystem read/write |
-| JSON / header decode failure | `parse_error` | Could not interpret response body |
-| Connect/receive timeout | `timeout` | Timeout parameters exceeded |
-| ffmpeg/ffplay failure | `external_process_failed` | Non-zero process exit code |
+| `ErrorCode` | Trigger condition |
+|-------------|------------------|
+| `invalid_argument` | Validation failures on caller input |
+| `invalid_state` | Operation not permitted in current object state |
+| `network_error` | Transport-level failure (WebSocket, HTTP, clock skew) |
+| `protocol_error` | Unexpected or malformed wire message |
+| `service_error` | Service returned no audio data or HTTP 4xx/5xx |
+| `io_error` | Local filesystem read/write failure |
+| `parse_error` | Could not interpret response body (JSON, headers) |
+| `timeout` | Connect or receive timeout exceeded |
+| `external_process_failed` | ffmpeg/ffplay non-zero exit code |
+| `drm_error` | HTTP 403 during WebSocket upgrade; `SynthesisSession` retries once automatically |
+| `cancelled` | Synthesis cancelled via `SpeechSynthesizer::cancel()` |
+| `unsupported` | Platform or build-time feature not available (proxy, TLS, ixwebsocket absent) |
+
+**Error taxonomy for library consumers:**
+
+Use `result.error().code()` to distinguish failure categories programmatically.
+
+| `ErrorCode` | Category | Primary cause | Layer where produced | Retried automatically? | Recommended consumer action |
+|-------------|----------|---------------|----------------------|------------------------|-----------------------------|
+| `invalid_argument` | Input validation | Bad voice/rate/pitch/volume, empty text, SubMaker type mismatch | `core`, `serialization`, `subtitle`, `cli` | No | Fix the caller input; this is a programming error if caught in tests |
+| `invalid_state` | Object lifecycle | Calling `synthesize()`/`save()` a second time | `api` | No | Create a new `SpeechSynthesizer`; do not reuse |
+| `io_error` | File I/O | File not found, unreadable, directory as path, write failed | `api` (FileWriter), `cli` (InputLoader) | No | Check the `error.context()` field for the offending path |
+| `network_error` | Transport | WebSocket refused, dropped, TLS failure | `communication` (WebSocketClient, HttpClient) | No (1 retry for `drm_error` only) | Log and retry with backoff; may be transient |
+| `protocol_error` | Wire protocol | Malformed binary frame header, unexpected message path | `communication` (EdgeProtocol) | No | Log; likely a service-side change; file a bug |
+| `parse_error` | Deserialization | Malformed JSON in voice list or metadata frames | `serialization` | No | Log; likely a service-side schema change |
+| `timeout` | Timing | Connect or receive timeout exceeded | `communication` | No | Retry with backoff; may be transient |
+| `service_error` | Service-side | HTTP 4xx/5xx, no audio received | `communication` (VoiceService, SynthesisSession) | No | Log HTTP status from `error.context()`; may indicate invalid voice |
+| `drm_error` | DRM token | HTTP 403 during WebSocket upgrade | `communication` (WebSocketClient) | Yes — one automatic retry | If retry fails, log clock skew; usually resolved by the retry |
+| `external_process_failed` | Subprocess | ffplay not on PATH, non-zero exit | `media` (FfmpegAudioConverter) | No | Verify ffplay installation; check `error.context()` for stderr |
+| `unsupported` | Platform / build | Proxy requested but not implemented; no TLS; ixwebsocket absent | `communication`, `api` | No | Document the limitation; proxy support is an explicit non-goal |
+| `cancelled` | Cancellation | `SpeechSynthesizer::cancel()` called before/during synthesis | `api`, `communication` | No | Expected condition when cancellation is used intentionally |
+
+**CLI exit code mapping:**
+
+| Exit code | Meaning | When raised |
+|-----------|---------|-------------|
+| `0` | Success | Synthesis completed; `--list-voices` completed; `--help`/`--version` printed |
+| `1` | Runtime error | Any `ErrorCode` from the table above (all runtime failures map to exit 1) |
+| `2` | Argument error | Parse-time failures: unknown option, missing required argument, invalid proxy URL format |
+
+All `ErrorCode` values except argument-parse-time errors surface as exit 1 regardless of category.
+The `error.code()` value is included in the stderr message as `[code_name]` for diagnostic filtering.
 
 ---
 
@@ -285,7 +314,7 @@ in `edge_tts::api` above.  See `edge_tts::api` for the public API.
 | `ConnectionMetadata.hpp` | `ConnectionMetadata` struct (connection_id + request_id, both 32-char lowercase hex UUID v4 without hyphens). `ConnectionMetadataFactory` wraps `IdGenerator`. |
 | `HttpTypes.hpp` | `HttpRequest` and `HttpResponse` plain data types. |
 | `IHttpClient.hpp` | Pure virtual HTTP transport boundary. `send(HttpRequest)→Result<HttpResponse>`. |
-| `EdgeRequestHeaders.hpp` | `build_websocket_headers(config, ids)` → `vector<pair<string,string>>` (7 headers incl. Cookie/MUID); `build_voice_list_headers(config, ids)` → `map<string,string>` (5 headers incl. Cookie/MUID). Both match Python `DRM.headers_with_muid(WSS_HEADERS)` / `DRM.headers_with_muid(VOICE_HEADERS)` exactly. |
+| `EdgeRequestHeaders.hpp` | `build_websocket_headers(config, ids)` → `vector<pair<string,string>>` (7 headers incl. Cookie/MUID); `build_voice_list_headers(config, ids)` → `map<string,string>` (5 headers incl. Cookie/MUID). |
 | `VoiceService.hpp` | Fetches and parses the Edge TTS voice list. Injects `IHttpClient`, `VoiceJsonParser`, `IdGenerator`, and `EdgeTokenProvider`. Retries once on HTTP 403 with clock-skew correction. `VoiceFilter` applies client-side locale/gender/short_name filtering. |
 | `EdgeProtocol.hpp` | Builds outgoing WebSocket text frames (`build_speech_config_frame`, `build_ssml_frame`) and parses incoming frames (`parse_incoming`). The single production path for all protocol framing. |
 | `IWebSocketClient.hpp` | Pure virtual WebSocket transport boundary. |

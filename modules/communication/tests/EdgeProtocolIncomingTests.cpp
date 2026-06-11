@@ -49,7 +49,7 @@ static WebSocketMessage binary_msg(std::vector<std::byte> bytes) {
 
 // Build a well-formed binary audio frame.
 //
-// Binary frame format (from communicate.py analysis):
+// Binary frame format:
 //   bytes 0-1            : header_length (big-endian uint16)
 //                          = 2 (prefix) + len(header_content_without_trailing_crlf)
 //   bytes 2..HL-1        : header content (no trailing \r\n)
@@ -247,7 +247,6 @@ TEST(EdgeProtocolIncoming, IgnoredMessageHasNoChunk) {
 
 // ---------------------------------------------------------------------------
 // Unknown text frame path → protocol_error
-// Reference: raise UnknownResponse("Unknown path received")
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, UnknownTextPathIsError) {
@@ -285,7 +284,6 @@ TEST(EdgeProtocolIncoming, MalformedMetadataJsonIsError) {
 
 // ---------------------------------------------------------------------------
 // Metadata with only SessionEnd entries → protocol_error
-// Reference: "No WordBoundary metadata found"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, AllSessionEndMetadataIsError) {
@@ -298,7 +296,6 @@ TEST(EdgeProtocolIncoming, AllSessionEndMetadataIsError) {
 
 // ---------------------------------------------------------------------------
 // Empty binary message → protocol_error (too short for header length)
-// Reference: "We received a binary message, but it is missing the header length."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, EmptyBinaryIsError) {
@@ -313,7 +310,6 @@ TEST(EdgeProtocolIncoming, OneByteBinaryIsError) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: header_length exceeds message size → error
-// Reference: "The header length is greater than the length of the data."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, HeaderLengthExceedsSizeIsError) {
@@ -325,7 +321,6 @@ TEST(EdgeProtocolIncoming, HeaderLengthExceedsSizeIsError) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: Path != audio → error
-// Reference: "Received binary message, but the path is not audio."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, BinaryNonAudioPathIsError) {
@@ -337,7 +332,6 @@ TEST(EdgeProtocolIncoming, BinaryNonAudioPathIsError) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: unexpected Content-Type → error
-// Reference: "Received binary message, but with an unexpected Content-Type."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, UnexpectedContentTypeIsError) {
@@ -349,7 +343,6 @@ TEST(EdgeProtocolIncoming, UnexpectedContentTypeIsError) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: no Content-Type, empty body → ignored
-// Reference: continue (silently skip)
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, NoContentTypeEmptyBodyYieldsIgnored) {
@@ -362,7 +355,6 @@ TEST(EdgeProtocolIncoming, NoContentTypeEmptyBodyYieldsIgnored) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: no Content-Type, non-empty body → error
-// Reference: "Received binary message with no Content-Type, but with data."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, NoContentTypeNonEmptyBodyIsError) {
@@ -373,7 +365,6 @@ TEST(EdgeProtocolIncoming, NoContentTypeNonEmptyBodyIsError) {
 
 // ---------------------------------------------------------------------------
 // Binary frame: audio/mpeg Content-Type, empty body → error
-// Reference: "Received binary message, but it is missing the audio data."
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, AudioMpegEmptyBodyIsError) {
@@ -429,9 +420,7 @@ TEST(EdgeProtocolIncoming, BinaryHeaderLengthOneIsError) {
 // ---------------------------------------------------------------------------
 // Binary frame hardening: \r\n separator missing or wrong
 //
-// The Python reference reads data[header_length + 2:] for the body without
-// verifying that the two bytes at [header_length..header_length+2) are \r\n.
-// The C++ parser is stricter: both presence and correctness are required.
+// The C++ parser requires both presence and correctness of the \r\n separator.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolIncoming, BinaryMissingSeparatorIsError) {

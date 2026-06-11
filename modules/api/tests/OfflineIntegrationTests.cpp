@@ -224,7 +224,7 @@ TEST(OfflineIntegration, SsmlFrameRequestIdIs32CharHex) {
         else
             break;
     }
-    // The Python reference uses 32-char UUID hex (no hyphens).
+    // Connection ID is 32-char UUID hex (no hyphens).
     EXPECT_EQ(id.size(), 32u);
 }
 
@@ -583,7 +583,6 @@ TEST(OfflineIntegration, ProtocolErrorPropagatesFromSave) {
 
 TEST(OfflineIntegration, NoAudioResponseReturnsServiceError) {
     // The fake server returns turn.end without sending any audio frame.
-    // Reference: communicate.py "if not audio_was_received: raise NoAudioReceived"
     TestWire w;
     FakeWebSocketClient ws;
     ws.push_incoming(make_turn_end());

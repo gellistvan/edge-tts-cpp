@@ -1,0 +1,14 @@
+[
+  {
+    "Name": "Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)",
+    "Gender": "Female",
+    "Locale": "en-US",
+    "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+    "FriendlyName": "Microsoft Emma Online (Natural) - English (United States)",
+    "Status": "GA",
+    "VoiceTag": {
+      "ContentCategories": ["General"],
+      "VoicePersonalities": ["Friendly", "Positive"]
+    }
+  }
+]

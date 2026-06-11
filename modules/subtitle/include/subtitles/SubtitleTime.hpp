@@ -9,15 +9,10 @@ namespace edge_tts::subtitles {
 
 // Represents an SRT subtitle timestamp derived from Edge TTS 100 ns ticks.
 //
-// Conversion chain (reference: submaker.py / srt_composer.py):
-//   1. ticks (100 ns units) → microseconds:  ticks / 10   (Python: float / then timedelta)
-//   2. microseconds → milliseconds:           us / 1000    (timedelta.microseconds // 1000)
-//   Combined: milliseconds = ticks / 10_000  (integer truncation, same as Python's chain for
-//   all values where the sub-microsecond fractional part does not round the microsecond across
-//   a millisecond boundary — a 1 ms difference only possible at ticks % 10_000 ≥ 9_995).
+// Conversion: milliseconds = ticks / 10_000 (integer truncation).
+//   A 1 ms rounding difference is only possible when ticks % 10_000 >= 9_995.
 //
-// SRT timestamp format (reference: srt_composer.timedelta_to_srt_timestamp()):
-//   "HH:MM:SS,mmm"   — comma separator, zero-padded
+// SRT timestamp format: "HH:MM:SS,mmm" (comma separator, zero-padded).
 //
 // Negative ticks are rejected (negative start times are always skipped in SRT output).
 class SubtitleTime {

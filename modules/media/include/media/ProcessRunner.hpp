@@ -11,11 +11,7 @@
 namespace edge_tts::media {
 
 // An external command to execute.
-//
-// Reference: playback.py _run_edge_tts() / _play_media() — both use list-form
-// subprocess.Popen() so no shell quoting or concatenation is ever needed.
 // The executable and each argument are passed as separate tokens to execvp().
-//
 // Forbidden: never join these into a shell string (no system(), no popen("…")).
 struct ProcessCommand {
     std::filesystem::path    executable; // full path or name found via $PATH

@@ -16,18 +16,15 @@ struct TextChunkerOptions {
     std::size_t max_chunk_size = 4096;
 
     // When true: escape first, then apply the byte limit to the escaped text.
-    //   This is the reference behavior — Python pipeline:
-    //     escape(remove_incompatible_characters(text)) → split_text_by_byte_length(…, 4096)
+    //   Pipeline: escape(normalize(text)) → split_by_byte_length(…, 4096)
     // When false: split the normalized (pre-escape) text, then escape each chunk.
     //   The returned chunks may exceed max_chunk_size after escaping.
     bool size_after_xml_escape = true;
 
     // When true, prefer splitting at the last newline (\n) before the limit.
-    // Maps to Python _find_last_newline_or_space_within_limit newline branch.
     bool prefer_sentence_boundary = true;
 
-    // When true, fall back to the last space before the limit when no newline
-    // is found. Maps to Python _find_last_newline_or_space_within_limit space branch.
+    // When true, fall back to the last space before the limit when no newline is found.
     bool prefer_word_boundary = true;
 };
 

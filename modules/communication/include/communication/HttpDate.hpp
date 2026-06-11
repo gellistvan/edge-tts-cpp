@@ -16,7 +16,6 @@ namespace edge_tts::communication {
 // contains an unknown month abbreviation.  The weekday and timezone fields
 // are accepted but not validated.
 //
-// Reference: drm.py DRM.parse_rfc2616_date()
 [[nodiscard]] std::optional<std::int64_t>
 parse_http_date(std::string_view date) noexcept;
 

@@ -13,8 +13,7 @@ namespace edge_tts::serialization {
 
 namespace {
 
-// Python bytes.strip() removes: space, tab, LF, CR, VT, FF.
-// After TextNormalizer, VT and FF are already spaces, but we match Python exactly.
+// Strip bytes: space, tab, LF, CR, VT, FF.
 constexpr bool is_strip_byte(char c) noexcept {
     const auto u = static_cast<unsigned char>(c);
     return u == 0x20 || u == 0x09 || u == 0x0A || u == 0x0D ||
@@ -27,8 +26,7 @@ std::string_view strip(std::string_view sv) noexcept {
     return sv;
 }
 
-// Mirrors Python _adjust_split_point_for_xml_entity:
-// if the proposed split would land inside an unterminated &…; entity,
+// If the proposed split would land inside an unterminated &…; entity,
 // move split_at to just before the opening '&'.
 std::size_t adjust_xml_entity(std::string_view text, std::size_t split_at) noexcept {
     while (split_at > 0) {
@@ -45,8 +43,7 @@ std::size_t adjust_xml_entity(std::string_view text, std::size_t split_at) noexc
     return split_at;
 }
 
-// Core split loop — mirrors Python split_text_by_byte_length.
-// Operates on text that is already a UTF-8 string (escaped or raw).
+// Core split loop. Operates on text that is already a UTF-8 string (escaped or raw).
 // Returns stripped, non-empty chunks.
 std::vector<std::string> split_by_limit(
     std::string_view text,
@@ -88,9 +85,8 @@ std::vector<std::string> split_by_limit(
         if (!ch.empty())
             result.emplace_back(ch);
 
-        // Advance.  If split_at is 0 (pathological: entity or code point
-        // larger than limit), advance by 1 to prevent an infinite loop —
-        // this matches the Python reference guard.
+        // Advance.  If split_at is 0 (entity or code point larger than limit),
+        // advance by 1 to prevent an infinite loop.
         text.remove_prefix(split_at > 0 ? split_at : 1);
     }
 

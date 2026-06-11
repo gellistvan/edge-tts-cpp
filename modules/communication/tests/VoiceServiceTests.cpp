@@ -100,7 +100,6 @@ TEST(VoiceService, UrlContainsTrustedClientToken) {
 
 // ---------------------------------------------------------------------------
 // DRM token appended to URL
-// Reference: voices.py f"{VOICE_LIST}&Sec-MS-GEC={DRM.generate_sec_ms_gec()}&..."
 // ---------------------------------------------------------------------------
 
 TEST(VoiceService, UrlContainsSecMsGecParam) {
@@ -173,7 +172,7 @@ TEST(VoiceService, SetsAcceptHeader) {
     http.set_response({200, {}, "[]"});
     VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
-    // Reference: VOICE_HEADERS["Accept"] = "*/*"
+    // Accept header
     EXPECT_EQ(http.last_request()->headers.at("Accept"), "*/*");
 }
 
@@ -190,7 +189,7 @@ TEST(VoiceService, SetsAcceptEncodingHeader) {
     http.set_response({200, {}, "[]"});
     VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
-    // Reference: BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"
+    // Accept-Encoding header
     EXPECT_EQ(http.last_request()->headers.at("Accept-Encoding"), "gzip, deflate, br, zstd");
 }
 
@@ -199,7 +198,7 @@ TEST(VoiceService, SetsCookieMuidHeader) {
     http.set_response({200, {}, "[]"});
     VoiceService svc{k_cfg, http, k_parser, k_ids, k_tokens};
     (void)svc.list_voices();
-    // Reference: DRM.headers_with_muid() → Cookie: muid=<32-upper-hex>;
+    // Cookie header: muid=<32-upper-hex>;
     const auto& cookie = http.last_request()->headers.at("Cookie");
     EXPECT_EQ(cookie.substr(0, 5), "muid=");
     EXPECT_EQ(cookie.back(), ';');
@@ -213,7 +212,7 @@ TEST(VoiceService, SetsCookieMuidHeader) {
 }
 
 TEST(VoiceService, FreshMuidPerRequest) {
-    // Reference: drm.py DRM.generate_muid() called on every request.
+    // A new MUID is generated on every request.
     // Two consecutive list_voices() calls must produce different MUID cookies.
     FakeHttpClient http;
     http.set_response({200, {}, "[]"});
@@ -289,12 +288,12 @@ TEST(VoiceService, Non200StatusCodeInErrorContext) {
 }
 
 // ---------------------------------------------------------------------------
-// 403 retry (reference: voices.py try/except ClientResponseError(status=403))
+// 403 retry — drm_error from HTTP 403 triggers one retry with corrected token
 // ---------------------------------------------------------------------------
 
 TEST(VoiceService, Http403FollowedBy200Succeeds) {
     // First request gets 403 (DRM token rejected); retry gets 200 → success.
-    // Reference: voices.py list_voices() retries exactly once on 403.
+    // list_voices() retries exactly once on HTTP 403.
     FakeHttpClient http;
     http.push_response({403, {}, "Forbidden"});                          // first attempt
     http.push_response({200, {}, one_voice_json("en-US-X", "en-US")});  // retry
@@ -556,11 +555,8 @@ TEST(VoiceService, FilterByLocaleAndGender) {
 }
 
 // ---------------------------------------------------------------------------
-// Ordering matches reference
-//
-// Reference: list_voices() returns voices in wire order.
-// Sorting (by ShortName) is done only by _print_voices() for CLI display.
-// VoiceService::list_voices() must preserve wire order.
+// Ordering: list_voices() returns voices in wire order.
+// Sorting (by ShortName) is done only by the CLI display layer.
 // ---------------------------------------------------------------------------
 
 TEST(VoiceService, WireOrderPreserved) {

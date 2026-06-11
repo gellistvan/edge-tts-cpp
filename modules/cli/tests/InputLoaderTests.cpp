@@ -50,7 +50,7 @@ TEST(InputLoader, TextOptionReturnsText) {
 }
 
 TEST(InputLoader, TextOptionEmptyStringIsOk) {
-    // Reference: Python doesn't reject empty text at this stage.
+    // Empty text is accepted at this stage.
     EdgeTtsArguments args;
     args.text = "";
     auto ss = empty_stdin();
@@ -114,8 +114,7 @@ TEST(InputLoader, FileOptionUnicodeContent) {
 }
 
 TEST(InputLoader, FileOptionPreservesCrlf) {
-    // Reference: Python opens files in text mode; on Linux, CRLF is not
-    // translated — it is returned as-is.  Our C++ implementation matches.
+    // On Linux, CRLF is not translated — it is returned as-is.
     const fs::path p = tmp_path("crlf_file.txt");
     FileGuard g{p};
     write_file(p, "line1\r\nline2\r\n");
@@ -153,7 +152,7 @@ TEST(InputLoader, FileErrorIncludesPath) {
 // ---------------------------------------------------------------------------
 
 TEST(InputLoader, FileDashReadsStdin) {
-    // Reference: if args.file in ("-", "/dev/stdin"): args.text = sys.stdin.read()
+    // "-" and "/dev/stdin" both map to reading from stdin.
     EdgeTtsArguments args;
     args.file = "-";
     std::istringstream ss{"stdin content"};
@@ -215,6 +214,35 @@ TEST(InputLoader, FilePrecedenceOverStdin) {
     auto r = loader.load(args, ss);
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(*r, "from file");
+}
+
+// ---------------------------------------------------------------------------
+// Directory passed as --file → io_error, not a crash
+//
+// On Linux, std::ifstream opens a directory descriptor "successfully" but
+// throws std::ios_failure on the first read.  InputLoader must detect this
+// before reading and return io_error so the dispatcher can print a clean
+// error instead of terminating.
+// ---------------------------------------------------------------------------
+
+TEST(InputLoader, FileOptionDirectoryPathReturnsIoError) {
+    EdgeTtsArguments args;
+    args.file = fs::temp_directory_path().string();
+    auto ss = empty_stdin();
+    auto r = loader.load(args, ss);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::io_error);
+}
+
+TEST(InputLoader, FileOptionDirectoryPathIncludesPathInContext) {
+    const std::string dir = fs::temp_directory_path().string();
+    EdgeTtsArguments args;
+    args.file = dir;
+    auto ss = empty_stdin();
+    auto r = loader.load(args, ss);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_TRUE(r.error().has_context());
+    EXPECT_FALSE(r.error().context().empty());
 }
 
 // ---------------------------------------------------------------------------

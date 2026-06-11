@@ -9,7 +9,6 @@ using edge_tts::common::ErrorCode;
 // ---------------------------------------------------------------------------
 
 TEST(OutputFormat, DefaultMatchesReference) {
-    // Python communicate.py line 438: "outputFormat":"audio-24khz-48kbitrate-mono-mp3"
     // Store the object to keep the string_view alive during comparison.
     const auto fmt = OutputFormat::default_format();
     EXPECT_EQ(fmt.value(), "audio-24khz-48kbitrate-mono-mp3");

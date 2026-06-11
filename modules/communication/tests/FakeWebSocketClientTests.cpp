@@ -333,9 +333,9 @@ TEST(FakeWebSocketClient, UsableViaInterface) {
 // ---------------------------------------------------------------------------
 
 TEST(FakeWebSocketClient, ReferenceSendOrder) {
-    // communicate.py __stream():
-    //   await send_command_request()  → speech.config text frame
-    //   await send_ssml_request()     → ssml text frame
+    // Expected send order per chunk:
+    //   speech.config text frame (first)
+    //   ssml text frame (second)
     //   async for received in websocket: ...
     FakeWebSocketClient fake;
     fake.push_incoming(make_text("X-RequestId:x\r\nPath:turn.end\r\n\r\n"));

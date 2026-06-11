@@ -16,33 +16,28 @@ EdgeTokenProvider::EdgeTokenProvider(EdgeServiceConfig config,
 
 common::Result<std::string> EdgeTokenProvider::sec_ms_gec() const
 {
-    // Step 1: Get UTC Unix timestamp (seconds as double) + accumulated skew,
-    //   matching Python's DRM.get_unix_timestamp():
-    //     dt.now(tz.utc).timestamp() + DRM.clock_skew_seconds
+    // Step 1: UTC Unix timestamp (seconds as double) + accumulated clock skew.
     const auto now = clock_.now();
     const double unix_seconds = std::chrono::duration<double>(
         now.time_since_epoch()).count() + clock_skew_seconds_;
 
-    // Step 2: Add Windows file time epoch offset (drm.py: WIN_EPOCH = 11644473600)
+    // Step 2: Add Windows file time epoch offset (11644473600 seconds).
     double ticks = unix_seconds + 11644473600.0;
 
-    // Step 3: Round DOWN to nearest 300-second boundary
-    //   Python: ticks -= ticks % 300
+    // Step 3: Round DOWN to nearest 300-second boundary.
     ticks -= std::fmod(ticks, 300.0);
 
-    // Step 4: Convert to 100-nanosecond intervals
-    //   Python: ticks *= S_TO_NS / 100  where S_TO_NS = 1e9
+    // Step 4: Convert to 100-nanosecond intervals (multiply by 1e9/100 = 1e7).
     ticks *= 1e9 / 100.0;
 
-    // Step 5: Format as integer (same rounding as Python's f"{ticks:.0f}")
+    // Step 5: Format as integer using IEEE 754 round-to-nearest-even.
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.0f", ticks);
 
-    // Step 6: Concatenate with trusted client token
+    // Step 6: Concatenate with trusted client token.
     const std::string str_to_hash = std::string(buf) + config_.trusted_client_token;
 
-    // Step 7+8: SHA-256 → uppercase hex
-    //   Python: hashlib.sha256(str_to_hash.encode("ascii")).hexdigest().upper()
+    // Step 7: SHA-256 → uppercase hex.
     return common::Result<std::string>::ok(common::sha256_hex_upper(str_to_hash));
 }
 

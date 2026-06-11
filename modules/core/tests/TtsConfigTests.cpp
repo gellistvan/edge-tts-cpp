@@ -35,7 +35,6 @@ TEST(TtsConfigDefaults, PitchMatchesReference) {
 }
 
 TEST(TtsConfigDefaults, BoundaryTypeMatchesReference) {
-    // Python default: "SentenceBoundary"
     const auto cfg = TtsConfig::defaults();
     EXPECT_TRUE(cfg.boundary_type == BoundaryType::sentence);
 }

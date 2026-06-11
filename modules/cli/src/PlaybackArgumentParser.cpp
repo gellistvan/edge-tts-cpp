@@ -126,7 +126,7 @@ PlaybackParseResult do_parse(const std::vector<std::string>& tokens,
                 }
             } else if (key == "--write-media" || key == "--write-subtitles" ||
                        key == "--list-voices") {
-                // Reference: edge-playback does not expose these options.
+                // edge-playback does not expose these options.
                 PlaybackParseResult r;
                 r.message = std::string(key) + " is not supported by edge-playback";
                 return r;
@@ -184,7 +184,7 @@ PlaybackParseResult do_parse(const std::vector<std::string>& tokens,
                 }
                 break;
             case 'l':
-                // Reference: --list-voices not accepted by edge-playback.
+                // --list-voices not accepted by edge-playback.
             {
                 PlaybackParseResult r;
                 r.message = "-l / --list-voices is not supported by edge-playback";
