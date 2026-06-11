@@ -284,7 +284,7 @@ TEST(SpeechSynthesizer, SaveNoSubtitlePathSkipsSubtitleFile) {
 // ---------------------------------------------------------------------------
 
 TEST(SpeechSynthesizer, SaveWritesSubtitleFileWhenPathGiven) {
-    // Feed a boundary chunk so SubMaker has something to write.
+    // Feed a boundary chunk so SubtitleBuilder has something to write.
     std::vector<TtsChunk> fake{
         TtsChunk{make_audio("mp3bytes")},
         TtsChunk{make_boundary("Hello world", 0, 10'000'000)},
@@ -307,7 +307,7 @@ TEST(SpeechSynthesizer, SaveWritesSubtitleFileWhenPathGiven) {
 }
 
 TEST(SpeechSynthesizer, SaveWithNoBoundariesProducesEmptySrt) {
-    // Audio only; SubMaker produces an empty (or minimal) SRT.
+    // Audio only; SubtitleBuilder produces an empty (or minimal) SRT.
     std::vector<TtsChunk> fake{TtsChunk{make_audio("mp3bytes")}};
 
     const fs::path mp  = tmp_path("save_empty_srt.mp3");
@@ -322,7 +322,7 @@ TEST(SpeechSynthesizer, SaveWithNoBoundariesProducesEmptySrt) {
 }
 
 TEST(SpeechSynthesizer, SubtitleTimingUnchangedByAudioByteSize) {
-    // Regression guard: SubMaker derives cue times from BoundaryChunk::offset_ticks
+    // Regression guard: SubtitleBuilder derives cue times from BoundaryChunk::offset_ticks
     // and duration_ticks only.  Changing the audio payload size must not alter
     // SRT output when boundary metadata is identical.
     //

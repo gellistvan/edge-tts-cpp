@@ -81,7 +81,7 @@ edge_tts_add_module(
     NAME subtitle
     SOURCES
         modules/subtitle/src/SrtComposer.cpp
-        modules/subtitle/src/SubMaker.cpp
+        modules/subtitle/src/SubtitleBuilder.cpp
         modules/subtitle/src/SubtitleTime.cpp
     PUBLIC_DEPS edge_tts::core
 )

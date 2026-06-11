@@ -706,9 +706,9 @@ TEST(EdgeTtsCommandDispatcher, ProxyRejectedBeforeSynthesizerFn) {
 }
 
 // ---------------------------------------------------------------------------
-// SubMaker::feed errors → stderr, exit 1
+// SubtitleBuilder::feed errors → stderr, exit 1
 //
-// SubMaker locks the boundary type on the first feed().  Mixing WordBoundary
+// SubtitleBuilder locks the boundary type on the first feed().  Mixing WordBoundary
 // and SentenceBoundary in the same session triggers invalid_argument.
 // ---------------------------------------------------------------------------
 
@@ -725,7 +725,7 @@ static BoundaryChunk make_boundary_of_type(BoundaryEventType type,
 }
 
 TEST(EdgeTtsCommandDispatcher, SubtitleFeedTypeMismatchReturnsError) {
-    // Feed a WordBoundary then a SentenceBoundary — SubMaker rejects the second.
+    // Feed a WordBoundary then a SentenceBoundary — SubtitleBuilder rejects the second.
     std::vector<TtsChunk> chunks{
         TtsChunk{make_audio("mp3")},
         TtsChunk{make_boundary_of_type(BoundaryEventType::WordBoundary,    "Hello", 0,          10'000'000)},

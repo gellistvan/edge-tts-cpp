@@ -1,4 +1,4 @@
-#include "subtitles/SubMaker.hpp"
+#include "subtitles/SubtitleBuilder.hpp"
 #include "subtitles/SubtitleCue.hpp"
 #include "core/Chunk.hpp"
 #include "common/Error.hpp"
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string>
 
-using edge_tts::subtitles::SubMaker;
+using edge_tts::subtitles::SubtitleBuilder;
 using edge_tts::subtitles::SubtitleCue;
 using edge_tts::core::BoundaryChunk;
 using edge_tts::core::BoundaryEventType;
@@ -35,8 +35,8 @@ static constexpr std::int64_t TICKS_PER_MS     = 10'000;
 // Feed sentence boundary
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, FeedSentenceBoundary) {
-    SubMaker sm;
+TEST(SubtitleBuilder, FeedSentenceBoundary) {
+    SubtitleBuilder sm;
     const auto chunk = make_chunk(
         BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "Hello, world.");
 
@@ -46,11 +46,11 @@ TEST(SubMaker, FeedSentenceBoundary) {
 }
 
 // ---------------------------------------------------------------------------
-// Feed word boundary (reference supports both types)
+// Feed word boundary
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, FeedWordBoundary) {
-    SubMaker sm;
+TEST(SubtitleBuilder, FeedWordBoundary) {
+    SubtitleBuilder sm;
     const auto chunk = make_chunk(
         BoundaryEventType::WordBoundary, 0, 500 * TICKS_PER_MS, "Hello");
 
@@ -63,8 +63,8 @@ TEST(SubMaker, FeedWordBoundary) {
 // Multiple boundaries of the same type
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, MultipleSametype) {
-    SubMaker sm;
+TEST(SubtitleBuilder, MultipleSametype) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "One"));
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 2 * TICKS_PER_SECOND, TICKS_PER_SECOND, "Two"));
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 4 * TICKS_PER_SECOND, TICKS_PER_SECOND, "Three"));
@@ -73,19 +73,19 @@ TEST(SubMaker, MultipleSametype) {
 }
 
 // ---------------------------------------------------------------------------
-// Mixed types are rejected (reference: ValueError on type mismatch)
+// Mixed types are rejected
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, MixedTypeRejected) {
-    SubMaker sm;
+TEST(SubtitleBuilder, MixedTypeRejected) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "Sentence"));
     const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary, TICKS_PER_SECOND, 500 * TICKS_PER_MS, "Word"));
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
 }
 
-TEST(SubMaker, MixedTypeWordThenSentenceRejected) {
-    SubMaker sm;
+TEST(SubtitleBuilder, MixedTypeWordThenSentenceRejected) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::WordBoundary, 0, 500 * TICKS_PER_MS, "Word"));
     const auto r = sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, TICKS_PER_SECOND, TICKS_PER_SECOND, "Sentence"));
     EXPECT_FALSE(r.has_value());
@@ -98,8 +98,8 @@ TEST(SubMaker, MixedTypeWordThenSentenceRejected) {
 //   end   = (offset_ticks + duration_ticks) / 10_000
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, CueStartEndCalculation) {
-    SubMaker sm;
+TEST(SubtitleBuilder, CueStartEndCalculation) {
+    SubtitleBuilder sm;
     // offset = 500ms = 5,000,000 ticks; duration = 1000ms = 10,000,000 ticks
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                        500 * TICKS_PER_MS, 1000 * TICKS_PER_MS, "Hello"));
@@ -110,8 +110,8 @@ TEST(SubMaker, CueStartEndCalculation) {
     EXPECT_EQ(cues[0].end.milliseconds(),   1500);
 }
 
-TEST(SubMaker, StartEqualsOffsetDividedByTicksPerMs) {
-    SubMaker sm;
+TEST(SubtitleBuilder, StartEqualsOffsetDividedByTicksPerMs) {
+    SubtitleBuilder sm;
     // offset = 12345ms exactly
     (void)sm.feed(make_chunk(BoundaryEventType::WordBoundary,
                        12345 * TICKS_PER_MS, 100 * TICKS_PER_MS, "X"));
@@ -124,15 +124,15 @@ TEST(SubMaker, StartEqualsOffsetDividedByTicksPerMs) {
 // Text is stored verbatim (already XML-unescaped by MetadataJsonParser)
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, TextStoredVerbatim) {
-    SubMaker sm;
+TEST(SubtitleBuilder, TextStoredVerbatim) {
+    SubtitleBuilder sm;
     // Text "A & B" arrives already unescaped (was "&amp;" on the wire)
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "A & B"));
     EXPECT_EQ(sm.cues()[0].text, "A & B");
 }
 
-TEST(SubMaker, TextWithUnicodeStoredVerbatim) {
-    SubMaker sm;
+TEST(SubtitleBuilder, TextWithUnicodeStoredVerbatim) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::WordBoundary, 0, TICKS_PER_SECOND, "你好世界"));
     EXPECT_EQ(sm.cues()[0].text, "你好世界");
 }
@@ -141,8 +141,8 @@ TEST(SubMaker, TextWithUnicodeStoredVerbatim) {
 // Zero duration — cue is created but SrtComposer will skip it (start >= end)
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, ZeroDurationCueCreated) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ZeroDurationCueCreated) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, TICKS_PER_SECOND, 0, "Zero"));
     EXPECT_EQ(sm.cues().size(), 1u);
     // start == end
@@ -150,8 +150,8 @@ TEST(SubMaker, ZeroDurationCueCreated) {
     EXPECT_EQ(cues[0].start.milliseconds(), cues[0].end.milliseconds());
 }
 
-TEST(SubMaker, ZeroDurationSkippedInSrt) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ZeroDurationSkippedInSrt) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, TICKS_PER_SECOND, 0, "Zero"));
     const auto r = sm.to_srt();
     EXPECT_TRUE(r.has_value());
@@ -162,8 +162,8 @@ TEST(SubMaker, ZeroDurationSkippedInSrt) {
 // to_srt() output — matches SrtComposer format exactly
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, ToSrtSingleCue) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ToSrtSingleCue) {
+    SubtitleBuilder sm;
     // 0ms start, 1000ms end → "00:00:00,000 --> 00:00:01,000"
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                        0, 1000 * TICKS_PER_MS, "Hello."));
@@ -177,8 +177,8 @@ TEST(SubMaker, ToSrtSingleCue) {
         "\n");
 }
 
-TEST(SubMaker, ToSrtTwoCues) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ToSrtTwoCues) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                        0, 1000 * TICKS_PER_MS, "First."));
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
@@ -198,11 +198,11 @@ TEST(SubMaker, ToSrtTwoCues) {
 }
 
 // ---------------------------------------------------------------------------
-// to_srt() does NOT reset state (reference: get_srt() is idempotent)
+// to_srt() does NOT reset state — calling it multiple times is idempotent
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, ToSrtDoesNotResetState) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ToSrtDoesNotResetState) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                        0, TICKS_PER_SECOND, "Hello."));
 
@@ -218,8 +218,8 @@ TEST(SubMaker, ToSrtDoesNotResetState) {
 // feed() after to_srt() — continues accumulating
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, FeedAfterToSrt) {
-    SubMaker sm;
+TEST(SubtitleBuilder, FeedAfterToSrt) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                        0, TICKS_PER_SECOND, "First."));
 
@@ -240,8 +240,8 @@ TEST(SubMaker, FeedAfterToSrt) {
 // clear() resets state — cues and type lock
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, ClearResetsCues) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ClearResetsCues) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "A"));
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 2 * TICKS_PER_SECOND, TICKS_PER_SECOND, "B"));
     EXPECT_EQ(sm.cues().size(), 2u);
@@ -250,8 +250,8 @@ TEST(SubMaker, ClearResetsCues) {
     EXPECT_EQ(sm.cues().size(), 0u);
 }
 
-TEST(SubMaker, ClearResetsTypeLock) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ClearResetsTypeLock) {
+    SubtitleBuilder sm;
     // Lock to SentenceBoundary
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "Sent"));
     // Type mismatch would fail here
@@ -265,8 +265,8 @@ TEST(SubMaker, ClearResetsTypeLock) {
     EXPECT_EQ(sm.cues().size(), 1u);
 }
 
-TEST(SubMaker, ClearThenToSrtReturnsEmpty) {
-    SubMaker sm;
+TEST(SubtitleBuilder, ClearThenToSrtReturnsEmpty) {
+    SubtitleBuilder sm;
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary, 0, TICKS_PER_SECOND, "Hi"));
     sm.clear();
     const auto r = sm.to_srt();
@@ -275,18 +275,18 @@ TEST(SubMaker, ClearThenToSrtReturnsEmpty) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty SubMaker
+// Empty SubtitleBuilder
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, EmptyToSrtIsEmpty) {
-    SubMaker sm;
+TEST(SubtitleBuilder, EmptyToSrtIsEmpty) {
+    SubtitleBuilder sm;
     const auto r = sm.to_srt();
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(r.value().empty());
 }
 
-TEST(SubMaker, EmptyCuesIsEmpty) {
-    SubMaker sm;
+TEST(SubtitleBuilder, EmptyCuesIsEmpty) {
+    SubtitleBuilder sm;
     EXPECT_TRUE(sm.cues().empty());
 }
 
@@ -294,36 +294,36 @@ TEST(SubMaker, EmptyCuesIsEmpty) {
 // Negative / invalid tick values
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, NegativeOffsetTicksRejected) {
+TEST(SubtitleBuilder, NegativeOffsetTicksRejected) {
     // SubtitleTime::from_edge_ticks rejects negative start ticks.
-    SubMaker sm;
+    SubtitleBuilder sm;
     const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
                                       -1, 500 * TICKS_PER_MS, "Bad"));
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
 }
 
-TEST(SubMaker, LargeNegativeOffsetTicksRejected) {
-    SubMaker sm;
+TEST(SubtitleBuilder, LargeNegativeOffsetTicksRejected) {
+    SubtitleBuilder sm;
     const auto r = sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                                       -1'000'000'000LL, TICKS_PER_SECOND, "Bad"));
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
 }
 
-TEST(SubMaker, NegativeDurationMakingEndTicksNegativeRejected) {
+TEST(SubtitleBuilder, NegativeDurationMakingEndTicksNegativeRejected) {
     // offset=100 ticks + duration=-200 ticks → end=-100 ticks (invalid).
-    SubMaker sm;
+    SubtitleBuilder sm;
     const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
                                       100, -200, "Bad"));
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_argument);
 }
 
-TEST(SubMaker, ValidOffsetWithNegativeDurationNotMakingEndNegativeCreatesCue) {
+TEST(SubtitleBuilder, ValidOffsetWithNegativeDurationNotMakingEndNegativeCreatesCue) {
     // offset=1000ms, duration=-500ms → end=500ms ≥ 0 → cue is created
     // (though SrtComposer will skip it because start > end).
-    SubMaker sm;
+    SubtitleBuilder sm;
     const auto r = sm.feed(make_chunk(BoundaryEventType::WordBoundary,
                                       1000 * TICKS_PER_MS, -500 * TICKS_PER_MS,
                                       "Inverted"));
@@ -339,10 +339,10 @@ TEST(SubMaker, ValidOffsetWithNegativeDurationNotMakingEndNegativeCreatesCue) {
 // Multiple boundaries at varied offsets — arithmetic correctness
 // ---------------------------------------------------------------------------
 
-TEST(SubMaker, VariedOffsetsDurationsArithmetic) {
+TEST(SubtitleBuilder, VariedOffsetsDurationsArithmetic) {
     // Three cues at different positions; verify each start/end is computed from
     // its own metadata without interference from the others.
-    SubMaker sm;
+    SubtitleBuilder sm;
     //  Cue A: 250ms .. 750ms
     (void)sm.feed(make_chunk(BoundaryEventType::SentenceBoundary,
                              250 * TICKS_PER_MS, 500 * TICKS_PER_MS, "A"));

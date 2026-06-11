@@ -115,7 +115,7 @@ compile as the first (and only) project include in a translation unit.
 
 | Header | Key types |
 |--------|-----------|
-| `edge_tts/subtitles/SubMaker.hpp` | `SubMaker` — collect boundaries, write SRT |
+| `edge_tts/subtitles/SubtitleBuilder.hpp` | `SubtitleBuilder` — collect boundaries, write SRT |
 | `edge_tts/subtitles/SubtitleCue.hpp` | `SubtitleCue` |
 | `edge_tts/subtitles/Subtitle.hpp` | `Subtitle` |
 | `edge_tts/subtitles/SubtitleTime.hpp` | `SubtitleTime` |

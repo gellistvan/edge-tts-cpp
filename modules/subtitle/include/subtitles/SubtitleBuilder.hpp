@@ -22,11 +22,10 @@ namespace edge_tts::subtitles {
 //   - The cue text is stored verbatim — MetadataJsonParser has already
 //     XML-unescaped it.
 //   - to_srt() delegates to SrtComposer::compose(); it does NOT reset state.
-//     Calling feed() after to_srt() continues to accumulate new cues (reference
-//     behaviour: get_srt() is idempotent with respect to the cue list).
+//     Calling feed() after to_srt() continues to accumulate new cues.
 //   - clear() resets the cue list and unlocks the type — allowing a fresh feed
 //     sequence with a different boundary type if desired.
-class SubMaker {
+class SubtitleBuilder {
 public:
     // Append one boundary event to the cue list.
     // Returns:
@@ -39,12 +38,12 @@ public:
     [[nodiscard]] std::vector<SubtitleCue> cues() const;
 
     // Compose accumulated cues into an SRT string using SrtComposer.
-    // Cues are sorted and filtered as per the reference (start>=end skipped,
-    // blank text skipped).  Does not clear state.
+    // Cues are sorted and filtered (start>=end skipped, blank text skipped).
+    // Does not clear state.
     [[nodiscard]] common::Result<std::string> to_srt() const;
 
     // Reset cue list and boundary-type lock.  Equivalent to constructing a
-    // fresh SubMaker.
+    // fresh SubtitleBuilder.
     void clear() noexcept;
 
 private:

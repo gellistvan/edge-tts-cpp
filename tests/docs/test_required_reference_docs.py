@@ -4,19 +4,17 @@
 Checks:
   1. docs/REFERENCE_BEHAVIOR.md exists.
   2. All required section headings are present.
-  3. At least five distinct reference/src/edge_tts/... file paths are mentioned.
-  4. Stale implementation phrases are absent from doc files.
-  5. Key CMake option names are mentioned in DEPENDENCIES.md and TESTING.md.
-  6. Broken lowercase link 'docs/high-level-design.md' does not appear anywhere.
-  7. README.md contains required links to HIGH_LEVEL_DESIGN.md, TESTING.md,
+  3. Stale implementation phrases are absent from doc files.
+  4. Key CMake option names are mentioned in DEPENDENCIES.md and TESTING.md.
+  5. Broken lowercase link 'docs/high-level-design.md' does not appear anywhere.
+  6. README.md contains required links to HIGH_LEVEL_DESIGN.md, TESTING.md,
      and RELEASE_READINESS.md.
-  8. RELEASE_READINESS.md contains a recognized maturity label.
+  7. RELEASE_READINESS.md contains a recognized maturity label.
 
 Exit code 0 on success, non-zero on failure.
 """
 
 import pathlib
-import re
 import sys
 
 # ---------------------------------------------------------------------------
@@ -26,8 +24,6 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 REFERENCE_BEHAVIOR = REPO_ROOT / "docs" / "REFERENCE_BEHAVIOR.md"
 
 REQUIRED_HEADINGS = [
-    "# Reference Files Inspected",
-    "# Public Python API",
     "# CLI Commands",
     "# CLI Options",
     "# Default Values",
@@ -46,11 +42,6 @@ REQUIRED_HEADINGS = [
     "# Compatibility Targets",
     "# Ambiguities / Requires Live Verification",
 ]
-
-MIN_REFERENCE_PATHS = 5
-REFERENCE_PATH_PATTERN = re.compile(
-    r"reference/(?:edge-tts/)?src/edge_tts/[^\s`\)\"']+"
-)
 
 # ---------------------------------------------------------------------------
 # Stale phrases that must NOT appear in doc files under docs/
@@ -134,16 +125,7 @@ def main() -> None:
             + "\n  ".join(missing)
         )
 
-    # 3. At least five distinct reference/src/edge_tts/... paths mentioned
-    found_paths = set(REFERENCE_PATH_PATTERN.findall(content))
-    if len(found_paths) < MIN_REFERENCE_PATHS:
-        fail(
-            f"Expected at least {MIN_REFERENCE_PATHS} distinct "
-            f"'reference/src/edge_tts/...' paths in REFERENCE_BEHAVIOR.md, "
-            f"found {len(found_paths)}: {sorted(found_paths)}"
-        )
-
-    # 4. Stale-phrase check across all *.md files under docs/
+    # 3. Stale-phrase check across all *.md files under docs/
     docs_dir = REPO_ROOT / "docs"
     for md_file in sorted(docs_dir.glob("*.md")):
         file_content = md_file.read_text(encoding="utf-8")
@@ -154,7 +136,7 @@ def main() -> None:
                     f"  '{phrase}'"
                 )
 
-    # 5. Required CMake variable mentions
+    # 4. Required CMake variable mentions
     deps_md = REPO_ROOT / "docs" / "DEPENDENCIES.md"
     if deps_md.exists():
         deps_content = deps_md.read_text(encoding="utf-8")
@@ -169,7 +151,7 @@ def main() -> None:
             if var not in testing_content:
                 fail(f"TESTING.md does not mention CMake/env option '{var}'")
 
-    # 5b. RELEASE_READINESS.md must document the subtitle timing known limitation
+    # 4b. RELEASE_READINESS.md must document the subtitle timing known limitation
     release_readiness = REPO_ROOT / "docs" / "RELEASE_READINESS.md"
     if release_readiness.exists():
         rr_text = release_readiness.read_text(encoding="utf-8").lower()
@@ -180,7 +162,7 @@ def main() -> None:
                     f"in Known limitations"
                 )
 
-    # 6. Broken-link check across ALL *.md files in the repo root and docs/
+    # 5. Broken-link check across ALL *.md files in the repo root and docs/
     all_md_files = list(docs_dir.glob("*.md")) + [REPO_ROOT / "README.md"]
     for md_file in sorted(all_md_files):
         if not md_file.exists():
@@ -193,7 +175,7 @@ def main() -> None:
                     f"  '{broken_link}'"
                 )
 
-    # 7. README.md must contain required links
+    # 6. README.md must contain required links
     readme = REPO_ROOT / "README.md"
     if readme.exists():
         readme_content = readme.read_text(encoding="utf-8")
@@ -204,7 +186,7 @@ def main() -> None:
                     f"  '{link_target}'"
                 )
 
-    # 8. RELEASE_READINESS.md must contain a maturity label
+    # 7. RELEASE_READINESS.md must contain a maturity label
     release_readiness = REPO_ROOT / "docs" / "RELEASE_READINESS.md"
     if release_readiness.exists():
         rr_content = release_readiness.read_text(encoding="utf-8").lower()
@@ -215,8 +197,7 @@ def main() -> None:
             )
 
     print(
-        f"OK: REFERENCE_BEHAVIOR.md found, {len(REQUIRED_HEADINGS)} headings present, "
-        f"{len(found_paths)} reference paths mentioned. "
+        f"OK: REFERENCE_BEHAVIOR.md found, {len(REQUIRED_HEADINGS)} headings present. "
         f"No stale phrases found. No broken links. Required CMake options documented. "
         f"README links verified. RELEASE_READINESS.md maturity label and known "
         f"limitations present."

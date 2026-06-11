@@ -30,7 +30,7 @@ what "ready to release" means for each capability area.
 | Text-to-speech synthesis (`SpeechSynthesizer`) | **Implemented · Tested offline** | `api::SpeechSynthesizer`. Offline tests in `edge_tts_api_tests`. |
 | Streaming audio chunks (`synthesize`) | **Implemented · Tested offline** | |
 | Save to file (`save`) | **Implemented · Tested offline** | MP3 written first, then SRT (if requested). If SRT write fails after MP3 succeeds, the MP3 file remains on disk and an error is returned. No atomicity guarantee. |
-| Subtitle generation (SRT) | **Implemented · Tested offline** | `SubMaker` + `SrtComposer`. |
+| Subtitle generation (SRT) | **Implemented · Tested offline** | `SubtitleBuilder` + `SrtComposer`. |
 | Voice list (`VoiceService`) | **Implemented · Tested offline** | Fetches and parses Edge TTS voice list; client-side filtering. |
 | Voice list filtering | **Implemented · Tested offline** | `VoiceFilter` supports locale, gender, short_name. |
 | DRM token (`Sec-MS-GEC`) | **Implemented · Tested offline** | `EdgeTokenProvider` — SHA-256, 5-minute rounding, Windows epoch. |

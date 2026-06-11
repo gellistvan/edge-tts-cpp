@@ -89,7 +89,6 @@ TEST(Sha256, LargeInput) {
 
 TEST(Sha256, SingleByteInput) {
     // sha256sum: printf '\x61' | sha256sum (same as "a")
-    // python3 -c "import hashlib; print(hashlib.sha256(b'a').hexdigest())"
     EXPECT_EQ(sha256_hex("a"),
         "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb");
 }

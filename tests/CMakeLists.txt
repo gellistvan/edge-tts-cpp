@@ -58,7 +58,7 @@ edge_tts_add_module_test(
         ${_M}/subtitle/tests/test_srt_composer.cpp
         ${_M}/subtitle/tests/SubtitleTimeTests.cpp
         ${_M}/subtitle/tests/SrtComposerTests.cpp
-        ${_M}/subtitle/tests/SubMakerTests.cpp
+        ${_M}/subtitle/tests/SubtitleBuilderTests.cpp
     LIBRARIES edge_tts::subtitle
 )
 
@@ -279,7 +279,7 @@ set(_EDGE_TTS_ALL_PUBLIC_HEADERS
     "common/Utf8.hpp"
     # subtitles
     "subtitles/SrtComposer.hpp"
-    "subtitles/SubMaker.hpp"
+    "subtitles/SubtitleBuilder.hpp"
     "subtitles/SubtitleCue.hpp"
     "subtitles/Subtitle.hpp"
     "subtitles/SubtitleTime.hpp"
