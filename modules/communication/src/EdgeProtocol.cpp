@@ -27,9 +27,6 @@ EdgeProtocol::EdgeProtocol(const common::IClock& clock) noexcept
 std::string EdgeProtocol::format_js_timestamp(
     std::chrono::system_clock::time_point tp)
 {
-    // Reference: communicate.py date_to_string()
-    //   time.strftime("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)",
-    //                 time.gmtime())
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
     std::tm gmt{};
 #if defined(_WIN32)
@@ -55,26 +52,14 @@ common::Result<std::string> EdgeProtocol::build_speech_config_frame(
     const core::TtsConfig&    config,
     const ConnectionMetadata& /*metadata*/) const
 {
-    // Reference: communicate.py send_command_request()
-    //   word_boundary = self.tts_config.boundary == "WordBoundary"
-    //   wd = "true" if word_boundary else "false"
-    //   sq = "true" if not word_boundary else "false"
     const bool word_boundary = (config.boundary_type == core::BoundaryType::word);
     const char* wd = word_boundary ? "true" : "false";
     const char* sq = word_boundary ? "false" : "true";
 
     const std::string timestamp = format_js_timestamp(clock_.now());
 
-    // Build JSON body.
-    // Reference JSON (Python concatenation):
-    //   '{"context":{"synthesis":{"audio":{"metadataoptions":{'
-    //   f'"sentenceBoundaryEnabled":"{sq}","wordBoundaryEnabled":"{wd}"'
-    //   "},"
-    //   '"outputFormat":"audio-24khz-48kbitrate-mono-mp3"'
-    //   "}}}}\r\n"
-    //
-    // Note: boundary values are JSON strings ("true"/"false"), not booleans.
-    // Note: body includes trailing \r\n — matches the Python reference exactly.
+    // boundary values are JSON strings ("true"/"false"), not JSON booleans.
+    // body includes trailing \r\n per the Edge TTS wire format.
     char body_buf[256];
     std::snprintf(body_buf, sizeof(body_buf),
         "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{"
@@ -98,9 +83,6 @@ common::Result<std::string> EdgeProtocol::build_ssml_frame(
     std::string_view          text_chunk,
     const ConnectionMetadata& metadata) const
 {
-    // Reference: communicate.py ssml_headers_plus_data() + send_ssml_request()
-    //   ssml_headers_plus_data(connect_id(), date_to_string(), mkssml(...))
-    //
     // text_chunk arrives pre-escaped from serialization::TextChunker (via
     // api::SpeechSynthesizer → SynthesisSession).  build_from_escaped_text embeds it
     // verbatim so escaping happens exactly once across the full pipeline.
@@ -109,12 +91,7 @@ common::Result<std::string> EdgeProtocol::build_ssml_frame(
     if (!ssml_result)
         return common::Result<std::string>::fail(std::move(ssml_result.error()));
 
-    // Reference ssml_headers_plus_data():
-    //   f"X-RequestId:{request_id}\r\n"
-    //   "Content-Type:application/ssml+xml\r\n"
-    //   f"X-Timestamp:{timestamp}Z\r\n"   ← trailing Z (documented Edge bug)
-    //   "Path:ssml\r\n\r\n"
-    //   f"{ssml}"
+    // trailing "Z" on the SSML timestamp is a known Edge TTS service quirk
     const std::string timestamp = format_js_timestamp(clock_.now()) + "Z";
 
     serialization::ProtocolMessage msg;

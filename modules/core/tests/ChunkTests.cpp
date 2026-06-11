@@ -108,7 +108,6 @@ TEST(BoundaryChunk, ZeroDurationIsValid) {
 }
 
 TEST(BoundaryChunk, TicksToMicroseconds) {
-    // Python SubMaker: start = timedelta(microseconds=offset / 10)
     // 1 tick = 100 ns = 0.1 µs, so 10 ticks = 1 µs
     BoundaryChunk chunk;
     chunk.offset_ticks   = 10'000'000LL;  // 1 second = 10_000_000 ticks

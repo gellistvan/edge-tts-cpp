@@ -115,7 +115,7 @@ TEST(VoiceFormatter, OneVoiceGenderMale) {
 }
 
 TEST(VoiceFormatter, OneVoiceCategoriesJoinedWithComma) {
-    // Reference: ", ".join(voice["VoiceTag"]["ContentCategories"])
+    // ContentCategories joined with ", "
     auto v = make_voice("en-US-AriaNeural", VoiceGender::female,
                         {"News", "Novel"}, {"Positive"});
     auto out = fmt.format(std::span<const Voice>{&v, 1});

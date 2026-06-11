@@ -10,11 +10,10 @@ namespace edge_tts::communication {
 
 // Options for HttpClient.
 //
-// Reference: voices.py list_voices() / aiohttp.ClientSession.get() parameters:
 //   proxy   — optional HTTP/HTTPS proxy URL.  Accepted and validated at parse
 //             time but not functional: send() returns ErrorCode::unsupported if
 //             proxy is set (the ixwebsocket HTTP backend has no proxy API).
-//   timeout — connect + transfer timeout; aiohttp default ~300s, we default 30s
+//   timeout — connect + transfer timeout; defaults to 30s.
 struct HttpClientOptions {
     std::optional<std::string>  proxy;
     std::chrono::milliseconds   timeout{30'000};

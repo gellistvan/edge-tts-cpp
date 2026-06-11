@@ -76,7 +76,7 @@ The offline integration source files cover complementary areas:
 - Multi-chunk input sends 4 frames (2×speech.config + 2×ssml) and connects twice
 - "Tom & Jerry `<test>`" is escaped exactly once (`&amp;`, `&lt;`, `&gt;`) — not double-escaped
 - Japanese and Arabic text pass through the encoding pipeline verbatim
-- Chunk-2 boundary offsets are shifted by `N*8*10_000_000/48_000` ticks matching the Python reference
+- Chunk-2 boundary offsets are shifted by the cumulative `max(offset_ticks + duration_ticks)` from chunk-1
 - Unknown Path header from the fake server → `ErrorCode::protocol_error`
 - `set_receive_error` injection → `ErrorCode::network_error`
 - turn.end without audio → `ErrorCode::service_error` with message containing "audio"
@@ -313,10 +313,9 @@ the fixtures serve as canonical documentation of expected wire shapes.
 ## Compatibility testing
 
 Before implementing any networking, protocol, or text-processing feature, consult
-`docs/REFERENCE_BEHAVIOR.md`.  That document describes the exact observed behavior
-of the Python `edge-tts` v7.2.8 reference implementation.  Tests for the
-communication and serialization layers must be written against the behaviors
-documented there, not against assumptions.
+`docs/REFERENCE_BEHAVIOR.md`.  That document is the authoritative behavior spec.
+Tests for the communication and serialization layers must be written against the
+behaviors documented there, not against assumptions.
 
 ## CLI tests — avoiding real network calls
 

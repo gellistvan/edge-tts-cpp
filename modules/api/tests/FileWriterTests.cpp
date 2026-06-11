@@ -191,7 +191,7 @@ TEST(FileWriter, WriteTextSubtitleContent) {
     FileGuard g{p};
 
     FileWriter fw;
-    // Matches the subtitle encoding pattern from communicate.py save().
+    // SRT content written as UTF-8.
     const std::string srt =
         "1\n00:00:00,000 --> 00:00:01,000\nHello world\n\n"
         "2\n00:00:01,000 --> 00:00:02,000\nGoodbye\n\n";

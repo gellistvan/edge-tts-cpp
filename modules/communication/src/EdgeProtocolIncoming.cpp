@@ -20,9 +20,6 @@ namespace {
 common::Result<std::vector<IncomingMessage>>
 parse_text_frame(const std::string& text)
 {
-    // Reference: communicate.py __stream() TEXT branch
-    //   encoded_data = received.data.encode("utf-8")
-    //   parameters, data = get_headers_and_data(encoded_data, encoded_data.find(b"\r\n\r\n"))
     serialization::ProtocolParser parser;
     auto msg_result = parser.parse(text);
     if (!msg_result)
@@ -39,7 +36,6 @@ parse_text_frame(const std::string& text)
             common::Error{common::ErrorCode::protocol_error,
                           "text frame missing Path header"});
 
-    // Reference: path == b"audio.metadata"
     if (*path == "audio.metadata") {
         serialization::MetadataJsonParser meta_parser;
         auto chunks = meta_parser.parse(msg.body);
@@ -49,8 +45,6 @@ parse_text_frame(const std::string& text)
                               "audio.metadata parse error",
                               chunks.error().what()});
 
-        // Reference: raises UnexpectedResponse("No WordBoundary metadata found")
-        // when all entries are SessionEnd → treat as protocol_error.
         if (chunks->empty())
             return common::Result<std::vector<IncomingMessage>>::fail(
                 common::Error{common::ErrorCode::protocol_error,
@@ -66,12 +60,10 @@ parse_text_frame(const std::string& text)
         return common::Result<std::vector<IncomingMessage>>::ok(std::move(result));
     }
 
-    // Reference: path == b"turn.end"
     if (*path == "turn.end")
         return common::Result<std::vector<IncomingMessage>>::ok(
             {{IncomingMessage{IncomingMessageKind::turn_end, std::nullopt}}});
 
-    // Reference: path not in (b"response", b"turn.start") → UnknownResponse
     if (*path == "response" || *path == "turn.start")
         return common::Result<std::vector<IncomingMessage>>::ok(
             {{IncomingMessage{IncomingMessageKind::ignored, std::nullopt}}});
@@ -88,8 +80,6 @@ parse_text_frame(const std::string& text)
 common::Result<std::vector<IncomingMessage>>
 parse_binary_frame(const std::vector<std::byte>& data)
 {
-    // Reference: communicate.py __stream() BINARY branch
-    //
     // Binary frame format:
     //   bytes 0-1          : big-endian uint16 header_length
     //                        (includes these 2 bytes, excludes \r\n separator)
@@ -97,7 +87,6 @@ parse_binary_frame(const std::vector<std::byte>& data)
     //   bytes HL..HL+1     : \r\n separator
     //   bytes HL+2..end    : body (audio data)
 
-    // Reference: if len(received.data) < 2 → UnexpectedResponse
     if (data.size() < 2)
         return common::Result<std::vector<IncomingMessage>>::fail(
             common::Error{common::ErrorCode::protocol_error,
@@ -106,26 +95,20 @@ parse_binary_frame(const std::vector<std::byte>& data)
     const auto header_length = static_cast<std::size_t>(
         (static_cast<uint8_t>(data[0]) << 8) | static_cast<uint8_t>(data[1]));
 
-    // Stricter than reference: header_length encodes the 2-byte prefix plus the
-    // header content, so the minimum meaningful value is 2.  Values less than 2
-    // indicate a malformed frame (reference would crash with ValueError in
-    // get_headers_and_data since an empty line has no ':').
+    // header_length encodes the 2-byte prefix plus header content, minimum meaningful
+    // value is 2; smaller values indicate a malformed frame.
     if (header_length < 2)
         return common::Result<std::vector<IncomingMessage>>::fail(
             common::Error{common::ErrorCode::protocol_error,
                           "binary frame header_length is too small (minimum 2)"});
 
-    // Reference: if header_length > len(received.data) → UnexpectedResponse
     if (header_length > data.size())
         return common::Result<std::vector<IncomingMessage>>::fail(
             common::Error{common::ErrorCode::protocol_error,
                           "binary message header_length exceeds message size"});
 
-    // Stricter than reference: verify that the \r\n separator bytes after the
-    // header content are actually present and correct.  The Python reference
-    // uses data[header_length + 2:] for the body without checking those bytes;
-    // a truncated frame (header_length + 2 > data.size()) would silently yield
-    // an empty body.  We reject it explicitly.
+    // Verify the \r\n separator bytes are present; a truncated frame would otherwise
+    // silently produce an empty audio body.
     if (header_length + 2 > data.size())
         return common::Result<std::vector<IncomingMessage>>::fail(
             common::Error{common::ErrorCode::protocol_error,
@@ -156,7 +139,6 @@ parse_binary_frame(const std::vector<std::byte>& data)
 
     const auto& headers = *hdr_result;
 
-    // Reference: if parameters.get(b"Path") != b"audio" → UnexpectedResponse
     const auto path = headers.header("Path");
     if (!path || *path != "audio")
         return common::Result<std::vector<IncomingMessage>>::fail(
@@ -164,8 +146,6 @@ parse_binary_frame(const std::vector<std::byte>& data)
                           "binary frame path is not audio",
                           path.value_or("(absent)")});
 
-    // Reference: content_type = parameters.get(b"Content-Type", None)
-    //            if content_type not in (b"audio/mpeg", None) → UnexpectedResponse
     const auto content_type = headers.header("Content-Type");
     if (content_type && *content_type != "audio/mpeg")
         return common::Result<std::vector<IncomingMessage>>::fail(
@@ -178,8 +158,7 @@ parse_binary_frame(const std::vector<std::byte>& data)
     const std::size_t body_len    = data.size() - body_offset;
 
     if (!content_type) {
-        // Reference: if content_type is None and len(data) == 0 → continue (ignore)
-        //            if content_type is None and len(data) > 0  → UnexpectedResponse
+        // No Content-Type: ignore if the body is empty, reject if it has data.
         if (body_len == 0)
             return common::Result<std::vector<IncomingMessage>>::ok(
                 {{IncomingMessage{IncomingMessageKind::ignored, std::nullopt}}});
@@ -189,8 +168,7 @@ parse_binary_frame(const std::vector<std::byte>& data)
                           "binary message has no Content-Type but non-empty body"});
     }
 
-    // content_type == "audio/mpeg"
-    // Reference: if len(data) == 0 → UnexpectedResponse
+    // audio/mpeg frame must have a non-empty body
     if (body_len == 0)
         return common::Result<std::vector<IncomingMessage>>::fail(
             common::Error{common::ErrorCode::protocol_error,

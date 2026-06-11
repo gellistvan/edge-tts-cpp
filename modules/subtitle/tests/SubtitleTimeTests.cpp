@@ -70,7 +70,7 @@ TEST(SubtitleTime, OneHour) {
 
 // ---------------------------------------------------------------------------
 // Mixed timestamp: 1h 23m 4s 0ms → "01:23:04,000"
-// (Matches the doctest in srt_composer.py timedelta_to_srt_timestamp)
+// Matches the SRT timestamp spec: "01:23:04,000"
 // ---------------------------------------------------------------------------
 
 TEST(SubtitleTime, MixedHourMinSecMs) {
@@ -103,16 +103,11 @@ TEST(SubtitleTime, AllComponentsNonZero) {
 // Truncation/rounding edge
 //
 // C++ uses integer truncation: ms = ticks / 10_000.
-// Python uses float division ticks/10 → timedelta (banker's rounding to µs)
-// → floor-divide by 1000 for ms.  A difference of 1 ms is possible only when
-// ticks % 10_000 ≥ 9_995 (fractional µs ≥ 0.5 and rounds the µs up across a
-// ms boundary).  Document and test the truncation behavior.
+// Document and test the truncation behavior.
 // ---------------------------------------------------------------------------
 
 TEST(SubtitleTime, TruncationBelowMillisecond) {
-    // 9999 ticks = 0.9999 ms → truncated to 0 ms
-    // Python: 9999/10 = 999.9 µs → rounds to 1000 µs → 1 ms (different!)
-    // C++ integer: 9999 / 10000 = 0 ms  (truncation documented behavior)
+    // 9999 ticks = 0.9999 ms → truncated to 0 ms (integer truncation behavior)
     const auto r = SubtitleTime::from_edge_ticks(9999);
     EXPECT_TRUE(r.has_value());
     EXPECT_EQ(r.value().milliseconds(), 0);

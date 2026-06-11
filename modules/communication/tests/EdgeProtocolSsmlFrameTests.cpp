@@ -52,7 +52,6 @@ TEST(EdgeProtocolSsmlFrame, FrameIsParseableAsProtocolMessage) {
 
 // ---------------------------------------------------------------------------
 // Path header equals "ssml"
-// Reference: communicate.py ssml_headers_plus_data() "Path:ssml\r\n\r\n"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSsmlFrame, PathHeaderEqualsSsml) {
@@ -67,8 +66,7 @@ TEST(EdgeProtocolSsmlFrame, PathHeaderEqualsSsml) {
 }
 
 // ---------------------------------------------------------------------------
-// Content-Type header equals reference value
-// Reference: "Content-Type:application/ssml+xml\r\n"
+// Content-Type header
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSsmlFrame, ContentTypeHeaderMatchesReference) {
@@ -85,7 +83,6 @@ TEST(EdgeProtocolSsmlFrame, ContentTypeHeaderMatchesReference) {
 
 // ---------------------------------------------------------------------------
 // X-RequestId is present and matches metadata.request_id
-// Reference: "X-RequestId:{request_id}\r\n"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSsmlFrame, XRequestIdMatchesMetadata) {
@@ -101,8 +98,7 @@ TEST(EdgeProtocolSsmlFrame, XRequestIdMatchesMetadata) {
 }
 
 // ---------------------------------------------------------------------------
-// X-Timestamp is present and has a trailing 'Z'
-// Reference: f"X-Timestamp:{timestamp}Z\r\n"  — documented Edge bug
+// X-Timestamp is present and has a trailing 'Z' (known Edge TTS service quirk)
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSsmlFrame, XTimestampHasTrailingZ) {
@@ -336,7 +332,7 @@ TEST(EdgeProtocolSsmlFrame, DifferentMetadataYieldsDifferentRequestId) {
 
 // ---------------------------------------------------------------------------
 // Golden fixture: full frame for default config + fixed clock + known metadata
-// Verifies exact wire format against the Python reference.
+// Verifies exact wire format.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeProtocolSsmlFrame, GoldenFixtureDefaultConfig) {

@@ -11,10 +11,6 @@ namespace edge_tts::media {
 // Concrete IAudioConverter that delegates to external ffmpeg and ffplay
 // processes.  No FFmpeg library is linked; all calls go through IProcessRunner.
 //
-// Reference: edge_playback/__main__.py uses shutil.which() to locate tools and
-// subprocess.Popen(list_of_args) to launch them — exactly the pattern used here
-// via ExecutableDiscovery + IProcessRunner.
-//
 // Tool names:
 //   convert() — "ffmpeg"  with flags: -y -i <input> <output>
 //   play_mp3() — "ffplay" with flags: -nodisp -autoexit <input>

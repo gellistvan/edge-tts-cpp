@@ -21,12 +21,12 @@ TEST(XmlEscape, GreaterThanBecomesAmpGt) {
 }
 
 TEST(XmlEscape, DoubleQuoteUnchanged) {
-    // Python xml.sax.saxutils.escape() does NOT escape double-quotes
+    // Only &, <, > are escaped; double-quotes pass through.
     EXPECT_EQ(xml_escape("\""), "\"");
 }
 
 TEST(XmlEscape, SingleQuoteUnchanged) {
-    // Python xml.sax.saxutils.escape() does NOT escape single-quotes
+    // Only &, <, > are escaped; single-quotes pass through.
     EXPECT_EQ(xml_escape("'"), "'");
 }
 
@@ -43,8 +43,7 @@ TEST(XmlEscape, PlainTextUnchanged) {
 }
 
 TEST(XmlEscape, NotIdempotent_AlreadyEscaped) {
-    // Matches Python: escape("&amp;") → "&amp;amp;"
-    // The & in &amp; is escaped again.
+    // The & in &amp; is escaped again → "&amp;amp;".
     EXPECT_EQ(xml_escape("&amp;"), "&amp;amp;");
 }
 
@@ -76,12 +75,10 @@ TEST(XmlUnescape, AmpGtToGreaterThan) {
 }
 
 TEST(XmlUnescape, AmpQuotToDoubleQuote) {
-    // Python unescape() handles &quot; even though escape() doesn't produce it
     EXPECT_EQ(xml_unescape("&quot;"), "\"");
 }
 
 TEST(XmlUnescape, AmpAposToSingleQuote) {
-    // Python unescape() handles &apos;
     EXPECT_EQ(xml_unescape("&apos;"), "'");
 }
 

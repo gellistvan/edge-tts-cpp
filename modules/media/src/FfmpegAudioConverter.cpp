@@ -19,9 +19,7 @@ FfmpegAudioConverter::play_mp3(const std::filesystem::path& input) {
             common::Error{common::ErrorCode::external_process_failed,
                           "ffplay not found on PATH"});
 
-    // Reference: _play_media() in __main__.py uses mpv with -nodisp/-autoexit
-    // equivalent.  ffplay uses the same semantics: suppress the video window
-    // and exit automatically when playback finishes.
+    // -nodisp suppresses the video window; -autoexit exits when playback finishes.
     ProcessCommand cmd{*ffplay, {"-nodisp", "-autoexit", input.string()}};
     auto result = runner_.run(cmd);
     if (!result)

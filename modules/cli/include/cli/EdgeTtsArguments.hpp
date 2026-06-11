@@ -7,12 +7,9 @@ namespace edge_tts::cli {
 
 // Parsed arguments for the edge-tts command.
 //
-// Reference: util.py UtilArgs / amain() argparse setup, constants.py DEFAULT_VOICE.
-//
 // Exactly one of text, file, or list_voices must be set after a successful
 // parse — they form the mutually exclusive required group.
 struct EdgeTtsArguments {
-    // Reference default voice (constants.py DEFAULT_VOICE).
     static constexpr const char* kDefaultVoice = "en-US-EmmaMultilingualNeural";
 
     // --- Mutually exclusive required group ----------------------------------

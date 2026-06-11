@@ -84,7 +84,7 @@ VoiceJsonParser::parse(std::string_view json_sv) const
         if (!status) return common::Result<std::vector<core::Voice>>::fail(status.error());
         v.status = std::move(*status);
 
-        // VoiceTag is optional; missing sub-lists default to [] per voices.py.
+        // VoiceTag is optional; missing sub-lists default to empty.
         if (auto tag_it = entry.find("VoiceTag");
             tag_it != entry.end() && tag_it->is_object())
         {

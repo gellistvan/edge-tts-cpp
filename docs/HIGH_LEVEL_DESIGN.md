@@ -6,8 +6,8 @@
 
 All networking, protocol, DRM, text-processing, and timing decisions must be
 derived from `docs/REFERENCE_BEHAVIOR.md`.  That document is the authoritative
-inventory of observed Python `edge-tts` v7.2.8 behavior.  Do not infer
-protocol details from assumptions — consult `REFERENCE_BEHAVIOR.md` first.
+behavior specification.  Do not infer protocol details from assumptions —
+consult `REFERENCE_BEHAVIOR.md` first.
 
 ## Module map
 
@@ -134,7 +134,7 @@ edge_tts::core::TtsConfig cfg;
 cfg.voice = "en-US-EmmaMultilingualNeural";
 cfg.rate  = "+0%";
 
-// Build transport options (optional — defaults match Python reference).
+// Build transport options (optional — all fields have sensible defaults).
 edge_tts::api::SynthesisOptions opts;
 // opts.proxy = "http://proxy.example.com:8080";
 // NOTE: the ixwebsocket backend does not support client-side proxy.
@@ -273,7 +273,7 @@ DRM retry or HTTP 5xx to `service_error` — is the responsibility of the caller
 
 **No exceptions across the public API** — `synthesize()`, `save()`, and all `VoiceService` methods return `Result<T>` for all recoverable failures. The only exceptions are `BadResultAccess` (programmer error: accessing a failed `Result<T>`) and `ConfigurationError` (programmer error: invalid `TtsConfig`).
 
-See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
+See `docs/MODULES.md` for the complete `ErrorCode` reference.
 
 ### `core` module
 
@@ -291,10 +291,10 @@ See `docs/MODULES.md` for the complete Python→C++ `ErrorCode` mapping table.
 
 | Header | Owns |
 |--------|------|
-| `XmlEscaper.hpp` | `xml_escape` (`&`/`<`/`>` only, matches `xml.sax.saxutils.escape`), `xml_unescape` (reverses `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&apos;`), not idempotent |
+| `XmlEscaper.hpp` | `xml_escape` (`&`/`<`/`>` only; `"` and `'` are unchanged), `xml_unescape` (reverses `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&apos;`), not idempotent |
 | `TextNormalizer.hpp` | `TextNormalizer::normalize()→Result<string>` — UTF-8 validation + control-char replacement (U+0000–U+0008, U+000B–U+000C, U+000E–U+001F → space), CRLF preserved |
 | `TextChunker.hpp` | `TextChunkerOptions` (`max_chunk_size`, `size_after_xml_escape`, `prefer_sentence_boundary`, `prefer_word_boundary`) + `TextChunker::chunk()→Result<vector<string>>` — full reference pipeline: normalize → escape → split by escaped byte limit (newline &gt; space &gt; UTF-8 boundary &gt; entity protection), returned chunks are XML-escaped and stripped |
-| `SsmlBuilder.hpp` | `SsmlBuilder::build(config, raw_text)→Result<string>` — validates `TtsConfig`, normalizes voice to full form, normalizes and XML-escapes `raw_text` exactly once, returns the complete SSML document body matching Python `mkssml()` (single line, single-quoted attributes, pitch/rate/volume order, `xml:lang='en-US'` hardcoded, no protocol headers) |
+| `SsmlBuilder.hpp` | `SsmlBuilder::build(config, raw_text)→Result<string>` — validates `TtsConfig`, normalizes voice to full form, normalizes and XML-escapes `raw_text` exactly once, returns the complete SSML document body (single line, single-quoted attributes, pitch/rate/volume order, `xml:lang='en-US'` hardcoded, no protocol headers) |
 
 **Note:** `Chunk.hpp` uses `BoundaryEventType` (classifying received events) while
 `TtsConfig.hpp` uses `BoundaryType` (controlling which events are requested).  These are
@@ -318,7 +318,7 @@ field, with the field name in the message and the bad value in the context.
 
 `TtsConfig::validate()` is a legacy throw-based bridge over `validate_tts_config()`;
 new code should use `validate_tts_config()` directly.  `defaults()` returns a
-`TtsConfig` with all fields matching the Python reference defaults.
+`TtsConfig` with all fields at their default values.
 
 ## Test structure
 
@@ -352,7 +352,7 @@ OfflineIntegrationTests.cpp         — protocol layer: frame structure, error p
 
 1. **Frame structure**: the client sends `speech.config` (with `Path:speech.config` and `Content-Type:application/json`) then `ssml` (with `Path:ssml` and a 32-char hex `X-RequestId`) for every chunk.
 2. **Escaping correctness**: "Tom & Jerry `<test>`" arrives in the SSML frame as `&amp;` / `&lt;` / `&gt;` — never double-escaped, never raw.
-3. **Multi-chunk offset compensation**: a 5000-byte input splits into two chunks; boundaries from chunk 2 have their `offset_ticks` shifted by `N_audio_bytes * 8 * 10_000_000 / 48_000` (Python reference formula), verified both via `synthesize()` chunk values and via the SRT timestamp in `save()` output.
+3. **Multi-chunk offset compensation**: a 5000-byte input splits into two chunks; boundaries from chunk 2 have their `offset_ticks` shifted by the cumulative `max(offset_ticks + duration_ticks)` from chunk 1, verified both via `synthesize()` chunk values and via the SRT timestamp in `save()` output.
 4. **Error propagation**: an unknown `Path` header returns `protocol_error`; a transport drop injected via `set_receive_error` returns `network_error`; `turn.end` with no preceding audio returns `service_error` with a message mentioning "audio".
 
 ## Current implementation status

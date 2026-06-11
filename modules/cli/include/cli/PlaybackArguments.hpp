@@ -9,7 +9,6 @@ namespace edge_tts::cli {
 
 // Parsed arguments for the edge-playback command.
 //
-// Reference: edge_playback/__main__.py _parse_args() / argument forwarding.
 // edge-playback accepts a subset of edge-tts options (no --write-media,
 // --write-subtitles, or --list-voices) plus one playback-specific flag (--mpv).
 struct PlaybackArguments {

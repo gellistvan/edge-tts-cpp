@@ -9,10 +9,9 @@
 namespace edge_tts::subtitles {
 namespace {
 
-// Mirrors Python make_legal_content():
-//   1. Strip leading/trailing '\n' (reference: content.strip("\n")).
-//   2. Collapse consecutive blank lines (\n\n+) to a single '\n'
-//      (reference: MULTI_WS_REGEX.sub("\n", ...)).
+// Normalize subtitle text:
+//   1. Strip leading/trailing newlines.
+//   2. Collapse consecutive blank lines to a single newline.
 std::string make_legal_content(const std::string& text)
 {
     const auto first = text.find_first_not_of('\n');
@@ -35,8 +34,7 @@ std::string make_legal_content(const std::string& text)
     return out;
 }
 
-// Returns true if text is empty or contains only whitespace (matches Python
-// `not sub.content.strip()`).
+// Returns true if text is empty or contains only whitespace.
 bool is_blank(const std::string& text)
 {
     return text.find_first_not_of(" \t\r\n") == std::string::npos;
@@ -47,8 +45,7 @@ bool is_blank(const std::string& text)
 common::Result<std::string>
 SrtComposer::compose(std::span<const SubtitleCue> cues) const
 {
-    // Build a sorted index. Sort key: (start, end) ascending — mirrors Python
-    // Subtitle.__lt__: (self.start, self.end, self.index) < (other…)
+    // Build a sorted index by (start, end) ascending.
     std::vector<std::size_t> order(cues.size());
     std::iota(order.begin(), order.end(), 0);
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
@@ -64,10 +61,8 @@ SrtComposer::compose(std::span<const SubtitleCue> cues) const
     for (const auto i : order) {
         const auto& cue = cues[i];
 
-        // Skip: start >= end (includes zero duration; reference condition [2])
         if (cue.start.milliseconds() >= cue.end.milliseconds()) continue;
 
-        // Skip: blank content (reference: not sub.content.strip(), condition [0])
         if (is_blank(cue.text)) continue;
 
         const std::string content = make_legal_content(cue.text);

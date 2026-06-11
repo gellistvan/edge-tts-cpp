@@ -6,9 +6,7 @@
 using edge_tts::communication::EdgeServiceConfig;
 using edge_tts::communication::default_edge_service_config;
 
-// All expected values are derived verbatim from:
-//   reference/edge-tts/src/edge_tts/constants.py
-//   reference/edge-tts/src/edge_tts/communicate.py
+// All expected values are from the live Edge TTS service protocol constants.
 
 static const EdgeServiceConfig cfg = default_edge_service_config();
 
@@ -38,7 +36,6 @@ TEST(EdgeServiceConfig, VoicesEndpointUsesHttps) {
 
 // ---------------------------------------------------------------------------
 // Endpoints: contain trusted client token
-// Reference: WSS_URL and VOICE_LIST both embed TRUSTED_CLIENT_TOKEN
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, WebSocketEndpointContainsTrustedClientToken) {
@@ -50,8 +47,7 @@ TEST(EdgeServiceConfig, VoicesEndpointContainsTrustedClientToken) {
 }
 
 // ---------------------------------------------------------------------------
-// Endpoints: exact reference values
-// Reference: constants.py WSS_URL / VOICE_LIST
+// Endpoints: exact values
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, WebSocketEndpointExact) {
@@ -78,7 +74,6 @@ TEST(EdgeServiceConfig, VoicesTokenParamIsLowerCase) {
 
 // ---------------------------------------------------------------------------
 // Trusted client token
-// Reference: constants.py TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, TrustedClientTokenNonEmpty) {
@@ -90,9 +85,7 @@ TEST(EdgeServiceConfig, TrustedClientTokenExact) {
 }
 
 // ---------------------------------------------------------------------------
-// Sec-MS-GEC version
-// Reference: constants.py SEC_MS_GEC_VERSION = f"1-{CHROMIUM_FULL_VERSION}"
-//            CHROMIUM_FULL_VERSION = "143.0.3650.75"
+// Sec-MS-GEC version: "1-{CHROMIUM_FULL_VERSION}" = "1-143.0.3650.75"
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, SecMsGecVersionNonEmpty) {
@@ -109,7 +102,6 @@ TEST(EdgeServiceConfig, SecMsGecVersionExact) {
 
 // ---------------------------------------------------------------------------
 // Origin header
-// Reference: constants.py WSS_HEADERS["Origin"]
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, OriginNonEmpty) {
@@ -121,10 +113,7 @@ TEST(EdgeServiceConfig, OriginExact) {
 }
 
 // ---------------------------------------------------------------------------
-// User-Agent header
-// Reference: constants.py BASE_HEADERS["User-Agent"]
-//   f"Mozilla/5.0 ... Chrome/{CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/{CHROMIUM_MAJOR_VERSION}.0.0.0"
-//   with CHROMIUM_MAJOR_VERSION = "143"
+// User-Agent header: Chrome/Edge 143 user-agent string
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, UserAgentNonEmpty) {
@@ -147,7 +136,6 @@ TEST(EdgeServiceConfig, UserAgentExact) {
 
 // ---------------------------------------------------------------------------
 // Protocol frame paths
-// Reference: communicate.py send_command_request(), ssml_headers_plus_data(), __stream()
 // ---------------------------------------------------------------------------
 
 TEST(EdgeServiceConfig, SpeechConfigPathNonEmpty) {

@@ -7,7 +7,7 @@
 #include <string_view>
 
 // SHA-256 implementation following FIPS 180-4.
-// Test vectors confirmed against Python hashlib and the system sha256sum utility.
+// Test vectors confirmed against the system sha256sum utility.
 
 namespace edge_tts::common {
 namespace {

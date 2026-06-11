@@ -19,11 +19,6 @@ namespace edge_tts::communication {
 //
 // All set fields are ANDed together.  An empty filter (all nullopt) returns
 // every voice in wire order.
-//
-// Reference mapping:
-//   locale     → Python VoicesManager.find(Locale=...)
-//   gender     → Python VoicesManager.find(Gender=...)
-//   short_name → exact ShortName match (not in Python VoicesManager, added for C++ API)
 struct VoiceFilter {
     std::optional<std::string>          locale;
     std::optional<core::VoiceGender>    gender;
@@ -32,15 +27,11 @@ struct VoiceFilter {
 
 // Fetches and parses the Edge TTS voice list.
 //
-// Reference: voices.py list_voices() + __list_voices()
-//   - HTTP GET to the voice-list endpoint.
-//   - URL: config.voices_endpoint + &Sec-MS-GEC=<token>&Sec-MS-GEC-Version=<ver>
-//     (reference: voices.py f"{VOICE_LIST}&Sec-MS-GEC={DRM.generate_sec_ms_gec()}&...")
-//   - Headers: build_voice_list_headers() (User-Agent, Accept-Encoding,
-//     Accept-Language, Accept, Cookie/MUID).
+//   - HTTP GET to the voice-list endpoint with fresh Sec-MS-GEC token.
+//   - Headers: User-Agent, Accept-Encoding, Accept-Language, Accept, Cookie/MUID.
 //   - Non-200 status → ErrorCode::service_error.
-//   - On HTTP 403: adjust clock skew and retry once (matching voices.py).
-//   - 200 body parsed by VoiceJsonParser (delegation: no JSON in communication layer).
+//   - On HTTP 403: adjust clock skew and retry once.
+//   - 200 body parsed by VoiceJsonParser (no JSON in communication layer).
 //   - Wire ordering preserved; sorting for CLI display is the caller's concern.
 //   - VoiceFilter applied client-side after parsing.
 class VoiceService {

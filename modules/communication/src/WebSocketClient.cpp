@@ -114,15 +114,12 @@ common::Result<void> WebSocketClient::connect(std::string_view url)
     impl_->ws.setUrl(std::string(url));
 
     // --- TLS ------------------------------------------------------------------
-    // Reference: voices.py / communicate.py use ssl.create_default_context() which
-    // uses the system CA bundle.  "SYSTEM" tells ixwebsocket to do the same.
+    // "SYSTEM" tells ixwebsocket to use the OS certificate trust store.
     ix::SocketTLSOptions tls_opts;
     tls_opts.caFile = "SYSTEM";
     impl_->ws.setTLSOptions(tls_opts);
 
     // --- Extra upgrade headers ------------------------------------------------
-    // Reference: communicate.py WSS_HEADERS (Pragma, Cache-Control, Origin,
-    // User-Agent, Accept-Encoding, Accept-Language, Cookie).
     ix::WebSocketHttpHeaders headers;
     for (const auto& [k, v] : impl_->options.extra_headers)
         headers[k] = v;
@@ -193,9 +190,8 @@ common::Result<void> WebSocketClient::connect(std::string_view url)
     // --- Synchronous connect --------------------------------------------------
     const auto init = impl_->ws.connect(connect_secs);
     if (!init.success) {
-        // HTTP 403 from the upgrade response indicates a DRM token rejection.
-        // Reference: communicate.py catches aiohttp.ClientResponseError(status=403)
-        // and retries after adjusting the clock skew via the server Date header.
+        // HTTP 403 indicates a DRM token rejection; the caller can adjust clock skew
+        // using the server Date header and retry via RetryPolicy.
         if (init.http_status == 403) {
             // Extract the Date response header to allow clock-skew correction.
             // The header map uses case-insensitive comparison (CaseInsensitiveLess).

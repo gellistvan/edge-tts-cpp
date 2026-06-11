@@ -29,7 +29,6 @@ static bool has_no_hyphens(const std::string& s) {
 
 // Checks that the UUID v4 version nibble is '4' (position 12 in the
 // without-hyphens form, corresponding to the 7th byte's high nibble).
-// Reference: uuid.uuid4().hex — Python's UUID module always sets version bits.
 static bool has_v4_version_nibble(const std::string& s) {
     // 32-char without-hyphens layout: 8 + 4 + 4 + 4 + 12
     // Position 12 in flattened form = first char of the 3rd group
@@ -69,7 +68,7 @@ TEST(ConnectionMetadata, ConnectionIdHasNoHyphens) {
 }
 
 TEST(ConnectionMetadata, ConnectionIdHasV4VersionNibble) {
-    // Reference: uuid.uuid4().hex always sets the version nibble to '4'
+    // UUID v4 always has '4' at position 12 in the 32-char hex form.
     IdGenerator ids;
     ConnectionMetadataFactory factory{ids};
     const auto m = factory.create_for_request();
@@ -124,7 +123,6 @@ TEST(ConnectionMetadata, RequestIdHasRfc4122Variant) {
 
 // ---------------------------------------------------------------------------
 // Uniqueness — within one create_for_request() call
-// Reference: connect_id() is called twice, producing two different values
 // ---------------------------------------------------------------------------
 
 TEST(ConnectionMetadata, ConnectionIdAndRequestIdDifferWithinOnePair) {
@@ -175,9 +173,7 @@ TEST(ConnectionMetadata, FactorySharesIdGenerator) {
 }
 
 // ---------------------------------------------------------------------------
-// Reference casing/format compatibility
-// Python: uuid.uuid4().hex → lowercase, 32 chars, no hyphens, v4 version
-// The C++ implementation must match this format exactly for the URL and header.
+// Format: lowercase, 32 chars, no hyphens, v4 version nibble
 // ---------------------------------------------------------------------------
 
 TEST(ConnectionMetadata, MatchesReferenceCasingLowercase) {
@@ -185,7 +181,7 @@ TEST(ConnectionMetadata, MatchesReferenceCasingLowercase) {
     ConnectionMetadataFactory factory{ids};
     const auto m = factory.create_for_request();
 
-    // No uppercase letters allowed (Python uuid4().hex is always lowercase)
+    // UUID hex is always lowercase (no uppercase letters).
     for (const char c : m.connection_id) {
         EXPECT_FALSE(c >= 'A' && c <= 'F');
         EXPECT_FALSE(c >= 'G' && c <= 'Z');

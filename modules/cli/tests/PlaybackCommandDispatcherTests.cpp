@@ -216,7 +216,7 @@ TEST(PlaybackArgumentParser, TextAndFileMutuallyExclusive) {
 
 TEST(PlaybackArgumentParser, ListVoicesNotAccepted) {
     PlaybackArgumentParser parser;
-    // Reference: --list-voices is not supported by edge-playback.
+    // --list-voices is not supported by edge-playback.
     auto r = parser.parse({"--text", "hi", "--list-voices"});
     EXPECT_EQ(r.action, PlaybackParseAction::error);
 }
@@ -982,7 +982,6 @@ TEST(PlaybackCommandDispatcher, FileDashReadsFromStdin) {
 // ---------------------------------------------------------------------------
 // Parser: negative-value-with-space is a parse error
 //
-// Reference: PlaybackArgumentParser has the same constraint as EdgeTtsArgumentParser:
 // `--rate -50%` is misinterpreted because `-50%` looks like an option token.
 // Users must use `--rate=-50%` (equals form). Exit code 2.
 // ---------------------------------------------------------------------------

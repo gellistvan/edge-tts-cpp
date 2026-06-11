@@ -323,7 +323,7 @@ TEST(ProtocolSerializer, HeaderOrderPreserved) {
 // ---------------------------------------------------------------------------
 
 TEST(ProtocolSerializer, SsmlFrameMatchesReference) {
-    // Mirrors: ssml_headers_plus_data(request_id, timestamp, ssml) from communicate.py
+    // Expected SSML frame header order:
     // f"X-RequestId:{request_id}\r\n"
     // "Content-Type:application/ssml+xml\r\n"
     // f"X-Timestamp:{timestamp}Z\r\n"

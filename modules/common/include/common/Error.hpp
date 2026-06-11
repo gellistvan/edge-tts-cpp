@@ -6,22 +6,19 @@
 namespace edge_tts::common {
 
 // Categorises the kind of failure stored in a Result<T>.
-// Maps to the Python edge-tts exception hierarchy (see docs/MODULES.md).
 enum class ErrorCode {
     none,                   // no error (should not appear in a failure Result)
-    invalid_argument,       // bad caller input; Python: TypeError, ValueError
-    invalid_state,          // operation not allowed now; Python: RuntimeError
+    invalid_argument,       // bad caller input (wrong type, value out of range)
+    invalid_state,          // operation not allowed in the current object state
     io_error,               // local file or pipe failure
-    network_error,          // transport failure; Python: WebSocketError, SkewAdjustmentError
-    protocol_error,         // unexpected wire message; Python: UnknownResponse, UnexpectedResponse
+    network_error,          // transport failure (WebSocket, HTTP)
+    protocol_error,         // unexpected wire message shape or unknown path
     parse_error,            // could not decode JSON or headers
     timeout,                // connect or receive timeout exceeded
     unsupported,            // operation unsupported on this platform
     external_process_failed,// ffmpeg/ffplay subprocess failure
-    service_error,          // remote service refused or produced no data;
-                            // Python: NoAudioReceived, HTTP 4xx/5xx
-    drm_error,              // DRM token rejected (HTTP 403 during WebSocket upgrade);
-                            // Python: aiohttp.ClientResponseError(status=403) → retry path
+    service_error,          // remote service refused or produced no audio data
+    drm_error,              // DRM token rejected (HTTP 403 during WebSocket upgrade); triggers one retry
     cancelled,              // operation was cancelled via SpeechSynthesizer::cancel()
 };
 

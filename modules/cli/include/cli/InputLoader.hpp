@@ -11,7 +11,7 @@ namespace edge_tts::cli {
 
 // Loads the synthesis input text from the parsed CLI arguments.
 //
-// Reference: util.py amain() — text resolution order:
+// Resolution order:
 //   1. args.text is set → return it directly.
 //   2. args.file is set:
 //        "-" or "/dev/stdin" → read entire stdin_stream.

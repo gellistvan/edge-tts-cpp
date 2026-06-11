@@ -6,11 +6,8 @@
 
 namespace edge_tts::media {
 
-// Locates a named executable by scanning a PATH-style environment variable.
-//
-// Reference: edge_playback/__main__.py _check_deps() uses shutil.which() to
-// locate "mpv" and "edge-tts" before launching them.  This class replicates
-// that scan without executing any process, making it testable with temp dirs.
+// Locates a named executable by scanning a PATH-style environment variable
+// without executing any process, making it testable with temp dirs.
 class ExecutableDiscovery {
 public:
     // Search each directory in path_env (colon-separated on POSIX,

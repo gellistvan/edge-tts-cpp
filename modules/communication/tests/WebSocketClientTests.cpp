@@ -20,8 +20,7 @@ using edge_tts::communication::IWebSocketClient;
 using namespace std::chrono_literals;
 
 // ---------------------------------------------------------------------------
-// Default option values match the Python reference defaults
-// Reference: communicate.py ws_connect(sock_connect=10, sock_read=60)
+// Default option values: connect_timeout=10s, receive_timeout=60s
 // ---------------------------------------------------------------------------
 
 TEST(WebSocketClientOptions, DefaultConnectTimeout) {
@@ -210,8 +209,7 @@ TEST(WebSocketClient, CloseSucceedsWhenSubmoduleAbsent) {
 
 // ---------------------------------------------------------------------------
 // Public-header isolation: WebSocketClient.hpp must not include ixwebsocket
-// headers.  This is verified statically by the Python dependency-config test;
-// the compile below proves no ixwebsocket symbol leaks into this TU.
+// headers; this compile verifies no ixwebsocket symbol leaks into this TU.
 // ---------------------------------------------------------------------------
 
 TEST(WebSocketClient, NoIxwebsocketSymbolsInPublicHeader) {

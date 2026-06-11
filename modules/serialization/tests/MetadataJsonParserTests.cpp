@@ -380,7 +380,7 @@ TEST(MetadataJsonParser, DurationNotIntegerRejected) {
 // ---------------------------------------------------------------------------
 
 TEST(MetadataJsonParser, XmlUnescapeApplied) {
-    // Reference: unescape(meta_obj["Data"]["text"]["Text"])
+    // XML unescape is applied to Data.text.Text field
     // &amp; → &,  &lt; → <,  &gt; → >
     const std::string json = R"json({
       "Metadata": [

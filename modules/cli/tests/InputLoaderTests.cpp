@@ -50,7 +50,7 @@ TEST(InputLoader, TextOptionReturnsText) {
 }
 
 TEST(InputLoader, TextOptionEmptyStringIsOk) {
-    // Reference: Python doesn't reject empty text at this stage.
+    // Empty text is accepted at this stage.
     EdgeTtsArguments args;
     args.text = "";
     auto ss = empty_stdin();
@@ -114,8 +114,7 @@ TEST(InputLoader, FileOptionUnicodeContent) {
 }
 
 TEST(InputLoader, FileOptionPreservesCrlf) {
-    // Reference: Python opens files in text mode; on Linux, CRLF is not
-    // translated — it is returned as-is.  Our C++ implementation matches.
+    // On Linux, CRLF is not translated — it is returned as-is.
     const fs::path p = tmp_path("crlf_file.txt");
     FileGuard g{p};
     write_file(p, "line1\r\nline2\r\n");
@@ -153,7 +152,7 @@ TEST(InputLoader, FileErrorIncludesPath) {
 // ---------------------------------------------------------------------------
 
 TEST(InputLoader, FileDashReadsStdin) {
-    // Reference: if args.file in ("-", "/dev/stdin"): args.text = sys.stdin.read()
+    // "-" and "/dev/stdin" both map to reading from stdin.
     EdgeTtsArguments args;
     args.file = "-";
     std::istringstream ss{"stdin content"};

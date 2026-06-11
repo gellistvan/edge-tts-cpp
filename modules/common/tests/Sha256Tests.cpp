@@ -6,7 +6,7 @@
 using edge_tts::common::sha256_hex;
 using edge_tts::common::sha256_hex_upper;
 
-// All expected values verified against Python hashlib AND the system sha256sum utility.
+// All expected values verified against the system sha256sum utility.
 
 // ---------------------------------------------------------------------------
 // sha256_hex — lowercase output
@@ -61,8 +61,7 @@ TEST(Sha256, UppercaseOutputIsUppercase) {
 }
 
 // ---------------------------------------------------------------------------
-// Known-answer test for the token input string
-// Reference: drm.py generate_sec_ms_gec() with unix timestamp = 0
+// Known-answer test for the Sec-MS-GEC token input at unix timestamp = 0
 //   str_to_hash = "1164447360000000006A5AA1D4EAFF4E9FB37E23D68491D6F4"
 //   expected hash = "7ECB79D14E3AA576D2D79E6D487A1388156D91E614B1BE11C64226A29BC8DD8C"
 // Verified: echo -n "1164447360000000006A5AA1D4EAFF4E9FB37E23D68491D6F4" | sha256sum
@@ -77,8 +76,6 @@ TEST(Sha256, TokenInputVector) {
 TEST(Sha256, LargeInput) {
     // Smoke test: ensure multi-block input is handled correctly.
     // 128 'a' characters requires 3 SHA-256 blocks (including padding).
-    // Expected: python3 -c "import hashlib; print(hashlib.sha256(b'a'*128).hexdigest())"
-    // Verified in Python and sha256sum.
     const std::string expected_of_128a = []() {
         // Computed offline: echo -n "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | sha256sum
         // (128 'a' characters)

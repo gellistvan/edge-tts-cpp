@@ -1,84 +1,29 @@
-# Reference Behavior Inventory
+# Behavior Specification
 
-This document is the authoritative compatibility reference for `edge-tts-cpp`.
+This document is the authoritative behavior specification for `edge-tts-cpp`.
 Every future implementation task that touches networking, protocol handling,
-text processing, or audio timing **must start here** before making design
-decisions.  If a behavior described below is ambiguous or requires live service
-verification, that is noted explicitly.
-
----
-
-# Reference Files Inspected
-
-| File | Purpose |
-|------|---------|
-| `reference/edge-tts/README.md` | End-user installation, CLI examples, voice listing output |
-| `reference/edge-tts/src/edge_tts/__init__.py` | Public API surface |
-| `reference/edge-tts/src/edge_tts/communicate.py` | Core TTS engine: text chunking, SSML, WebSocket protocol, chunk parsing |
-| `reference/edge-tts/src/edge_tts/constants.py` | All network endpoints, header values, DRM constants, timing constants |
-| `reference/edge-tts/src/edge_tts/data_classes.py` | `TTSConfig` dataclass and validation regexes |
-| `reference/edge-tts/src/edge_tts/drm.py` | `Sec-MS-GEC` token generation, MUID cookie, clock-skew correction |
-| `reference/edge-tts/src/edge_tts/exceptions.py` | Exception hierarchy |
-| `reference/edge-tts/src/edge_tts/submaker.py` | `SubMaker`: accumulates boundary events into SRT subtitle cues |
-| `reference/edge-tts/src/edge_tts/srt_composer.py` | `Subtitle` type, SRT timestamp formatting, `compose()` |
-| `reference/edge-tts/src/edge_tts/util.py` | CLI argument parsing, `_run_tts`, `_print_voices` |
-| `reference/edge-tts/src/edge_tts/typing.py` | `TTSChunk`, `Voice`, `CommunicateState` TypedDicts |
-| `reference/edge-tts/src/edge_tts/voices.py` | `list_voices()`, `VoicesManager` |
-| `reference/edge-tts/src/edge_playback/__main__.py` | `edge-playback` CLI, mpv / win32 playback, temp-file lifecycle |
-| `reference/edge-tts/src/edge_playback/util.py` | `pr_err` helper |
-| `reference/edge-tts/setup.cfg` | Entry points, Python `>=3.7` requirement, dependencies |
-| `reference/edge-tts/setup.py` | Runtime dependency versions |
-| `reference/edge-tts/tests/001-long-text.sh` | 26-parallel-process determinism test |
-| `reference/edge-tts/tests/001-long-text.txt` | 209,322-byte Wikipedia article as test input |
-
----
-
-# Public Python API
-
-**Source:** `reference/edge-tts/src/edge_tts/__init__.py`
-
-The Python package exports exactly:
-
-```python
-Communicate, SubMaker, list_voices, VoicesManager, exceptions,
-__version__, __version_info__
-```
-
-**C++ equivalents to implement:**
-
-| Python symbol | C++ target |
-|---------------|-----------|
-| `SpeechSynthesizer` | `edge_tts::api::SpeechSynthesizer` |
-| `SubMaker` | `edge_tts::subtitles::SubMaker` |
-| `list_voices()` | `edge_tts::communication::VoiceService::list_voices()` |
-| `VoicesManager.find()` | `edge_tts::communication::VoiceFilter` (passed to `VoiceService::list_voices`) |
-
-**Match exactly:** Yes.
+text processing, or audio timing **must consult this document** before making
+design decisions.  If a behavior described below is ambiguous or requires live
+service verification, that is noted explicitly.
 
 ---
 
 # CLI Commands
 
-**Source:** `reference/edge-tts/setup.cfg` (entry points), `reference/edge-tts/src/edge_tts/util.py`, `reference/edge-tts/src/edge_playback/__main__.py`
-
 Two CLI commands are registered:
 
-| Command | Entry point |
-|---------|-------------|
-| `edge-tts` | `edge_tts.__main__:main` → `util.py:main()` |
-| `edge-playback` | `edge_playback.__main__:_main` |
+| Command | Binary |
+|---------|--------|
+| `edge-tts` | Main TTS synthesizer |
+| `edge-playback` | Playback wrapper (calls `edge-tts` + mpv) |
 
 `edge-playback` delegates all TTS work to `edge-tts` via subprocess.  It accepts
 all `edge-tts` options except `--write-media`, `--write-subtitles`, and
 `--list-voices`.
 
-**Match exactly:** Yes for both commands.
-
 ---
 
 # CLI Options
-
-**Source:** `reference/edge-tts/src/edge_tts/util.py` (`amain()`)
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
@@ -100,31 +45,27 @@ all `edge-tts` options except `--write-media`, `--write-subtitles`, and
 `--write-media` is given, the CLI prints a warning to stderr and waits for
 Enter before proceeding.
 
-**Match exactly:** Yes.
-
 ---
 
 # Default Values
 
-**Sources:** `reference/edge-tts/src/edge_tts/constants.py`, `reference/edge-tts/src/edge_tts/communicate.py`
+| Parameter | Default |
+|-----------|---------|
+| `voice` | `en-US-EmmaMultilingualNeural` |
+| `rate` | `+0%` |
+| `volume` | `+0%` |
+| `pitch` | `+0Hz` |
+| `boundary` | `SentenceBoundary` |
+| `output_format` | `audio-24khz-48kbitrate-mono-mp3` |
+| `connect_timeout` | `10` seconds |
+| `receive_timeout` | `60` seconds |
 
-| Parameter | Default | Python source |
-|-----------|---------|---------------|
-| `voice` | `en-US-EmmaMultilingualNeural` | `constants.py: DEFAULT_VOICE` |
-| `rate` | `+0%` | `communicate.py` constructor |
-| `volume` | `+0%` | `communicate.py` constructor |
-| `pitch` | `+0Hz` | `communicate.py` constructor |
-| `boundary` | `SentenceBoundary` | `communicate.py` constructor |
-| `output_format` | `audio-24khz-48kbitrate-mono-mp3` | `communicate.py` speech.config |
-| `connect_timeout` | `10` seconds | `communicate.py` constructor |
-| `receive_timeout` | `60` seconds | `communicate.py` constructor |
+`TtsConfig::defaults()` returns a struct with all of these values.
 
-**Match exactly:** Yes — `TtsConfig::defaults()` returns a struct with all of these values.
+### Validation patterns
 
-### Validation patterns (from `data_classes.py`)
-
-| Field | Python regex | Accepted examples | Rejected examples |
-|-------|-------------|-------------------|-------------------|
+| Field | Regex | Accepted examples | Rejected examples |
+|-------|-------|-------------------|-------------------|
 | `rate` | `^[+-]\d+%$` | `+0%`, `-50%`, `+100%` | `fast`, `++10%`, `10`, `+10`, `+10percent` |
 | `volume` | `^[+-]\d+%$` | `+0%`, `-50%`, `+100%` | `loud`, `10%`, `+10percent` |
 | `pitch` | `^[+-]\d+Hz$` | `+0Hz`, `-50Hz`, `+100Hz` | `high`, `+10%`, `10Hz`, `+10` |
@@ -132,17 +73,14 @@ Enter before proceeding.
 
 ### Boundary type wire strings
 
-| C++ enum | Python literal | Wire value |
-|----------|---------------|------------|
-| `BoundaryType::sentence` | `"SentenceBoundary"` | `sentenceBoundaryEnabled: "true"` |
-| `BoundaryType::word` | `"WordBoundary"` | `wordBoundaryEnabled: "true"` |
+| C++ enum | Wire value |
+|----------|------------|
+| `BoundaryType::sentence` | `sentenceBoundaryEnabled: "true"` |
+| `BoundaryType::word` | `wordBoundaryEnabled: "true"` |
 
 ---
 
 # Edge Service Constants
-
-**Sources:** `reference/edge-tts/src/edge_tts/constants.py`,
-`communicate.py`, `drm.py`, `voices.py`
 
 **C++ implementation:** `communication::EdgeServiceConfig` struct +
 `default_edge_service_config()` factory in
@@ -154,14 +92,9 @@ serialization code must receive them via `EdgeServiceConfig`, not inline them.
 See `docs/PROTOCOL_NOTES.md` — Service Constants section — for the full value
 table.
 
-**Match exactly:** Yes — all values derived verbatim from the reference.
-
 ---
 
 # Protocol Text Frame Parsing and Serialization
-
-**Sources:** `reference/edge-tts/src/edge_tts/communicate.py`
-(`ssml_headers_plus_data`, `send_command_request`, `get_headers_and_data`)
 
 **C++ implementation:** `serialization::ProtocolMessage`, `serialization::ProtocolParser`,
 `serialization::ProtocolSerializer`.
@@ -169,23 +102,17 @@ table.
 **Wire format:** `Name:Value\r\n` per header, `\r\n\r\n` separator, body verbatim.
 No space between header name and colon; no space between colon and value.
 
-**Parsing divergence from reference:** The reference uses `data.find(b"\r\n\r\n") + 2`
-for the body offset, leaving a leading `\r\n` that Python's `json.loads` ignores.
-The C++ parser uses `+ 4` to cleanly skip the full separator.
+**Body offset:** The C++ parser uses `find("\r\n\r\n") + 4` to skip the full separator,
+giving a clean body start with no leading whitespace.
 
 **Header ordering:** Preserved in wire order. Duplicate header names are kept as
-separate entries (unlike the Python dict which overwrites earlier values).
+separate entries.
 
-**LF-only frames:** Rejected — reference splits exclusively on `\r\n`.
-
-**Match exactly (serializer):** Yes — format matches Python output character-for-character.
-**Match exactly (parser):** Functionally equivalent — same result, cleaner body offset.
+**LF-only frames:** Rejected — parser splits exclusively on `\r\n`.
 
 ---
 
 # Metadata JSON Parsing
-
-**Sources:** `reference/edge-tts/src/edge_tts/communicate.py` (`__parse_metadata`)
 
 **C++ implementation:** `serialization::MetadataJsonParser`
 
@@ -194,47 +121,39 @@ separate entries (unlike the Python dict which overwrites earlier values).
 **Handled types:** `"WordBoundary"` → `BoundaryEventType::WordBoundary`;
 `"SentenceBoundary"` → `BoundaryEventType::SentenceBoundary`.
 
-**Skipped types:** `"SessionEnd"` (reference: `continue`).
+**Skipped types:** `"SessionEnd"`.
 
-**Unknown types:** `parse_error` (reference: `UnknownResponse`).
+**Unknown types:** `parse_error`.
 
 **XML unescape:** Applied to `Data.text.Text` field before storing in `BoundaryChunk::text`.
 
 **Offset compensation:** NOT applied in the parser. `MetadataJsonParser` returns
 raw ticks from the JSON; `SynthesisSession::run_one_chunk` adds the current
 `offset_compensation` to each `BoundaryChunk::offset_ticks` before appending to
-the output — matching `__parse_metadata`'s `current_offset = raw + offset_compensation`.
-Compensation is updated at `turn.end` using
+the output. Compensation is updated at `turn.end` using
 `cumulative_audio_bytes * 8 * 10_000_000 / 48_000` (64-bit integer arithmetic).
 
-**C++ vs Python difference:** The Python `__parse_metadata` returns on the FIRST
-handled item. The C++ `MetadataJsonParser::parse()` collects ALL boundary chunks
+**C++ behavior:** `MetadataJsonParser::parse()` collects ALL boundary chunks
 from the array into a vector — more correct for frames that could contain
 multiple items.
-
-**Match exactly:** Functionally equivalent. Same event handling, same XML unescape,
-same error conditions.
 
 ---
 
 # Voice JSON Parsing
 
-**Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/typing.py`
-
 **C++ implementation:** `serialization::VoiceJsonParser` (`VoiceJsonParser.hpp` /
 `VoiceJsonParser.cpp`).  No HTTP dependency — only operates on a raw JSON string.
 
-**Root type:** JSON array (reference `list_voices()` calls `json.loads()` on the
-response body and treats the result as a list).
+**Root type:** JSON array.
 
-**Normalisation applied by `voices.py`** (replicated in `VoiceJsonParser`):
+**Normalisation applied** (in `VoiceJsonParser`):
 - If `VoiceTag` key is absent, default it to `{}`.
 - If `VoiceTag.ContentCategories` is absent, default it to `[]`.
 - If `VoiceTag.VoicePersonalities` is absent, default it to `[]`.
 
-**Ordering:** `list_voices()` returns the array in the order the service sends
-it.  Sorting by `ShortName` is performed only in `_print_voices()` for CLI
-display.  `VoiceJsonParser::parse()` therefore preserves wire order.
+**Ordering:** `list_voices()` returns voices in wire order.  Sorting by `ShortName`
+is performed only in the CLI display layer. `VoiceJsonParser::parse()` preserves
+wire order.
 
 **Required fields** (missing any → `parse_error`):
 `Name`, `ShortName`, `Gender`, `Locale`, `SuggestedCodec`, `FriendlyName`, `Status`.
@@ -245,29 +164,25 @@ a `parse_error`.
 **`Language` derivation:** `Locale.split('-')[0]` — first segment before the
 first hyphen.
 
-**Unknown fields:** silently ignored (reference accesses only known keys).
-
-**Match exactly:** Yes.
+**Unknown fields:** silently ignored.
 
 ---
 
 # VoiceService — HTTP Voice List
-
-**Sources:** `voices.py`, `util.py`, `constants.py`
 
 **C++ implementation:** `communication::VoiceService` (`VoiceService.hpp` /
 `VoiceService.cpp`).
 
 ## HTTP request
 
-| Property | Reference | C++ |
-|----------|-----------|-----|
-| Method | `session.get(...)` | `"GET"` |
-| URL | `VOICE_LIST + &Sec-MS-GEC=... + &Sec-MS-GEC-Version=...` | `config.voices_endpoint` (Sec-MS-GEC added in future) |
-| User-Agent | `BASE_HEADERS["User-Agent"]` | `config.user_agent` |
-| Accept | `VOICE_HEADERS["Accept"] = "*/*"` | `"*/*"` |
-| Accept-Language | `BASE_HEADERS["Accept-Language"] = "en-US,en;q=0.9"` | `"en-US,en;q=0.9"` |
-| Accept-Encoding | `BASE_HEADERS["Accept-Encoding"] = "gzip, deflate, br, zstd"` | `"gzip, deflate, br, zstd"` |
+| Property | Value |
+|----------|-------|
+| Method | `GET` |
+| URL | `config.voices_endpoint` with Sec-MS-GEC query params |
+| User-Agent | `config.user_agent` |
+| Accept | `*/*` |
+| Accept-Language | `en-US,en;q=0.9` |
+| Accept-Encoding | `gzip, deflate, br, zstd` |
 
 ## Response handling
 
@@ -283,21 +198,16 @@ caller's responsibility.
 
 ## Filtering
 
-The reference `list_voices()` returns all voices; filtering is done by
-`VoicesManager.find()` separately. `VoiceService::list_voices(VoiceFilter)`
-applies client-side filtering as a C++ convenience:
+`VoiceService::list_voices(VoiceFilter)` applies client-side filtering as a
+C++ convenience:
 - `locale` → exact `Locale` match
 - `gender` → exact `Gender` match
 - `short_name` → exact `ShortName` match
 - All set fields are ANDed
 
-**Match exactly:** Yes for fetch/parse/ordering. `VoiceFilter` is a C++ extension.
-
 ---
 
 # Voice Listing
-
-**Sources:** `reference/edge-tts/src/edge_tts/voices.py`, `reference/edge-tts/src/edge_tts/constants.py`
 
 **Endpoint:**
 ```
@@ -307,11 +217,11 @@ GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices
     &Sec-MS-GEC-Version=1-143.0.3650.75
 ```
 
-**Request headers** (`VOICE_HEADERS` merged with `BASE_HEADERS`):
+**Request headers:**
 
 | Header | Value |
 |--------|-------|
-| `User-Agent` | Chrome/Edge 143 user-agent string (see constants.py) |
+| `User-Agent` | Chrome/Edge 143 user-agent string (see `docs/PROTOCOL_NOTES.md`) |
 | `Accept-Encoding` | `gzip, deflate, br, zstd` |
 | `Accept-Language` | `en-US,en;q=0.9` |
 | `Authority` | `speech.platform.bing.com` |
@@ -325,22 +235,22 @@ GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices
 
 **Response:** JSON array of voice objects.  Each element is normalised to guarantee `VoiceTag.ContentCategories` and `VoiceTag.VoicePersonalities` are present (defaulting to `[]`).
 
-**`Voice` TypedDict fields** (`reference/edge-tts/src/edge_tts/typing.py`) and C++ mapping:
+**Wire fields and C++ mapping:**
 
-| Python field | Python type | C++ field | Notes |
-|---|---|---|---|
-| `Name` | `str` | `voice.name` | Full "Microsoft Server Speech…" form |
-| `ShortName` | `str` | `voice.short_name` | e.g. `en-US-EmmaMultilingualNeural` |
-| `Gender` | `"Female"` \| `"Male"` | `voice.gender` (`VoiceGender` enum) | `unknown` when absent/unrecognised |
-| `Locale` | `str` | `voice.locale` | e.g. `en-US` |
-| `SuggestedCodec` | `str` | `voice.suggested_codec` | e.g. `audio-24khz-48kbitrate-mono-mp3` |
-| `FriendlyName` | `str` | `voice.friendly_name` | Human-readable name |
-| `Status` | `"GA"` \| `"Preview"` \| `"Deprecated"` | `voice.status` | |
-| `VoiceTag.ContentCategories` | `List[str]` | `voice.content_categories` | Defaulted to `[]` by voices.py |
-| `VoiceTag.VoicePersonalities` | `List[str]` | `voice.voice_personalities` | Defaulted to `[]` by voices.py |
-| `Language` (VoicesManagerVoice) | `str` | `voice.language` | Derived: `Locale.split('-')[0]` |
+| Wire field (JSON key) | C++ field | Notes |
+|---|---|---|
+| `Name` | `voice.name` | Full "Microsoft Server Speech…" form |
+| `ShortName` | `voice.short_name` | e.g. `en-US-EmmaMultilingualNeural` |
+| `Gender` | `voice.gender` (`VoiceGender` enum) | `unknown` when absent/unrecognised |
+| `Locale` | `voice.locale` | e.g. `en-US` |
+| `SuggestedCodec` | `voice.suggested_codec` | e.g. `audio-24khz-48kbitrate-mono-mp3` |
+| `FriendlyName` | `voice.friendly_name` | Human-readable name |
+| `Status` | `voice.status` | `"GA"`, `"Preview"`, or `"Deprecated"` |
+| `VoiceTag.ContentCategories` | `voice.content_categories` | Defaulted to `[]` when absent |
+| `VoiceTag.VoicePersonalities` | `voice.voice_personalities` | Defaulted to `[]` when absent |
+| (derived) | `voice.language` | Derived: `Locale.split('-')[0]` |
 
-**`VoiceGender` wire values** (case-sensitive, matching Python's `Literal["Female", "Male"]`):
+**`VoiceGender` wire values** (case-sensitive):
 
 | C++ enum | Wire string |
 |----------|-------------|
@@ -348,8 +258,7 @@ GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices
 | `VoiceGender::male` | `"Male"` |
 | `VoiceGender::unknown` | `"Unknown"` (not a wire value; used for absent/unrecognised) |
 
-`VoicesManager.create()` adds a synthetic `Language` field derived as
-`Locale.split("-")[0]`.
+The `Language` field is derived from `Locale.split("-")[0]`.
 
 **Retry on 403:** On HTTP 403, inspect the `Date` response header; parse it with
 `parse_http_date()` and compute `skew = server_ts - (clock_now + current_skew)`;
@@ -357,37 +266,26 @@ call `EdgeTokenProvider::adjust_clock_skew_from_server_timestamp()`.  If the
 `Date` header is absent or unparsable, fall back to `adjust_clock_skew(300.0)`.
 Retry exactly once with the corrected token.  See DRM section for full algorithm.
 
-**Match exactly:** Yes — same endpoint, same headers including MUID cookie.
-
 ---
 
 # Text Validation
-
-**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`remove_incompatible_characters`)
 
 Control characters in Unicode ranges `U+0000–U+0008`, `U+000B–U+000C`, and
 `U+000E–U+001F` are replaced with ASCII space `U+0020` before processing.
 Notably, `U+0009` (tab), `U+000A` (newline), and `U+000D` (carriage return)
 are **preserved**.
 
-The replacement is performed **before** XML escaping with
-`xml.sax.saxutils.escape()` and before chunking.
-
-The `text` argument to `SpeechSynthesizer` must be `str`; passing anything else raises
-`TypeError`.
-
-**Match exactly:** Yes — same replacement ranges.
+The replacement is performed **before** XML escaping and before chunking.
 
 **C++ implementation** (`serialization::TextNormalizer`):
 - `TextNormalizer::normalize(input)` → `Result<std::string>` validates UTF-8 first
-  (rejects invalid sequences), then replaces the Python-documented control ranges.
+  (rejects invalid sequences), then replaces the documented control ranges.
 - CRLF (`\r\n`) is NOT normalised to LF — both bytes are preserved.
 - Leading/trailing whitespace is NOT trimmed (per-chunk stripping happens in the chunker).
 - Empty input returns `Result::ok("")`.
 
 **`xml_escape` / `xml_unescape`** (`serialization::XmlEscaper`):
-- `xml_escape` maps `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`.  Does NOT escape `"` or `'`
-  (matching `xml.sax.saxutils.escape` exactly).
+- `xml_escape` maps `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`.  Does NOT escape `"` or `'`.
 - `xml_escape` is NOT idempotent: `xml_escape("&amp;")` → `"&amp;amp;"`.
 - `xml_unescape` maps `&amp;`→`&`, `&lt;`→`<`, `&gt;`→`>`, `&quot;`→`"`, `&apos;`→`'`.
   Unknown entities are passed through unchanged.
@@ -396,8 +294,6 @@ The `text` argument to `SpeechSynthesizer` must be `str`; passing anything else 
 ---
 
 # Text Chunking
-
-**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`split_text_by_byte_length`, helpers)
 
 **Limit:** 4096 bytes per chunk (after UTF-8 encoding + XML escaping).
 
@@ -415,19 +311,15 @@ The `text` argument to `SpeechSynthesizer` must be `str`; passing anything else 
 3. Yield the stripped chunk (leading/trailing whitespace removed from each
    yielded chunk).
 
-`ValueError` is raised if `byte_length ≤ 0` or if a valid split cannot be
-determined.
+`ErrorCode::invalid_argument` is returned if `byte_length ≤ 0` or if a valid
+split cannot be determined.
 
 **Important:** Chunking operates on the **XML-escaped** text, not the raw text.
 Characters like `<`, `>`, `&`, `"`, `'` are escaped before chunking.
 
-**Reference divergence note:** The Python `_find_safe_utf8_split_point` function
-receives the entire remaining byte string rather than just the first `byte_length`
-bytes, so for valid UTF-8 input it would return `len(remaining)` (splitting the
-entire remainder as one chunk instead of hard-splitting at the byte limit).  In
-practice this path is never reached for normal text since there are always spaces
-within any 4096-byte window.  The C++ `serialization::TextChunker` corrects this
-by walking back from the limit position.
+**Implementation note:** The C++ `serialization::TextChunker` walks back from
+the byte limit when finding a safe UTF-8 split point, which is more correct
+than relying on spaces always being present within the window.
 
 **C++ implementation:** `serialization::TextChunker` (`TextChunker.hpp` /
 `TextChunker.cpp`) implements the complete reference algorithm:
@@ -438,13 +330,9 @@ by walking back from the limit position.
 - Returns XML-escaped, stripped chunks ready for SSML `<prosody>` embedding.
 - Propagates UTF-8 validation errors from `TextNormalizer`.
 
-**Match exactly:** Yes.
-
 ---
 
 # SSML Generation
-
-**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`mkssml`, `ssml_headers_plus_data`)
 
 **C++ implementation:** `serialization::SsmlBuilder` (`SsmlBuilder.hpp` / `SsmlBuilder.cpp`).
 
@@ -487,18 +375,13 @@ Note the literal `Z` suffix appended to the timestamp regardless of timezone
 (documented in the source as a known Microsoft Edge bug).
 
 **Timestamp format:** JavaScript-style date string, always in UTC:
-`Mon Jan 01 2024 00:00:00 GMT+0000 (Coordinated Universal Time)` — generated
-via `time.strftime("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)", time.gmtime())`.
+`Mon Jan 01 2024 00:00:00 GMT+0000 (Coordinated Universal Time)`.
 
-**Request ID:** UUID v4 without dashes (`uuid.uuid4().hex`).
-
-**Match exactly:** Yes.
+**Request ID:** UUID v4 without dashes (32 hex chars).
 
 ---
 
 # WebSocket Protocol
-
-**Source:** `reference/edge-tts/src/edge_tts/communicate.py` (`__stream`), `reference/edge-tts/src/edge_tts/constants.py`
 
 **WebSocket URL:**
 ```
@@ -509,7 +392,7 @@ wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1
   &Sec-MS-GEC-Version=1-143.0.3650.75
 ```
 
-**WebSocket request headers** (`WSS_HEADERS` merged with `BASE_HEADERS`):
+**WebSocket request headers:**
 
 | Header | Value |
 |--------|-------|
@@ -529,7 +412,7 @@ WebSocket compression is enabled (`compress=15`).
 2. Send `speech.config` text frame (see below).
 3. Send `ssml` text frame.
 4. Receive frames until `turn.end` is received.
-5. Connection is closed (or can be reused — the Python code reopens per chunk).
+5. Connection is closed after each chunk.
 
 **`speech.config` message** (text frame):
 ```
@@ -543,11 +426,10 @@ Path:speech.config\r\n
 ```
 
 **Output format:** `"audio-24khz-48kbitrate-mono-mp3"` is **hardcoded** — there
-is no `--format` CLI flag and no `outputFormat` constructor parameter in the
-Python reference.  The C++ `OutputFormat` type enforces the same restriction:
+is no `--format` CLI flag. The C++ `OutputFormat` type enforces this restriction:
 `OutputFormat::from_string()` rejects any value not in the known supported set,
-and `OutputFormat::default_format()` returns the one format the Python reference
-uses.  See `core::OutputFormat` in `docs/MODULES.md`.
+and `OutputFormat::default_format()` returns this format.
+See `core::OutputFormat` in `docs/MODULES.md`.
 
 Where `wd = "true"` and `sq = "false"` when `boundary == "WordBoundary"`, and
 vice versa for `SentenceBoundary`.
@@ -560,10 +442,10 @@ vice versa for `SentenceBoundary`.
 | `turn.end` | Compute offset compensation from audio bytes; break loop |
 | `response` | Silently ignored |
 | `turn.start` | Silently ignored |
-| anything else | Raise `UnknownResponse` |
+| anything else | `protocol_error` |
 
-**Text frame parsing:** `encoded_data.find(b"\r\n\r\n")` locates the header/body
-boundary; headers are split on `\r\n` then on the first `:`.
+**Text frame parsing:** `find("\r\n\r\n")` locates the header/body boundary;
+headers are split on `\r\n` then on the first `:`.
 
 **Incoming binary frames:**
 
@@ -578,39 +460,28 @@ Binary frame layout:
 - Bytes `[HL+2 ..)`: audio payload.
 - `Path: audio` is the only expected binary path.
 - `Content-Type: audio/mpeg` is expected; absent `Content-Type` with empty body is
-  silently skipped (stream termination signal); any other value raises `UnexpectedResponse`.
+  silently skipped (stream termination signal); any other value is `protocol_error`.
 
-**Python header-parsing quirk:** `get_headers_and_data(data, HL)` includes the
-2-byte prefix in `data[:HL]`, so the first header line has garbage prefix bytes.
-The service always places a "don't care" header (e.g., `X-RequestId`) first, so
-`Path` and `Content-Type` on subsequent lines parse correctly. The C++ implementation
-parses headers from byte 2 only — all headers parse correctly regardless of order.
+**C++ header parsing:** starts from byte 2 only — all headers parse correctly
+regardless of order.
 
 **C++ implementation:** `communication::EdgeProtocol::parse_incoming(WebSocketMessage)`
 → `Result<vector<IncomingMessage>>`. Defined in `src/communication/EdgeProtocolIncoming.cpp`.
 Types: `WebSocketMessage` (in/out), `IncomingMessage` + `IncomingMessageKind` (parsed result).
 
-**C++ is stricter than the Python reference in three ways:**
+**C++ validation (strict):**
 
-1. **`HL < 2`** — Python's `get_headers_and_data` would crash with `ValueError`
-   (splitting an empty first header line on `:`). C++ returns `protocol_error`.
-2. **`HL + 2 > len(data)` (missing separator)** — Python would silently yield an empty
-   body (`data[HL + 2:]` evaluates to `b""` when out of range). C++ returns `protocol_error`.
-3. **`data[HL..HL+2) != \r\n` (wrong separator bytes)** — Python never verifies these
-   bytes; it just uses them as an implicit offset. C++ verifies both bytes and returns
-   `protocol_error` if they are not exactly `\r\n`.
+1. `HL < 2` → `protocol_error`.
+2. `HL + 2 > len(data)` (missing separator) → `protocol_error`.
+3. `data[HL..HL+2) != \r\n` (wrong separator bytes) → `protocol_error`.
 
-All three additions are safe divergences: they reject frames the service would never
-produce, making malformed input fail loudly rather than silently.
-
-**Match exactly:** Yes for all reference-documented cases. The three stricter checks above
-are documented divergences. See PROTOCOL_NOTES.md for the full binary frame validation table.
+All three reject frames the service would never produce, making malformed input
+fail loudly rather than silently. See PROTOCOL_NOTES.md for the full binary frame
+validation table.
 
 ---
 
 # EdgeTokenProvider — Sec-MS-GEC Generation
-
-**Source:** `reference/edge-tts/src/edge_tts/drm.py` (`DRM.generate_sec_ms_gec()`)
 
 **C++ implementation:** `communication::EdgeTokenProvider`. SHA-256 helper:
 `common::sha256_hex_upper`.
@@ -618,15 +489,11 @@ are documented divergences. See PROTOCOL_NOTES.md for the full binary frame vali
 **No wall-clock dependency in tests:** `EdgeTokenProvider` accepts `const IClock&`,
 allowing `common::FixedClock` for deterministic tests.
 
-**Match exactly:** Yes — algorithm step-by-step identical to Python reference.
-Deterministic test vectors prove compatibility (see `PROTOCOL_NOTES.md` —
-Sec-MS-GEC Token Generation).
+See `PROTOCOL_NOTES.md` — Sec-MS-GEC Token Generation — for test vectors.
 
 ---
 
 # DRM / Sec-MS-GEC
-
-**Source:** `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/constants.py`
 
 **Trusted client token:** `6A5AA1D4EAFF4E9FB37E23D68491D6F4`
 
@@ -643,40 +510,34 @@ Sec-MS-GEC Token Generation).
 
 **`Sec-MS-GEC-Version`:** `1-143.0.3650.75` (constant).
 
-**MUID cookie:** `muid=<secrets.token_hex(16).upper()>;` — a new random 16-byte
+**MUID cookie:** `muid=<32-uppercase-hex-chars>;` — a new random 16-byte
 hex token is generated per request.  Added to all voice-list and WebSocket
-requests via `DRM.headers_with_muid()`.
+requests.
 
-**Clock skew correction:** The `DRM.clock_skew_seconds` class variable
-accumulates offset corrections.  It starts at `0.0`.  When a `403` response is
-received, `handle_client_response_error()` parses the RFC 2616 `Date` response
-header and adjusts skew as `server_date - client_date`.
+**Clock skew correction:** The accumulated clock skew starts at `0.0` seconds.
+When a `403` response is received, the RFC 2616 `Date` response header is
+parsed and `skew += server_date - client_date`.
 
-**Ambiguity:** The `ticks` multiplication uses Python float arithmetic
-(`ticks *= S_TO_NS / 100` where `S_TO_NS = 1e9`).  The C++ implementation must
-produce bit-identical token strings.  Use 64-bit double arithmetic and format
-with `%.0f` equivalent to match Python's `f"{ticks:.0f}"`.
-
-**Match exactly:** Yes — token must match the Python output exactly.
+**Float precision:** The `ticks` multiplication uses 64-bit double arithmetic
+(`ticks * 1e9 / 100`), formatted with `%.0f` (round-to-nearest). This must
+produce bit-identical token strings across platforms.
 
 ---
 
 # Stream Chunk Types
 
-**Source:** `reference/edge-tts/src/edge_tts/typing.py`, `reference/edge-tts/src/edge_tts/communicate.py`
+Three chunk types flow from `SpeechSynthesizer::synthesize()`:
 
-Three chunk types flow from `Communicate.stream()`:
-
-| `type` field | Additional fields | Source |
-|--------------|-------------------|--------|
-| `"audio"` | `data: bytes` (raw MP3 frames) | Binary WebSocket frame |
-| `"WordBoundary"` | `offset: float`, `duration: float`, `text: str` | `audio.metadata` JSON |
-| `"SentenceBoundary"` | `offset: float`, `duration: float`, `text: str` | `audio.metadata` JSON |
+| Type | Additional fields | Wire origin |
+|------|-------------------|-------------|
+| `audio` | `data: bytes` (raw MP3 frames) | Binary WebSocket frame |
+| `WordBoundary` | `offset: ticks`, `duration: ticks`, `text: str` | `audio.metadata` JSON |
+| `SentenceBoundary` | `offset: ticks`, `duration: ticks`, `text: str` | `audio.metadata` JSON |
 
 **Offset and duration units:** 100-nanosecond ticks.
 `1 second = 10,000,000 ticks` (constant `TICKS_PER_SECOND = 10_000_000`).
 
-**Tick-to-microsecond conversion** (as used by Python SubMaker):
+**Tick-to-microsecond conversion:**
 ```
 microseconds = ticks / 10
 ```
@@ -690,63 +551,47 @@ This uses **integer floor division** and is computed from the `audio-24khz-48kbi
 CBR stream (48 kbps = 48,000 bps).  Each reported boundary offset is summed
 with `offset_compensation` before yielding.
 
-**`text` field:** XML-unescaped (`xml.sax.saxutils.unescape`) from the JSON
-`Data.text.Text` field.
+**`text` field:** XML-unescaped from the JSON `Data.text.Text` field.
 
-**`stream()` is single-use:** calling it twice raises `RuntimeError`.
-
-**C++ single-use behavior (`api::SpeechSynthesizer`):** `synthesize()` and `save()`
-are both single-use. Calling either a second time (or calling one after the
-other) returns `ErrorCode::invalid_state` — matching the Python `RuntimeError`.
-`save()` calls the synthesis pipeline internally, so both methods consume the
-stream.
+**Single-use:** `SpeechSynthesizer::synthesize()` and `save()` are both
+single-use. Calling either a second time returns `ErrorCode::invalid_state`.
 
 **C++ chunk types** (`include/edge_tts/core/Chunk.hpp`):
 
-| Python dict | C++ type | Key fields |
-|-------------|----------|------------|
-| `{"type": "audio", "data": bytes}` | `AudioChunk` | `data: vector<byte>` |
-| `{"type": "WordBoundary", ...}` | `BoundaryChunk` with `type = BoundaryEventType::WordBoundary` | `text`, `offset_ticks`, `duration_ticks` |
-| `{"type": "SentenceBoundary", ...}` | `BoundaryChunk` with `type = BoundaryEventType::SentenceBoundary` | `text`, `offset_ticks`, `duration_ticks` |
+| C++ type | Key fields |
+|----------|------------|
+| `AudioChunk` | `data: vector<byte>` |
+| `BoundaryChunk` (`type = BoundaryEventType::WordBoundary`) | `text`, `offset_ticks`, `duration_ticks` |
+| `BoundaryChunk` (`type = BoundaryEventType::SentenceBoundary`) | `text`, `offset_ticks`, `duration_ticks` |
 
 `TtsChunk = std::variant<AudioChunk, BoundaryChunk>`.  Use `is_audio()` and
 `is_boundary()` predicates to distinguish.  Zero-duration boundary chunks
 are valid (some sentence boundaries have `duration = 0`).
 
-**Match exactly:** Yes.
-
 ---
 
 # SubMaker — Boundary Event Accumulation
-
-**Source:** `reference/edge-tts/src/edge_tts/submaker.py`
 
 **C++ implementation:** `subtitles::SubMaker` (`SubMaker.hpp` / `SubMaker.cpp`).
 
 ## Public methods
 
-| Python | C++ | Notes |
-|--------|-----|-------|
-| `feed(msg)` | `feed(BoundaryChunk&)→Result<void>` | Appends a cue; enforces type consistency |
-| `get_srt()` | `to_srt()→Result<string>` | Delegates to `SrtComposer`; does not reset state |
-| `cues` (attribute) | `cues()→vector<SubtitleCue>` | Returns copy |
-| — | `clear()` | Resets cues and type lock (no Python equivalent) |
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `feed` | `feed(BoundaryChunk&)→Result<void>` | Appends a cue; enforces type consistency |
+| `to_srt` | `to_srt()→Result<string>` | Delegates to `SrtComposer`; does not reset state |
+| `cues` | `cues()→vector<SubtitleCue>` | Returns copy |
+| `clear` | `clear()` | Resets cues and type lock |
 
 ## Type enforcement
 
-Python stores `self.type` (first boundary type seen) and raises `ValueError` on
-mismatch. C++ returns `ErrorCode::invalid_argument` on mismatch. Both accept
-`WordBoundary` and `SentenceBoundary`, but all feeds to one `SubMaker` instance
+The first boundary type seen is recorded. Subsequent calls that supply a
+different type return `ErrorCode::invalid_argument`. Both `WordBoundary` and
+`SentenceBoundary` are accepted, but all feeds to one `SubMaker` instance
 must use the same type.
 
 ## Cue time calculation
 
-```python
-start = timedelta(microseconds=msg["offset"] / 10)
-end   = timedelta(microseconds=(msg["offset"] + msg["duration"]) / 10)
-```
-
-C++ equivalent:
 ```cpp
 start = SubtitleTime::from_edge_ticks(boundary.offset_ticks)
 end   = SubtitleTime::from_edge_ticks(boundary.offset_ticks + boundary.duration_ticks)
@@ -755,14 +600,12 @@ end   = SubtitleTime::from_edge_ticks(boundary.offset_ticks + boundary.duration_
 ## Text storage
 
 `boundary.text` is stored verbatim. `MetadataJsonParser` has already applied
-`xml_unescape()` (reference: `unescape()` in `communicate.py`). No text
-transformation happens in `SubMaker`.
+`xml_unescape()`. No text transformation happens in `SubMaker`.
 
 ## State after `to_srt()`
 
-`get_srt()` does not modify state in Python — calling it multiple times returns
-the same output, and `feed()` can continue adding cues afterward. C++ `to_srt()`
-and `feed()` match this behavior.
+`to_srt()` does not modify state — calling it multiple times returns the same
+output, and `feed()` can continue adding cues afterward.
 
 ## Zero-duration cues
 
@@ -770,47 +613,27 @@ A cue with `duration_ticks == 0` has `start == end`. `SubMaker::feed()` accepts
 it (creating the cue), but `SrtComposer` skips it in SRT output because
 `start >= end`.
 
-**Match exactly:** Yes for all documented behaviors.
-
 ---
 
 # SubtitleTime — Edge Tick Conversion
-
-**Sources:** `reference/edge-tts/src/edge_tts/submaker.py`,
-`reference/edge-tts/src/edge_tts/srt_composer.py`
 
 **C++ implementation:** `subtitles::SubtitleTime` (`SubtitleTime.hpp` / `SubtitleTime.cpp`).
 
 ## Tick-to-millisecond conversion
 
-Python (`submaker.py`):
-```python
-start = timedelta(microseconds=msg["offset"] / 10)
-```
-- `msg["offset"] / 10` — Python 3 **float** division gives microseconds.
-- `timedelta(microseconds=float_val)` stores the nearest integer microsecond
-  using **banker's rounding** (round-half-to-even) for the fractional part.
-- The SRT composer then applies `timedelta.microseconds // 1000` (floor division)
-  to get milliseconds.
-
-C++ (`SubtitleTime::from_edge_ticks(ticks)`):
+`SubtitleTime::from_edge_ticks(ticks)`:
 ```cpp
 milliseconds = ticks / 10'000  // integer truncation
 ```
-This is equivalent to `ticks // 10 // 1000` and matches Python for all values
-where the sub-microsecond fractional part does not round the microsecond count
-across a millisecond boundary.  A ±1 ms difference can occur only when
-`ticks % 10'000 ≥ 9'995` — extremely rare in practice.  The C++ integer
-truncation is documented behavior; callers should not rely on sub-millisecond
-precision.
+This is equivalent to `ticks // 10 // 1000` (integer truncation). A ±1 ms
+rounding difference can occur only when `ticks % 10'000 ≥ 9'995` — extremely
+rare in practice. Callers should not rely on sub-millisecond precision.
 
 **Negative ticks:** `from_edge_ticks` returns `ErrorCode::invalid_argument`.
-The Python reference allows negative `timedelta` values but the SRT composer
-always skips subtitles whose start time is negative.
+The SRT composer skips subtitles whose start time is negative, so this is
+consistent with the output behavior.
 
 ## SRT timestamp format
-
-Source: `srt_composer.timedelta_to_srt_timestamp()`
 
 ```
 HH:MM:SS,mmm
@@ -821,30 +644,22 @@ HH:MM:SS,mmm
   mmm exactly 3.
 - Hours are **not** capped at 99 — values ≥ 100 hours expand the hours field.
 
-Doctest from reference:
-```python
->>> timedelta_to_srt_timestamp(timedelta(hours=1, minutes=23, seconds=4))
-'01:23:04,000'
-```
-
-**Match exactly:** Yes for all tick values where integer truncation equals Python's
-float-division + banker's-rounding chain (i.e. all practical values).
+Example: `01:23:04,000` for 1 hour, 23 minutes, 4 seconds.
 
 ---
 
 # Subtitles
 
-**Sources:** `reference/edge-tts/src/edge_tts/submaker.py`, `reference/edge-tts/src/edge_tts/srt_composer.py`
+**`SubMaker::feed(chunk)`:**
+- Accepts only `WordBoundary` or `SentenceBoundary` chunks.
+- All chunks in one session must share the same type; mixing types returns
+  `ErrorCode::invalid_argument`.
+- Converts ticks: divide by 10 for microseconds, divide again by 1000 for
+  milliseconds.
+- End time = start_ticks + duration_ticks, then converted.
+- Appends a cue (index, start, end, content) to the internal list.
 
-**`SubMaker.feed(msg)`:**
-- Accepts only `WordBoundary` or `SentenceBoundary` chunks; others raise `ValueError`.
-- All chunks in one session must share the same type; mixing types raises `ValueError`.
-- Converts ticks to `timedelta` via `timedelta(microseconds=offset / 10)`.
-  Division by 10 converts 100 ns ticks → microseconds.
-- End time = `timedelta(microseconds=(offset + duration) / 10)`.
-- Appends a `Subtitle(index, start, end, content)` to the internal list.
-
-**SRT format produced by `srt_composer.compose()`:**
+**SRT format produced by `SrtComposer::compose()`:**
 ```
 {index}
 {HH:MM:SS,mmm} --> {HH:MM:SS,mmm}
@@ -857,13 +672,10 @@ float-division + banker's-rounding chain (i.e. all practical values).
 - Timestamp: `HH:MM:SS,mmm` (comma separator between seconds and milliseconds).
 - Each block ends with two newlines.
 
-**Match exactly:** Yes — same skipping rules, same timestamp format.
 
 ---
 
 # Playback
-
-**Source:** `reference/edge-tts/src/edge_playback/__main__.py`
 
 `edge-playback` orchestrates:
 1. Parse args (strips `--mpv` flag from the arg list before forwarding).
@@ -887,47 +699,35 @@ float-division + banker's-rounding chain (i.e. all practical values).
 
 **Windows:** Uses `win32_playback.play_mp3_win32` (no mpv required by default on Windows).
 
-**Match exactly:** Yes for Linux/macOS (mpv + temp files).  Windows playback is
-a best-effort port; the `--mpv` flag must be supported.
+Linux/macOS uses mpv + temp files. Windows playback is best-effort; the `--mpv`
+flag must be supported.
 
 ---
 
 # Proxy Behavior
 
-**Source:** `reference/edge-tts/src/edge_tts/communicate.py`, `reference/edge-tts/src/edge_tts/voices.py`
-
 A proxy URL string is accepted by both `SpeechSynthesizer` (for WebSocket) and
-`list_voices()` (for HTTPS).  The value is passed directly to `aiohttp`.
-
-Proxy support is not validated or parsed by the Python library; any string
-(or `None`) is accepted.
-
-**Match exactly:** Yes — proxy must be forwarded to the HTTP/WebSocket client
-without modification.
+`list_voices()` (for HTTPS). The value is forwarded to the HTTP/WebSocket client
+without validation or modification.
 
 ---
 
 # Retry / Clock Skew Behavior
 
-**Sources:** `reference/edge-tts/src/edge_tts/communicate.py` (`stream()`), `reference/edge-tts/src/edge_tts/drm.py`, `reference/edge-tts/src/edge_tts/voices.py`
-
 **Trigger condition:** HTTP 403 response from the service.
 
 **Retry flow (both WebSocket and voice list):**
 
-1. On `403`, call `DRM.handle_client_response_error(e)`.
-2. That function reads the `Date` response header (RFC 2616 format), parses it,
-   computes `server_date - client_date`, and adds the difference to
-   `DRM.clock_skew_seconds`.
-3. If the `Date` header is absent or unparseable, raise `SkewAdjustmentError`.
-4. Immediately retry the **same request** once with a freshly generated
+1. On `403`, read the `Date` response header (RFC 2616 format), parse it,
+   compute `server_date - client_date`, and add the difference to
+   the accumulated `clock_skew_seconds`.
+2. If the `Date` header is absent or unparseable, adjust skew by a fixed
+   fallback (see below) or skip adjustment.
+3. Immediately retry the **same request** once with a freshly generated
    `Sec-MS-GEC` token (incorporating the updated clock skew).
 
 **No exponential backoff:** exactly one retry per 403.  Any subsequent failure
 is propagated.
-
-**Clock skew is global state:** `DRM.clock_skew_seconds` is a class variable
-shared across all `SpeechSynthesizer` and `list_voices` calls in the same process.
 
 **C++ implementation status:** Implemented.
 
@@ -939,61 +739,42 @@ shared across all `SpeechSynthesizer` and `list_voices` calls in the same proces
   `skew = server_time - (client_now + existing_skew)`, then calls
   `token_provider_.adjust_clock_skew(skew)` before retrying with a new ConnectionId
   and freshly computed `Sec-MS-GEC`.
-- If the Date header is absent or malformed, skew adjustment is skipped (retry still
-  proceeds without correction — divergence from Python's `SkewAdjustmentError`).
+- If the Date header is absent or malformed, skew adjustment is skipped (retry
+  still proceeds without correction).
 
 **Voice-list path (`VoiceService`):**
 - `send_request()` returns the raw `HttpResponse`; on HTTP 403, `list_voices()`
   inspects `resp.headers["Date"]`.
 - Calls `EdgeTokenProvider::adjust_clock_skew_from_server_timestamp(server_ts)`, which
   computes `skew = server_ts - (clock_now + current_skew)` and accumulates it.
-- **Fallback:** if `Date` is absent or unparsable, calls `adjust_clock_skew(300.0)`.
-  This is a conservative fallback not present in Python (which raises `SkewAdjustmentError`).
+- **Fallback:** if `Date` is absent or unparsable, calls `adjust_clock_skew(300.0)`
+  as a conservative correction.
 
 **Shared:**
 - `parse_http_date()` is in `communication/HttpDate.hpp`; format:
-  `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (reference: `drm.py DRM.parse_rfc2616_date()`).
-- `EdgeTokenProvider::clock_skew_seconds()` is per-instance (injectable for tests),
-  not global process state as in Python.
+  `"Wkd, DD Mon YYYY HH:MM:SS GMT"` (RFC 2616).
+- `EdgeTokenProvider::clock_skew_seconds()` is per-instance (injectable for tests).
 
 ---
 
 # Error Behavior
 
-**Source:** `reference/edge-tts/src/edge_tts/exceptions.py`
+**C++ `ErrorCode` values used for each condition:**
 
-```
-EdgeTTSException (base)
-├── UnknownResponse    — unknown metadata type or unknown WebSocket path
-├── UnexpectedResponse — unexpected but known-format response (protocol violation)
-├── NoAudioReceived    — stream completed without yielding any audio chunks
-├── WebSocketError     — WebSocket-level error (aiohttp WSMsgType.ERROR)
-└── SkewAdjustmentError — 403 handling failed (no/unparseable Date header)
-```
-
-**C++ mapping:**
-
-| Python exception | C++ equivalent |
-|------------------|---------------|
-| `UnknownResponse` | `common::ProtocolError` subtype or new `UnknownResponseError` |
-| `UnexpectedResponse` | `common::ProtocolError` subtype or new `UnexpectedResponseError` |
-| `NoAudioReceived` | New `NoAudioReceivedError` in `common::` |
-| `WebSocketError` | `common::NetworkError` subtype |
-| `SkewAdjustmentError` | New `SkewAdjustmentError` in `common::` |
-
-**Match exactly:** Yes — same triggering conditions, C++ error types may differ
-in name but must carry the same semantics.
+| Condition | `ErrorCode` |
+|-----------|-------------|
+| Unknown metadata type or unknown WebSocket path | `protocol_error` |
+| Unexpected but known-format response (protocol violation) | `protocol_error` |
+| Stream completed without yielding any audio chunks | `service_error` |
+| WebSocket-level transport error | `network_error` |
+| 403 handling when Date header is absent or malformed | skew skipped; retry proceeds |
 
 ---
 
-# Compatibility Targets
-
-**Source:** `reference/edge-tts/src/edge_tts/version.py`, `reference/edge-tts/setup.cfg`
+# Service Constants
 
 | Property | Value |
 |----------|-------|
-| Reference version | `7.2.8` |
-| Python requirement | `>=3.7` |
 | Chromium version string | `143.0.3650.75` |
 | `SEC_MS_GEC_VERSION` header | `1-143.0.3650.75` |
 | `TRUSTED_CLIENT_TOKEN` | `6A5AA1D4EAFF4E9FB37E23D68491D6F4` |
@@ -1002,10 +783,8 @@ in name but must carry the same semantics.
 | Tick resolution | 100 nanoseconds (10,000,000 ticks/second) |
 
 The Chromium version and trusted token are likely to change when Microsoft
-updates the Edge TTS service.  The C++ implementation should keep these as
-named constants, not hard-coded literals scattered through the code.
-
-**Match exactly:** Yes for all constants.
+updates the Edge TTS service.  Keep these as named constants in
+`EdgeServiceConfig`, not hard-coded literals scattered through the code.
 
 ---
 
@@ -1016,13 +795,13 @@ against the live service:
 
 | # | Topic | Observation | Open Question |
 |---|-------|-------------|---------------|
-| 1 | Voice name regex | Python validates with `\(.+,.+\)` (no space required after comma) but always generates a space: `(en-US, Emma…)`. | Does the service accept the no-space form? |
+| 1 | Voice name regex | The regex `\(.+,.+\)` does not require a space after the comma, but the generated string always includes one: `(en-US, Emma…)`. | Does the service accept the no-space form? |
 | 2 | `speech.config` per chunk | A new WebSocket connection is opened per text chunk; `speech.config` is re-sent each time. | Can connections be reused across chunks? |
-| 3 | Offset compensation integer overflow | Python comment says Microsoft's metadata offsets overflow on long texts. The CBR-byte approach is the fix. | Is 64-bit integer arithmetic sufficient for arbitrarily long audio in C++? |
+| 3 | Offset compensation integer overflow | Microsoft's metadata offsets can overflow on long texts; the CBR-byte compensation approach avoids this. | Is 64-bit integer arithmetic sufficient for arbitrarily long audio? |
 | 4 | `turn.end` binary | The code expects `turn.end` as a text frame and processes offset compensation there. | Does the service ever send `turn.end` as binary? |
 | 5 | Empty binary with no Content-Type | The code silently skips zero-length binary frames with no Content-Type. | Is this a documented termination signal or just observed empirically? |
-| 6 | `SessionEnd` metadata | `SessionEnd` metadata type is silently skipped in `__parse_metadata`. | Are there other metadata types not yet observed? |
+| 6 | `SessionEnd` metadata | `SessionEnd` metadata type is silently skipped. | Are there other metadata types not yet observed? |
 | 7 | Retry count | Only one retry per 403 is implemented. | Does the service ever require more than one clock-skew correction per session? |
 | 8 | `--write-media -` | Writing MP3 to stdout is supported (the `-` flag). | How is this tested without a live service? |
-| 9 | Determinism | The 26-parallel-process test (`001-long-text.sh`) compares SRT outputs for equality. | Are SRT outputs truly deterministic across connections, or is there sentence-boundary jitter? |
-| 10 | DRM float precision | Token generation multiplies by `1e9 / 100` using Python float. | Does IEEE 754 double produce the same `.0f`-formatted integer as the service expects on all platforms? |
+| 9 | Determinism | A 26-parallel-process test compares SRT outputs for equality. | Are SRT outputs truly deterministic across connections, or is there sentence-boundary jitter? |
+| 10 | DRM float precision | Token generation multiplies by `1e9 / 100` using 64-bit double. | Does IEEE 754 double produce the same `.0f`-formatted integer as the service expects on all platforms? |

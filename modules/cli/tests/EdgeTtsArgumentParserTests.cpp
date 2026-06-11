@@ -118,7 +118,7 @@ TEST(EdgeTtsArgumentParser, FileShortForm) {
 }
 
 TEST(EdgeTtsArgumentParser, FileStdinDash) {
-    // Reference: "-" is treated as stdin by the caller; parser stores as-is.
+    // "-" is treated as stdin by the caller; parser stores as-is.
     auto r = parse({"--file", "-"});
     EXPECT_EQ(r.action, ParseAction::synthesize);
     EXPECT_EQ(*r.arguments.file, "-");
@@ -204,7 +204,7 @@ TEST(EdgeTtsArgumentParser, Rate) {
 }
 
 TEST(EdgeTtsArgumentParser, RateEqualsNegative) {
-    // Reference: negative values require --rate=-50% not --rate -50%.
+    // Negative values require --rate=-50% not --rate -50%.
     auto r = parse({"--text", "hi", "--rate=-50%"});
     EXPECT_EQ(r.action, ParseAction::synthesize);
     EXPECT_EQ(r.arguments.rate, "-50%");
@@ -271,7 +271,7 @@ TEST(EdgeTtsArgumentParser, WriteSubtitles) {
 }
 
 TEST(EdgeTtsArgumentParser, WriteSubtitlesDashIsStderr) {
-    // Reference: "-" → subtitles go to stderr (handled by caller).
+    // "-" → subtitles go to stderr (handled by caller).
     auto r = parse({"--text", "hi", "--write-subtitles", "-"});
     EXPECT_EQ(*r.arguments.write_subtitles, "-");
 }
@@ -354,14 +354,14 @@ TEST(EdgeTtsArgumentParser, UnknownShortOptionIsError) {
 }
 
 TEST(EdgeTtsArgumentParser, FormatOptionIsNotSupported) {
-    // Reference: --format is NOT a CLI option (hardcoded format, no flag).
+    // --format is NOT a CLI option (output format is hardcoded).
     // See CLI_COMPATIBILITY.md behavioral note 5.
     auto r = parse({"--text", "hi", "--format", "mp3"});
     EXPECT_EQ(r.action, ParseAction::error);
 }
 
 // ---------------------------------------------------------------------------
-// Default values — must match Python reference
+// Default values
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsArgumentParser, DefaultVoiceMatchesReference) {
@@ -524,12 +524,11 @@ TEST(EdgeTtsArgumentParser, PositionalAfterOptionsIsError) {
 }
 
 // ---------------------------------------------------------------------------
-// Negative-value-with-space is a parse error (documented behavior #8)
+// Negative-value-with-space is a parse error (CLI_COMPATIBILITY.md note 8)
 //
-// Reference: CLI_COMPATIBILITY.md behavioral note 8 — `--rate -50%` is
-// misinterpreted because `-50%` looks like an option token.  Users must use
-// `--rate=-50%` instead.  The C++ parser replicates the Python argparse
-// behavior: `--rate -50%` → "requires an argument" error with exit 2.
+// `--rate -50%` is misinterpreted because `-50%` looks like an option token.
+// Users must use `--rate=-50%` instead.
+// `--rate -50%` → "requires an argument" error with exit 2.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsArgumentParser, RateNegativeWithSpaceIsError) {

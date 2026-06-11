@@ -31,8 +31,6 @@ common::Result<HttpResponse> VoiceService::send_request()
     if (!token)
         return common::Result<HttpResponse>::fail(token.error());
 
-    // Reference: voices.py __list_voices():
-    //   f"{VOICE_LIST}&Sec-MS-GEC={DRM.generate_sec_ms_gec()}&Sec-MS-GEC-Version={SEC_MS_GEC_VERSION}"
     HttpRequest req;
     req.method  = "GET";
     req.url     = config_.voices_endpoint
@@ -51,8 +49,6 @@ VoiceService::list_voices(const VoiceFilter& filter)
         return common::Result<std::vector<core::Voice>>::fail(resp.error());
 
     // On HTTP 403: compute clock skew from server Date header and retry once.
-    // Reference: voices.py list_voices() try/except ClientResponseError(status=403)
-    //   → DRM.handle_client_response_error(e) → __list_voices() again
     if (resp->status_code == 403) {
         auto date_it = resp->headers.find("Date");
         if (date_it != resp->headers.end()) {

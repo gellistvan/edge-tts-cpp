@@ -10,23 +10,22 @@
 namespace edge_tts::core {
 
 // Controls which boundary metadata events are requested from the service.
-// Maps to the Python "WordBoundary" / "SentenceBoundary" literal strings.
+// Wire values: "WordBoundary" and "SentenceBoundary".
 enum class BoundaryType {
     word,      // "WordBoundary"   — metadata per spoken word
     sentence,  // "SentenceBoundary" — metadata per sentence (default)
 };
 
-// Wire-format string for BoundaryType (matches Python's literal strings).
+// Wire-format string for BoundaryType.
 [[nodiscard]] std::string_view to_string(BoundaryType type) noexcept;
 
 // Parses "WordBoundary" or "SentenceBoundary"; rejects anything else.
 [[nodiscard]] common::Result<BoundaryType> boundary_type_from_string(
         std::string_view value);
 
-// Full synthesis configuration.  All fields start at the Python reference
-// defaults.  Call validate_tts_config() to verify field constraints; voice
-// is accepted in either the short locale form or the full "Microsoft Server
-// Speech..." form (validation accepts both).
+// Full synthesis configuration.  Call validate_tts_config() to verify field
+// constraints; voice is accepted in either the short locale form or the full
+// "Microsoft Server Speech..." form (validation accepts both).
 struct TtsConfig {
     std::string  voice        {"en-US-EmmaMultilingualNeural"};
     std::string  rate         {"+0%"};
@@ -35,7 +34,7 @@ struct TtsConfig {
     OutputFormat output_format{OutputFormat::default_format()};
     BoundaryType boundary_type{BoundaryType::sentence};
 
-    // Factory — returns a TtsConfig with all fields set to the Python defaults.
+    // Factory — returns a TtsConfig with all fields at their default values.
     [[nodiscard]] static TtsConfig defaults();
 
     // Legacy throw-based validation (normalises voice in-place).

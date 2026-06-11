@@ -48,8 +48,7 @@ common::Result<HttpResponse> HttpClient::send(const HttpRequest& request) {
     ix::HttpClient client;
 
     // --- TLS: use system CA bundle by default ------------------------------
-    // Reference: voices.py uses ssl.create_default_context(cafile=certifi.where())
-    // SocketTLSOptions with caFile="SYSTEM" delegates to the OS certificate store.
+    // caFile="SYSTEM" delegates certificate verification to the OS trust store.
     ix::SocketTLSOptions tls_opts;
     tls_opts.caFile = "SYSTEM";
     client.setTLSOptions(tls_opts);
@@ -58,16 +57,11 @@ common::Result<HttpResponse> HttpClient::send(const HttpRequest& request) {
     auto args = client.createRequest();
 
     // Timeout: ixwebsocket uses seconds (int); our options use milliseconds.
-    // Reference: aiohttp doesn't set an explicit connect timeout by default
-    // (~300s), but 30s is a sensible production default.
     const auto timeout_secs = static_cast<int>(
         std::max(std::chrono::milliseconds(1'000), options_.timeout).count() / 1000);
     args->connectTimeout  = timeout_secs;
     args->transferTimeout = timeout_secs;
 
-    // Map request headers.
-    // Reference: voices.py passes VOICE_HEADERS (User-Agent, Accept-Encoding,
-    // Accept-Language, Accept) via aiohttp's headers= parameter.
     for (const auto& [key, value] : request.headers)
         args->extraHeaders[key] = value;
 

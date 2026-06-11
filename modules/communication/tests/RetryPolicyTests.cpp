@@ -96,20 +96,20 @@ static void push_success(FakeWebSocketClient& fake) {
 // ---------------------------------------------------------------------------
 
 TEST(RetryPolicy, DefaultMaxRetriesIsOne) {
-    // Reference: Python retries exactly once (one additional attempt).
+    // Exactly one retry allowed by default.
     RetryPolicy p;
     EXPECT_EQ(p.max_retries, 1);
 }
 
 TEST(RetryPolicy, ShouldRetryDrmErrorOnFirstAttempt) {
-    // Reference: `if e.status != 403: raise` — drm_error IS retried.
+    // drm_error (HTTP 403) IS retried.
     RetryPolicy p;
     Error e{ErrorCode::drm_error, "token rejected"};
     EXPECT_TRUE(p.should_retry(e, 0));
 }
 
 TEST(RetryPolicy, ShouldNotRetryNetworkError) {
-    // Reference: non-403 errors propagate immediately.
+    // Non-DRM errors propagate immediately.
     RetryPolicy p;
     Error e{ErrorCode::network_error, "connection refused"};
     EXPECT_FALSE(p.should_retry(e, 0));
@@ -129,7 +129,7 @@ TEST(RetryPolicy, ShouldNotRetryServiceError) {
 }
 
 TEST(RetryPolicy, ShouldNotRetryDrmErrorWhenMaxRetriesExhausted) {
-    // Reference: Python retries exactly once; attempt == max_retries → no more.
+    // attempt == max_retries → no more retries.
     RetryPolicy p;
     p.max_retries = 1;
     Error e{ErrorCode::drm_error, "token rejected"};
@@ -145,7 +145,6 @@ TEST(RetryPolicy, CustomMaxRetriesIsRespected) {
 
 // ---------------------------------------------------------------------------
 // EdgeTokenProvider.adjust_clock_skew changes the token
-// Reference: DRM.adj_clock_skew_seconds(skew_seconds) modifies the token
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTokenProvider, AdjustClockSkewChangesToken) {
@@ -204,8 +203,7 @@ TEST(SynthesisSessionRetry, SuccessWithoutRetry) {
 }
 
 TEST(SynthesisSessionRetry, DrmErrorTriggersOneRetry) {
-    // Reference: 403 → retry once.
-    // First connect fails with drm_error, second succeeds.
+    // First connect fails with drm_error (HTTP 403), second succeeds.
     FakeWebSocketClient fake;
     fake.set_connect_fail_count(Error{ErrorCode::drm_error, "403"}, 1);
     push_success(fake);  // queued for the second (retried) connect
@@ -258,7 +256,7 @@ TEST(SynthesisSessionRetry, MaxRetriesEnforced) {
 }
 
 TEST(SynthesisSessionRetry, NonRetryableErrorFailsImmediately) {
-    // Reference: `if e.status != 403: raise` — network_error is not retried.
+    // network_error is not retried.
     FakeWebSocketClient fake;
     fake.set_connect_error(Error{ErrorCode::network_error, "refused"});
     auto session = make_session(fake);
@@ -316,7 +314,6 @@ TEST(SynthesisSessionRetry, NoRetryWhenMaxRetriesIsZero) {
 
 TEST(SynthesisSessionRetry, PostConnectErrorIsNotRetried) {
     // Errors after a successful connect (send/receive failures) are NOT retried.
-    // Reference: Python only catches ws_connect-level ClientResponseError.
     FakeWebSocketClient fake;
     // connect succeeds, but receive fails with network_error
     fake.set_receive_error(Error{ErrorCode::network_error, "dropped"});

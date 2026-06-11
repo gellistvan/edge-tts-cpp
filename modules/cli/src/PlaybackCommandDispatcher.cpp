@@ -82,9 +82,7 @@ int PlaybackCommandDispatcher::dispatch(const PlaybackParseResult& result) {
 
 int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     // 1. Reject --mpv: only ffplay is supported in this build.
-    //    Reference: __main__.py uses mpv on non-Windows; the C++ build always
-    //    uses ffplay.  Silently ignoring --mpv would leave the user without the
-    //    subtitle display or mpv-specific behaviour they requested.
+    //    Silently ignoring --mpv would leave the user without the playback they requested.
     if (args.use_mpv) {
         err_ << "error: --mpv is not supported in this build; "
                 "only ffplay is available. Remove --mpv to use ffplay.\n";
@@ -92,8 +90,6 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     }
 
     // 2. Load text.
-    //    Reference: edge-playback forwards text to edge-tts which reads it.
-    //    Here we load it directly for the library call.
     InputLoader loader;
     auto text = loader.load_playback(args, in_);
     if (!text) {
@@ -114,10 +110,8 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     api::SynthesisOptions options;
     options.proxy = args.proxy;
 
-    // 5. Obtain temp file paths for the synthesized media and optional subtitle.
-    //    Reference: _create_temp_files() — NamedTemporaryFile(suffix=".mp3")
-    //    For ".srt", the provider returns nullopt unless EDGE_PLAYBACK_SRT_FILE
-    //    is set (production) or the test explicitly supplies a path.
+    // 5. Obtain temp file paths for synthesized media and optional subtitle.
+    //    For ".srt", the provider returns nullopt unless explicitly configured.
     auto mp3_opt = temp_provider_(".mp3");
     if (!mp3_opt) {
         err_ << "error: temp file provider returned no path for .mp3\n";
@@ -128,7 +122,6 @@ int PlaybackCommandDispatcher::dispatch_play(const PlaybackArguments& args) {
     auto srt_opt = temp_provider_(".srt");  // nullopt → no subtitle output
 
     // RAII cleanup: delete temp files on exit unless keep_temp_ is set.
-    // This mirrors _cleanup() in __main__.py which always runs in try/finally.
     struct TempGuard {
         const fs::path&                     mp3;
         const std::optional<fs::path>&      srt;

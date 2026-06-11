@@ -13,7 +13,6 @@
 // Do not enable in CI unless the environment has reliable outbound TLS access to
 //   https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list
 //
-// Reference: voices.py list_voices() — GET with VOICE_HEADERS, SSL, raise_for_status.
 
 #include "communication/HttpClient.hpp"
 #include "communication/VoiceService.hpp"
@@ -125,7 +124,7 @@ TEST(HttpClientNetwork, VoiceServiceReturnsEnUsVoices) {
 
 TEST(HttpClientNetwork, VoiceServiceIncludesEmmaVoice) {
     if (!network_enabled()) return;
-    // Reference: constants.py DEFAULT_VOICE = "en-US-EmmaMultilingualNeural"
+    // Default voice: en-US-EmmaMultilingualNeural
     HttpClient      client;
     VoiceJsonParser parser;
     VoiceService svc{k_net_cfg, client, parser, k_net_ids, k_net_tokens};

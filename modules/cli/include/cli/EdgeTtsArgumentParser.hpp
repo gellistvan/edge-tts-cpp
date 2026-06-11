@@ -9,8 +9,6 @@
 namespace edge_tts::cli {
 
 // What the parser concluded from the argument list.
-// Reference: util.py amain() — special cases for --help, --version,
-// --list-voices vs. proceeding to _run_tts().
 enum class ParseAction {
     synthesize,  // --text or --file given; proceed to TTS
     list_voices, // --list-voices given; fetch and print voices then exit 0
@@ -31,8 +29,6 @@ struct ParseResult {
 //
 // Does NOT perform synthesis, open files, make network calls, print anything,
 // or call exit().  All side-effects belong in the caller (main.cpp).
-//
-// Reference: util.py amain() argparse configuration.
 //
 // Supported options:
 //   -t / --text TEXT           what TTS will say
@@ -55,12 +51,10 @@ public:
     // Parse a token list (no argv[0]).  Preferred in unit tests.
     [[nodiscard]] ParseResult parse(const std::vector<std::string>& args) const;
 
-    // Full help text, formatted to match the Python reference help output.
     [[nodiscard]] std::string help_text(
         std::string_view program_name = "edge-tts") const;
 
-    // Version string: "edge-tts-cpp 0.1.0"
-    // Deviation from Python "edge-tts 7.2.8" — see CLI_COMPATIBILITY.md.
+    // Version string: "edge-tts-cpp 0.1.0" (see CLI_COMPATIBILITY.md).
     [[nodiscard]] static std::string version_string();
 };
 

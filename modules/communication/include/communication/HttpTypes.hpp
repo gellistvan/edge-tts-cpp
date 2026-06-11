@@ -7,10 +7,7 @@
 namespace edge_tts::communication {
 
 // An outgoing HTTP request.
-//
-// Reference: voices.py __list_voices() — GET, VOICE_HEADERS, optional proxy.
-// Method is almost always "GET" for this service; the field is kept generic
-// for completeness.
+// Method is almost always "GET" for this service; the field is kept generic.
 struct HttpRequest {
     std::string                        method;   // e.g. "GET"
     std::string                        url;

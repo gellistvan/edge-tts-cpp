@@ -1,7 +1,5 @@
 // Unit tests for parse_http_date().
-//
-// Reference: drm.py DRM.parse_rfc2616_date()
-// Format: "Wkd, DD Mon YYYY HH:MM:SS GMT"
+// Format: "Wkd, DD Mon YYYY HH:MM:SS GMT" (RFC 2616)
 
 #include "communication/HttpDate.hpp"
 #include "vendor/minigtest/minigtest.hpp"

@@ -831,7 +831,7 @@ TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenTtyCheckFalse) {
 
 TEST(EdgeTtsCommandDispatcher, TtyWarningNotShownWhenWriteMediaIsDash) {
     // --write-media=- selects stdout explicitly; user knowingly chose stdout.
-    // Python: `not args.write_media` is False when write_media=="-", so no warning.
+    // --write-media=- selects stdout explicitly; write_media is set, so no warning.
     std::vector<TtsChunk> chunks{TtsChunk{make_audio("audio")}};
     std::ostringstream out, err;
     std::istringstream in;
@@ -1077,9 +1077,6 @@ TEST(EdgeTtsCommandDispatcher, WriteSubtitlesFileErrorIncludesFilenameInStderr) 
 
 // ---------------------------------------------------------------------------
 // --file=- reads text from the injected stdin stream
-//
-// Reference: InputLoader reads from stdin_stream when file path is "-" or
-// "/dev/stdin".  The dispatcher injects in_ into InputLoader.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, FileDashReadsFromStdin) {
