@@ -77,25 +77,9 @@ static fs::path tmp_path(const std::string& name) {
     return fs::temp_directory_path() / ("edge_tts_comm_test_" + name);
 }
 
-static std::vector<std::byte> read_binary(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    const std::vector<char> buf{std::istreambuf_iterator<char>(f),
-                                std::istreambuf_iterator<char>{}};
-    std::vector<std::byte> out(buf.size());
-    for (std::size_t i = 0; i < buf.size(); ++i)
-        out[i] = static_cast<std::byte>(buf[i]);
-    return out;
-}
-
-static std::string read_text(const fs::path& p) {
-    std::ifstream f(p);
-    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
-}
-
-struct FileGuard {
-    fs::path path;
-    ~FileGuard() { fs::remove(path); }
-};
+using edge_tts::test::FileGuard;
+using edge_tts::test::read_file;
+using edge_tts::test::read_file_binary;
 
 // ---------------------------------------------------------------------------
 // Constructor / accessors
@@ -275,7 +259,7 @@ TEST(SpeechSynthesizer, SaveWritesMediaBytesInOrder) {
     auto r = c.save(mp);
     EXPECT_TRUE(r.has_value());
 
-    const auto bytes = read_binary(mp);
+    const auto bytes = read_file_binary(mp);
     const std::string content(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     EXPECT_EQ(content, "PART1PART2");
 }
@@ -316,7 +300,7 @@ TEST(SpeechSynthesizer, SaveWritesSubtitleFileWhenPathGiven) {
     EXPECT_TRUE(r.has_value());
     EXPECT_TRUE(fs::exists(srt));
 
-    const std::string content = read_text(srt);
+    const std::string content = read_file(srt);
     // SRT format: block number, timestamp line, text, blank line
     EXPECT_FALSE(content.empty());
     EXPECT_NE(content.find("-->"), std::string::npos);
@@ -372,8 +356,8 @@ TEST(SpeechSynthesizer, SubtitleTimingUnchangedByAudioByteSize) {
     SpeechSynthesizer b("Hello", valid_config(), make_fake(make_chunks(10'000)));
     EXPECT_TRUE(b.save(mp2, srt2).has_value());
 
-    const std::string srt_a = read_text(srt1);
-    const std::string srt_b = read_text(srt2);
+    const std::string srt_a = read_file(srt1);
+    const std::string srt_b = read_file(srt2);
 
     // Bit-for-bit identical SRT regardless of audio payload size.
     EXPECT_EQ(srt_a, srt_b);
@@ -468,16 +452,11 @@ TEST(SpeechSynthesizer, SaveThenStreamIsSingleUse) {
 }
 
 // ---------------------------------------------------------------------------
-// Error taxonomy — representative tests for each ErrorCode category.
-//
-// These tests verify that the SpeechSynthesizer forwards every ErrorCode value
-// from the SynthesizerFn unchanged.  Consumers can match error.code() to take
-// category-specific actions.  See docs/MODULES.md — Error taxonomy for library
-// consumers.
+// Error taxonomy — one test per ErrorCode to verify transparent propagation.
+// See docs/MODULES.md for the full consumer-facing error taxonomy table.
 // ---------------------------------------------------------------------------
 
 TEST(SpeechSynthesizer, ProtocolErrorPropagatesFromStream) {
-    // protocol_error: malformed binary frame or unexpected message path.
     SpeechSynthesizer c("hello", valid_config(),
         make_failing(ErrorCode::protocol_error, "unexpected turn.start"));
     auto r = c.synthesize();
@@ -486,7 +465,6 @@ TEST(SpeechSynthesizer, ProtocolErrorPropagatesFromStream) {
 }
 
 TEST(SpeechSynthesizer, ParseErrorPropagatesFromStream) {
-    // parse_error: malformed JSON in voice list or audio.metadata frames.
     SpeechSynthesizer c("hello", valid_config(),
         make_failing(ErrorCode::parse_error, "invalid UTF-8 in metadata JSON"));
     auto r = c.synthesize();
@@ -495,7 +473,6 @@ TEST(SpeechSynthesizer, ParseErrorPropagatesFromStream) {
 }
 
 TEST(SpeechSynthesizer, TimeoutErrorPropagatesFromStream) {
-    // timeout: connect or receive timeout exceeded.
     SpeechSynthesizer c("hello", valid_config(),
         make_failing(ErrorCode::timeout, "receive timeout after 60 s"));
     auto r = c.synthesize();
@@ -504,7 +481,6 @@ TEST(SpeechSynthesizer, TimeoutErrorPropagatesFromStream) {
 }
 
 TEST(SpeechSynthesizer, DrmErrorPropagatesFromStream) {
-    // drm_error: HTTP 403 DRM rejection that survived the automatic retry.
     SpeechSynthesizer c("hello", valid_config(),
         make_failing(ErrorCode::drm_error, "HTTP 403 after clock-skew retry"));
     auto r = c.synthesize();
@@ -513,7 +489,6 @@ TEST(SpeechSynthesizer, DrmErrorPropagatesFromStream) {
 }
 
 TEST(SpeechSynthesizer, UnsupportedErrorPropagatesFromStream) {
-    // unsupported: operation not available in this build/platform.
     SpeechSynthesizer c("hello", valid_config(),
         make_failing(ErrorCode::unsupported, "proxy not implemented"));
     auto r = c.synthesize();

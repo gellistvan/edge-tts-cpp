@@ -478,13 +478,8 @@ TEST(EdgeTtsCommandDispatcher, SynthesisErrorDoesNotWriteToStdout) {
 }
 
 // ---------------------------------------------------------------------------
-// Exit-code taxonomy — one test per ErrorCode category.
-//
-// Every ErrorCode produced by the synthesis pipeline must map to exit 1.
-// Exit 2 is reserved for argument-parse-time failures (handled by the parser,
-// not the dispatcher).  This set documents the mapping for all categories not
-// already covered by the network_error/service_error/invalid_argument tests
-// above.  See docs/MODULES.md — CLI exit code mapping.
+// Exit-code taxonomy — one test per remaining ErrorCode.  All runtime errors
+// map to exit 1.  See docs/MODULES.md — CLI exit code mapping.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, ProtocolErrorReturnsExit1) {
@@ -521,8 +516,6 @@ TEST(EdgeTtsCommandDispatcher, TimeoutErrorReturnsExit1) {
 }
 
 TEST(EdgeTtsCommandDispatcher, DrmErrorReturnsExit1) {
-    // drm_error surfaces when the automatic retry inside SynthesisSession
-    // is exhausted.  From the CLI's perspective it is a runtime failure.
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher d{
@@ -534,7 +527,6 @@ TEST(EdgeTtsCommandDispatcher, DrmErrorReturnsExit1) {
 }
 
 TEST(EdgeTtsCommandDispatcher, CancelledErrorReturnsExit1) {
-    // cancelled can surface when synthesis is interrupted mid-stream.
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher d{
@@ -1194,16 +1186,10 @@ TEST(EdgeTtsCommandDispatcher, ProxyCredentialNotExposedInStderr) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty text input: --text "" produces exit 0, no audio on stdout.
-//
-// TextChunker normalizes empty (or whitespace-only) text to an empty chunk
-// list.  The dispatcher must exit cleanly rather than treating "no chunks"
-// as an error.  This documents the boundary between a parse error (exit 2)
-// and a silent empty-result synthesis (exit 0).
+// Empty text input: exit 0, no audio — not a parse error (exit 2).
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, EmptyTextSynthesisSucceeds) {
-    // SpeechSynthesizer with empty text returns an empty chunk vector (no audio).
     std::ostringstream out, err;
     std::istringstream in;
     EdgeTtsCommandDispatcher d{make_voice_svc({}), make_factory({}), out, err, in};
@@ -1227,12 +1213,7 @@ TEST(EdgeTtsCommandDispatcher, EmptyTextNoAudioWrittenToStdout) {
 }
 
 // ---------------------------------------------------------------------------
-// Missing input file: error message must include the path so the user knows
-// which file could not be opened.
-//
-// The io_error from InputLoader carries the path in its context field.
-// EdgeTtsCommandDispatcher::format_error forwards Error::what(), which
-// includes the context, so the path must appear in stderr.
+// Missing input file: io_error carries path in context → path appears in stderr.
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
@@ -1250,13 +1231,8 @@ TEST(EdgeTtsCommandDispatcher, FileSynthesisMissingFileErrorIncludesPath) {
 }
 
 // ---------------------------------------------------------------------------
-// invalid_argument synthesis error → exit 1, not exit 2
-//
-// An invalid voice/rate/pitch/volume is only detected at synthesis time (the
-// parser accepts any string for these options).  The synthesizer returns
-// invalid_argument.  The dispatcher must still exit 1 with a message on
-// stderr — not silently swallow the error or exit 2 (which is reserved for
-// argument parser failures).
+// invalid_argument from synthesis → exit 1 (not exit 2; parser accepts any
+// string for voice/rate/pitch/volume, validation happens at synthesis time).
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisReturns1) {
@@ -1283,11 +1259,7 @@ TEST(EdgeTtsCommandDispatcher, InvalidArgumentFromSynthesisPrintsMessageToStderr
 }
 
 // ---------------------------------------------------------------------------
-// Output overwrite behavior: --write-media to an existing file succeeds.
-//
-// The CLI does not protect against overwriting existing output files.  This
-// test documents the current behavior so a future change that adds a --force
-// flag (or raises an error) is visible as a deliberate, tested change.
+// --write-media silently overwrites an existing file (no --force guard).
 // ---------------------------------------------------------------------------
 
 TEST(EdgeTtsCommandDispatcher, WriteMediaOverwritesExistingFile) {
@@ -1306,7 +1278,6 @@ TEST(EdgeTtsCommandDispatcher, WriteMediaOverwritesExistingFile) {
 
     EXPECT_EQ(rc, 0);
     const auto written = read_binary_file(out_path);
-    // New content must have replaced the old content.
     EXPECT_NE(std::string(reinterpret_cast<const char*>(written.data()),
                           written.size()).find("NEW"), std::string::npos);
 }

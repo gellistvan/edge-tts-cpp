@@ -42,7 +42,6 @@ static std::vector<std::byte> to_bytes(std::string_view s) {
     return out;
 }
 
-// RAII guard: delete a file on scope exit if it exists.
 struct FileGuard {
     fs::path path;
     ~FileGuard() { fs::remove(path); }
