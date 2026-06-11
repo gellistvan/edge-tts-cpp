@@ -125,6 +125,39 @@ Two error propagation styles are used:
 | JSON / header decode failure | `parse_error` | Could not interpret response body |
 | Connect/receive timeout | `timeout` | Timeout parameters exceeded |
 | ffmpeg/ffplay failure | `external_process_failed` | Non-zero process exit code |
+| HTTP 403 DRM rejection | `drm_error` | Token rejected; `SynthesisSession` retries once automatically |
+| `asyncio.CancelledError` | `cancelled` | Synthesis cancelled via `SpeechSynthesizer::cancel()` |
+| Platform missing / build-time disabled | `unsupported` | e.g. proxy, HTTPS without TLS, ixwebsocket absent |
+
+**Error taxonomy for library consumers:**
+
+Use `result.error().code()` to distinguish failure categories programmatically.
+
+| `ErrorCode` | Category | Primary cause | Layer where produced | Retried automatically? | Recommended consumer action |
+|-------------|----------|---------------|----------------------|------------------------|-----------------------------|
+| `invalid_argument` | Input validation | Bad voice/rate/pitch/volume, empty text, SubMaker type mismatch | `core`, `serialization`, `subtitle`, `cli` | No | Fix the caller input; this is a programming error if caught in tests |
+| `invalid_state` | Object lifecycle | Calling `synthesize()`/`save()` a second time | `api` | No | Create a new `SpeechSynthesizer`; do not reuse |
+| `io_error` | File I/O | File not found, unreadable, directory as path, write failed | `api` (FileWriter), `cli` (InputLoader) | No | Check the `error.context()` field for the offending path |
+| `network_error` | Transport | WebSocket refused, dropped, TLS failure | `communication` (WebSocketClient, HttpClient) | No (1 retry for `drm_error` only) | Log and retry with backoff; may be transient |
+| `protocol_error` | Wire protocol | Malformed binary frame header, unexpected message path | `communication` (EdgeProtocol) | No | Log; likely a service-side change; file a bug |
+| `parse_error` | Deserialization | Malformed JSON in voice list or metadata frames | `serialization` | No | Log; likely a service-side schema change |
+| `timeout` | Timing | Connect or receive timeout exceeded | `communication` | No | Retry with backoff; may be transient |
+| `service_error` | Service-side | HTTP 4xx/5xx, no audio received | `communication` (VoiceService, SynthesisSession) | No | Log HTTP status from `error.context()`; may indicate invalid voice |
+| `drm_error` | DRM token | HTTP 403 during WebSocket upgrade | `communication` (WebSocketClient) | Yes — one automatic retry | If retry fails, log clock skew; usually resolved by the retry |
+| `external_process_failed` | Subprocess | ffplay not on PATH, non-zero exit | `media` (FfmpegAudioConverter) | No | Verify ffplay installation; check `error.context()` for stderr |
+| `unsupported` | Platform / build | Proxy requested but not implemented; no TLS; ixwebsocket absent | `communication`, `api` | No | Document the limitation; proxy support is an explicit non-goal |
+| `cancelled` | Cancellation | `SpeechSynthesizer::cancel()` called before/during synthesis | `api`, `communication` | No | Expected condition when cancellation is used intentionally |
+
+**CLI exit code mapping:**
+
+| Exit code | Meaning | When raised |
+|-----------|---------|-------------|
+| `0` | Success | Synthesis completed; `--list-voices` completed; `--help`/`--version` printed |
+| `1` | Runtime error | Any `ErrorCode` from the table above (all runtime failures map to exit 1) |
+| `2` | Argument error | Parse-time failures: unknown option, missing required argument, invalid proxy URL format |
+
+All `ErrorCode` values except argument-parse-time errors surface as exit 1 regardless of category.
+The `error.code()` value is included in the stderr message as `[code_name]` for diagnostic filtering.
 
 ---
 

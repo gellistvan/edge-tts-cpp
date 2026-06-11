@@ -466,3 +466,84 @@ TEST(SpeechSynthesizer, SaveThenStreamIsSingleUse) {
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error().code(), ErrorCode::invalid_state);
 }
+
+// ---------------------------------------------------------------------------
+// Error taxonomy — representative tests for each ErrorCode category.
+//
+// These tests verify that the SpeechSynthesizer forwards every ErrorCode value
+// from the SynthesizerFn unchanged.  Consumers can match error.code() to take
+// category-specific actions.  See docs/MODULES.md — Error taxonomy for library
+// consumers.
+// ---------------------------------------------------------------------------
+
+TEST(SpeechSynthesizer, ProtocolErrorPropagatesFromStream) {
+    // protocol_error: malformed binary frame or unexpected message path.
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::protocol_error, "unexpected turn.start"));
+    auto r = c.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::protocol_error);
+}
+
+TEST(SpeechSynthesizer, ParseErrorPropagatesFromStream) {
+    // parse_error: malformed JSON in voice list or audio.metadata frames.
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::parse_error, "invalid UTF-8 in metadata JSON"));
+    auto r = c.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(SpeechSynthesizer, TimeoutErrorPropagatesFromStream) {
+    // timeout: connect or receive timeout exceeded.
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::timeout, "receive timeout after 60 s"));
+    auto r = c.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::timeout);
+}
+
+TEST(SpeechSynthesizer, DrmErrorPropagatesFromStream) {
+    // drm_error: HTTP 403 DRM rejection that survived the automatic retry.
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::drm_error, "HTTP 403 after clock-skew retry"));
+    auto r = c.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::drm_error);
+}
+
+TEST(SpeechSynthesizer, UnsupportedErrorPropagatesFromStream) {
+    // unsupported: operation not available in this build/platform.
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::unsupported, "proxy not implemented"));
+    auto r = c.synthesize();
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::unsupported);
+}
+
+TEST(SpeechSynthesizer, ProtocolErrorPropagatesFromSave) {
+    const fs::path mp = tmp_path("proto_err_save.mp3");
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::protocol_error, "unknown binary path"));
+    auto r = c.save(mp);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::protocol_error);
+}
+
+TEST(SpeechSynthesizer, ParseErrorPropagatesFromSave) {
+    const fs::path mp = tmp_path("parse_err_save.mp3");
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::parse_error, "bad JSON root"));
+    auto r = c.save(mp);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::parse_error);
+}
+
+TEST(SpeechSynthesizer, DrmErrorPropagatesFromSave) {
+    const fs::path mp = tmp_path("drm_err_save.mp3");
+    SpeechSynthesizer c("hello", valid_config(),
+        make_failing(ErrorCode::drm_error, "403 DRM rejected after retry"));
+    auto r = c.save(mp);
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(r.error().code(), ErrorCode::drm_error);
+}

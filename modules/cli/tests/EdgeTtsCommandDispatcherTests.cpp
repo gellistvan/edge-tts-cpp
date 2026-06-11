@@ -478,6 +478,74 @@ TEST(EdgeTtsCommandDispatcher, SynthesisErrorDoesNotWriteToStdout) {
 }
 
 // ---------------------------------------------------------------------------
+// Exit-code taxonomy — one test per ErrorCode category.
+//
+// Every ErrorCode produced by the synthesis pipeline must map to exit 1.
+// Exit 2 is reserved for argument-parse-time failures (handled by the parser,
+// not the dispatcher).  This set documents the mapping for all categories not
+// already covered by the network_error/service_error/invalid_argument tests
+// above.  See docs/MODULES.md — CLI exit code mapping.
+// ---------------------------------------------------------------------------
+
+TEST(EdgeTtsCommandDispatcher, ProtocolErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::protocol_error, "unexpected message path"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, ParseErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::parse_error, "invalid JSON in metadata"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, TimeoutErrorReturnsExit1) {
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::timeout, "receive timeout after 60 s"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, DrmErrorReturnsExit1) {
+    // drm_error surfaces when the automatic retry inside SynthesisSession
+    // is exhausted.  From the CLI's perspective it is a runtime failure.
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::drm_error, "HTTP 403 after retry"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+TEST(EdgeTtsCommandDispatcher, CancelledErrorReturnsExit1) {
+    // cancelled can surface when synthesis is interrupted mid-stream.
+    std::ostringstream out, err;
+    std::istringstream in;
+    EdgeTtsCommandDispatcher d{
+        make_voice_svc({}),
+        make_failing_factory(ErrorCode::cancelled, "synthesis was cancelled"),
+        out, err, in};
+    EXPECT_EQ(d.dispatch(make_text_result("hello")), 1);
+    EXPECT_FALSE(err.str().empty());
+}
+
+// ---------------------------------------------------------------------------
 // help / version / error actions (dispatched by EdgeTtsCommandDispatcher)
 // ---------------------------------------------------------------------------
 
