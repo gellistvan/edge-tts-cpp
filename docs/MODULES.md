@@ -131,7 +131,7 @@ Use `result.error().code()` to distinguish failure categories programmatically.
 
 | `ErrorCode` | Category | Primary cause | Layer where produced | Retried automatically? | Recommended consumer action |
 |-------------|----------|---------------|----------------------|------------------------|-----------------------------|
-| `invalid_argument` | Input validation | Bad voice/rate/pitch/volume, empty text, SubMaker type mismatch | `core`, `serialization`, `subtitle`, `cli` | No | Fix the caller input; this is a programming error if caught in tests |
+| `invalid_argument` | Input validation | Bad voice/rate/pitch/volume, empty text, SubtitleBuilder type mismatch | `core`, `serialization`, `subtitle`, `cli` | No | Fix the caller input; this is a programming error if caught in tests |
 | `invalid_state` | Object lifecycle | Calling `synthesize()`/`save()` a second time | `api` | No | Create a new `SpeechSynthesizer`; do not reuse |
 | `io_error` | File I/O | File not found, unreadable, directory as path, write failed | `api` (FileWriter), `cli` (InputLoader) | No | Check the `error.context()` field for the offending path |
 | `network_error` | Transport | WebSocket refused, dropped, TLS failure | `communication` (WebSocketClient, HttpClient) | No (1 retry for `drm_error` only) | Log and retry with backoff; may be transient |
@@ -257,7 +257,7 @@ Owns timing conversion, subtitle cue modeling, and SRT composition.
 | `SubtitleTime.hpp` | `SubtitleTime` — wraps millisecond count. `from_edge_ticks(int64_t)` converts 100 ns ticks (`ticks / 10'000`) with integer truncation. `to_srt_timestamp()` formats `HH:MM:SS,mmm`. Rejects negative ticks. |
 | `SubtitleCue.hpp` | `SubtitleCue` — plain struct: `SubtitleTime start`, `SubtitleTime end`, `std::string text`. |
 | `SrtComposer.hpp` | `SrtComposer::compose(span<const SubtitleCue>)` — sorts by `(start, end)`, skips empty/whitespace text and `start >= end`, applies `make_legal_content` text cleanup, emits `{idx}\n{start} --> {end}\n{content}\n\n` blocks. |
-| `SubMaker.hpp` | `SubMaker` — accumulates `BoundaryChunk` events into `SubtitleCue` values. `feed()` enforces type consistency; `to_srt()` composes via `SrtComposer`; `clear()` resets state. |
+| `SubtitleBuilder.hpp` | `SubtitleBuilder` — accumulates `BoundaryChunk` events into `SubtitleCue` values. `feed()` enforces type consistency; `to_srt()` composes via `SrtComposer`; `clear()` resets state. |
 
 ### SrtComposer reference contract
 
@@ -347,7 +347,7 @@ the CLI layer should depend on for synthesis.
 | `SpeechSynthesizer.hpp` | `SpeechSynthesizer` — public synthesis facade. Orchestrates `serialization::TextChunker`, `SynthesisSession`, subtitle generation, and audio saving. Production constructors compose the full networking stack (WebSocketClient, SynthesisSession, EdgeTokenProvider, EdgeProtocol) lazily — no network I/O occurs until `synthesize()` or `save()` is called. |
 
 **Rationale for a separate module:** `SpeechSynthesizer` needs `SynthesisSession` from
-`communication`, `SubMaker` from `subtitle`, and `media` for audio saving.
+`communication`, `SubtitleBuilder` from `subtitle`, and `media` for audio saving.
 Placing it above `communication` keeps the transport infrastructure clean and
 avoids a fat `communication` module that also owns public API semantics.
 
@@ -375,7 +375,7 @@ parser (`EdgeTtsArgumentParser`, `PlaybackArgumentParser`).
 (PlaybackCommandDispatcher public header exposes `IAudioConverter`).
 
 **Allowed dependencies (PRIVATE):** `edge_tts::subtitle` (EdgeTtsCommandDispatcher.cpp
-uses `SubMaker`; not exposed in any public header).
+uses `SubtitleBuilder`; not exposed in any public header).
 
 **Transitive via api:** `core`, `common`, `serialization`, `communication`, `subtitle`.
 
@@ -455,7 +455,7 @@ Stable headers additionally must:
 | `api` | `modules/api/include/api/` | Yes | Core synthesis facade |
 | `core` | `modules/core/include/core/` | Yes | Data types (TtsConfig, Voice, Chunk) |
 | `common` | `modules/common/include/common/` | Yes | Error handling, utilities |
-| `subtitle` | `modules/subtitle/include/subtitles/` | Yes | SubMaker, SRT types |
+| `subtitle` | `modules/subtitle/include/subtitles/` | Yes | SubtitleBuilder, SRT types |
 | `communication` | `modules/communication/include/communication/` | No | Internal transport — may change |
 | `serialization` | `modules/serialization/include/serialization/` | No | Internal protocol framing — may change |
 | `media` | `modules/media/include/media/` | No | App-layer; ffplay/ffmpeg runner |
@@ -474,7 +474,7 @@ Stable headers additionally must:
 | `edge_tts::api` | `<edge_tts/api/SpeechSynthesizer.hpp>` | `SpeechSynthesizer`, `FileWriter`, `SynthesisOptions`. | Yes |
 | `edge_tts::core` | `<edge_tts/core/TtsConfig.hpp>` | `TtsConfig`, `Voice`, `TtsChunk`. | Yes |
 | `edge_tts::common` | `<edge_tts/common/Result.hpp>` | `Result<T>`, `ErrorCode`, utilities. | Yes |
-| `edge_tts::subtitle` | `<edge_tts/subtitles/SubMaker.hpp>` | `SubMaker`, SRT types. | Yes |
+| `edge_tts::subtitle` | `<edge_tts/subtitles/SubtitleBuilder.hpp>` | `SubtitleBuilder`, SRT types. | Yes |
 | `edge_tts::communication` | `<edge_tts/communication/>` | WebSocket/HTTP transport (advanced). | Yes |
 | `edge_tts::serialization` | `<edge_tts/serialization/>` | Protocol framing, SSML (advanced). | Yes |
 | `edge_tts::cli` | — | CLI argument parsing. **Not exported.** App-layer only. | No |

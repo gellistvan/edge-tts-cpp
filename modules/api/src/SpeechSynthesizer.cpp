@@ -14,7 +14,7 @@
 #include "core/Chunk.hpp"
 #include "core/TtsConfig.hpp"
 #include "serialization/TextChunker.hpp"
-#include "subtitles/SubMaker.hpp"
+#include "subtitles/SubtitleBuilder.hpp"
 
 #include <memory>
 #include <utility>
@@ -257,9 +257,9 @@ common::Result<void> SpeechSynthesizer::save(
 
     const auto& chunks = *synthesis;
 
-    // Collect audio bytes and feed boundary events to SubMaker.
+    // Collect audio bytes and feed boundary events to SubtitleBuilder.
     std::vector<std::byte> audio_bytes;
-    subtitles::SubMaker submaker;
+    subtitles::SubtitleBuilder submaker;
 
     for (const auto& chunk : chunks) {
         if (core::is_audio(chunk)) {

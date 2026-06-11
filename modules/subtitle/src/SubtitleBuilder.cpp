@@ -1,4 +1,4 @@
-#include "subtitles/SubMaker.hpp"
+#include "subtitles/SubtitleBuilder.hpp"
 #include "subtitles/SrtComposer.hpp"
 #include "subtitles/SubtitleTime.hpp"
 #include "common/Error.hpp"
@@ -9,9 +9,9 @@
 
 namespace edge_tts::subtitles {
 
-common::Result<void> SubMaker::feed(const core::BoundaryChunk& boundary)
+common::Result<void> SubtitleBuilder::feed(const core::BoundaryChunk& boundary)
 {
-    // Enforce type consistency (reference: ValueError on type mismatch)
+    // Enforce type consistency — all fed boundaries must share the same type.
     if (type_.has_value() && *type_ != boundary.type)
         return common::Result<void>::fail(
             {common::ErrorCode::invalid_argument,
@@ -35,18 +35,18 @@ common::Result<void> SubMaker::feed(const core::BoundaryChunk& boundary)
     return common::Result<void>::ok();
 }
 
-std::vector<SubtitleCue> SubMaker::cues() const
+std::vector<SubtitleCue> SubtitleBuilder::cues() const
 {
     return cues_;
 }
 
-common::Result<std::string> SubMaker::to_srt() const
+common::Result<std::string> SubtitleBuilder::to_srt() const
 {
     SrtComposer composer;
     return composer.compose(std::span<const SubtitleCue>{cues_});
 }
 
-void SubMaker::clear() noexcept
+void SubtitleBuilder::clear() noexcept
 {
     cues_.clear();
     type_.reset();

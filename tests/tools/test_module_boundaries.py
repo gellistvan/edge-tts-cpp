@@ -172,7 +172,7 @@ def test_forbidden_includes_inline(tmp_path: Path) -> None:
          "[communication] forbidden include of [cli]"),
         # communication must not include subtitle or media — those belong in api
         ("modules/communication/src/Bad3.cpp",
-         '#include "subtitles/SubMaker.hpp"\n',
+         '#include "subtitles/SubtitleBuilder.hpp"\n',
          "[communication] forbidden include of [subtitles]"),
         ("modules/communication/src/Bad4.cpp",
          '#include "media/AudioConverter.hpp"\n',

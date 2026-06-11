@@ -44,7 +44,7 @@ module.  A blank cell means the dependency is **forbidden**.
    depend on `cli`.
 8. `cli` is the application-layer helper shared by the `edge-tts` and
    `edge-playback` executables.  It depends on `api`, `media` (for
-   `IAudioConverter` in its public headers), `subtitle` (for `SubMaker` in its
+   `IAudioConverter` in its public headers), `subtitle` (for `SubtitleBuilder` in its
    `.cpp` files), `core`, and `common`.  It must not reach past `api` into
    `communication` or `serialization` internals.
 

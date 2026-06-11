@@ -25,10 +25,6 @@
 //   - save() writes a non-empty MP3 file to a temp path.
 //   - SRT content is written when word-boundary mode is on.
 //   - api::SpeechSynthesizer production constructor wires the full real stack.
-//
-// Reference:
-//   reference/edge-tts/src/edge_tts/communicate.py SpeechSynthesizer.__stream()
-//   reference/edge-tts/src/edge_tts/constants.py WSS_HEADERS, WSS_URL
 
 #include "api/SpeechSynthesizer.hpp"
 #include "api/SynthesisOptions.hpp"
@@ -85,7 +81,7 @@ static bool network_enabled() {
 // ---------------------------------------------------------------------------
 
 // Build WebSocketClientOptions with the HTTP upgrade headers the Edge TTS service
-// expects. Reference: constants.py WSS_HEADERS.
+// expects (User-Agent, Origin, Accept-Encoding as specified in EdgeServiceConfig).
 static WebSocketClientOptions make_ws_options() {
     auto cfg = default_edge_service_config();
     IdGenerator ids;
@@ -238,7 +234,6 @@ TEST(RealSynthesis, SynthesisResultContainsAtLeastOneChunk) {
 TEST(RealSynthesis, WordBoundaryModeReturnsBoundaryChunks) {
     // Enables wordBoundaryEnabled:true in speech.config.  The service must
     // respond with audio.metadata text frames containing WordBoundary events.
-    // Reference: communicate.py TtsConfig with BoundaryType::word.
     if (!network_enabled()) return;
 
     RealStack stack;
@@ -335,7 +330,7 @@ TEST(RealSynthesis, CommunicateSaveWritesNonEmptyMp3) {
 }
 
 TEST(RealSynthesis, CommunicateSaveWritesSrtWhenWordBoundaryEnabled) {
-    // Proves the full pipeline: synthesis → boundary events → SubMaker → SRT file.
+    // Proves the full pipeline: synthesis → boundary events → SubtitleBuilder → SRT file.
     if (!network_enabled()) return;
 
     NetTempFile mp3{"srt", ".mp3"};

@@ -27,8 +27,8 @@
 #       communication::WebSocketTransport (IWebSocketClient implementation)
 #       communication::IHttpClient implementation for the voice-list endpoint
 #   • Header-only–style C++ library; no system installation required.
-#   • Aligns with the reference Python implementation: the edge-tts package uses
-#     aiohttp for both HTTP and WebSocket, so one library covering both is natural.
+#   • A single library covers both WebSocket and HTTP needs without additional
+#     system dependencies.
 #   • MIT licensed, compatible with the project.
 #
 # Submodule: submodules/ixwebsocket

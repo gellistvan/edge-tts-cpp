@@ -391,7 +391,7 @@ messages without any outbound network requests.
 | Media file write error | `WriteMediaFileErrorReturnsFailure`, `WriteMediaFileErrorIncludesFilenameInStderr` |
 | Proxy runtime error | `ProxyUnsupportedYieldsExitCode1AndErrorOnStderr`, `ProxyIsNotSilentlyIgnored` |
 | Proxy credential redaction | `ProxyCredentialNotExposedInStderr` |
-| SubMaker type conflict | `SubtitleFeedTypeMismatchReturnsError`, `SubtitleFeedErrorPrintsMessageToStderr` |
+| SubtitleBuilder type conflict | `SubtitleFeedTypeMismatchReturnsError`, `SubtitleFeedErrorPrintsMessageToStderr` |
 | TTY warning | `TtyWarningPrintedToStderr`, `TtyWarningAllowsSynthesisAfterEnter`, `TtyWarningCancelsOnEof`, `TtyWarningNotShownWhen*` (4 variants) |
 
 ### edge-playback CLI test coverage matrix

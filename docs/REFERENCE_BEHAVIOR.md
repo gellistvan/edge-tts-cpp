@@ -570,9 +570,9 @@ are valid (some sentence boundaries have `duration = 0`).
 
 ---
 
-# SubMaker — Boundary Event Accumulation
+# SubtitleBuilder — Boundary Event Accumulation
 
-**C++ implementation:** `subtitles::SubMaker` (`SubMaker.hpp` / `SubMaker.cpp`).
+**C++ implementation:** `subtitles::SubtitleBuilder` (`SubtitleBuilder.hpp` / `SubtitleBuilder.cpp`).
 
 ## Public methods
 
@@ -587,7 +587,7 @@ are valid (some sentence boundaries have `duration = 0`).
 
 The first boundary type seen is recorded. Subsequent calls that supply a
 different type return `ErrorCode::invalid_argument`. Both `WordBoundary` and
-`SentenceBoundary` are accepted, but all feeds to one `SubMaker` instance
+`SentenceBoundary` are accepted, but all feeds to one `SubtitleBuilder` instance
 must use the same type.
 
 ## Cue time calculation
@@ -600,7 +600,7 @@ end   = SubtitleTime::from_edge_ticks(boundary.offset_ticks + boundary.duration_
 ## Text storage
 
 `boundary.text` is stored verbatim. `MetadataJsonParser` has already applied
-`xml_unescape()`. No text transformation happens in `SubMaker`.
+`xml_unescape()`. No text transformation happens in `SubtitleBuilder`.
 
 ## State after `to_srt()`
 
@@ -609,7 +609,7 @@ output, and `feed()` can continue adding cues afterward.
 
 ## Zero-duration cues
 
-A cue with `duration_ticks == 0` has `start == end`. `SubMaker::feed()` accepts
+A cue with `duration_ticks == 0` has `start == end`. `SubtitleBuilder::feed()` accepts
 it (creating the cue), but `SrtComposer` skips it in SRT output because
 `start >= end`.
 
@@ -650,7 +650,7 @@ Example: `01:23:04,000` for 1 hour, 23 minutes, 4 seconds.
 
 # Subtitles
 
-**`SubMaker::feed(chunk)`:**
+**`SubtitleBuilder::feed(chunk)`:**
 - Accepts only `WordBoundary` or `SentenceBoundary` chunks.
 - All chunks in one session must share the same type; mixing types returns
   `ErrorCode::invalid_argument`.
@@ -785,6 +785,18 @@ is propagated.
 The Chromium version and trusted token are likely to change when Microsoft
 updates the Edge TTS service.  Keep these as named constants in
 `EdgeServiceConfig`, not hard-coded literals scattered through the code.
+
+---
+
+# Compatibility Targets
+
+| Requirement | Value |
+|-------------|-------|
+| C++ standard | C++20 |
+| Compilers tested | GCC ≥ 12, Clang ≥ 15, MSVC ≥ 19.38 (VS 2022 17.8) |
+| Platforms | Linux, macOS, Windows |
+| TLS | OpenSSL (Linux/macOS), mbedtls via ixwebsocket (Windows) |
+| Build system | CMake ≥ 3.21 |
 
 ---
 

@@ -35,7 +35,7 @@ using SynthesizerFn = std::function<
 //   - config validation   (core::validate_tts_config)
 //   - text chunking       (serialization::TextChunker — normalize, escape, split)
 //   - synthesis session   (communication::SynthesisSession via SynthesizerFn)
-//   - subtitle generation (subtitles::SubMaker — optional, for save())
+//   - subtitle generation (subtitles::SubtitleBuilder — optional, for save())
 //   - file writing        (api::FileWriter)
 //
 // ── Object lifetime ───────────────────────────────────────────────────────────

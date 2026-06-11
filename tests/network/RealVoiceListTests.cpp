@@ -26,7 +26,7 @@
 //   - en-US-EmmaMultilingualNeural (the reference default voice) is present.
 //   - VoiceService locale and short-name filters return consistent results.
 //
-// Reference: reference/edge-tts/src/edge_tts/voices.py list_voices()
+// See docs/PROTOCOL_NOTES.md for the voice-list endpoint specification.
 
 #include "communication/EdgeServiceConfig.hpp"
 #include "communication/EdgeTokenProvider.hpp"
@@ -151,7 +151,7 @@ TEST(RealVoiceList, AllVoicesHaveNonEmptyShortName) {
 TEST(RealVoiceList, AllVoicesHaveKnownGender) {
     if (!network_enabled()) return;
 
-    // Reference: voices.py — Gender is always "Female" or "Male" in the wire JSON.
+    // Gender is always "Female" or "Male" in the wire JSON.
     // A voice with VoiceGender::unknown indicates the JSON parser missed the field.
     auto svc = make_svc();
     auto voices = svc.list_voices();
@@ -207,8 +207,8 @@ TEST(RealVoiceList, AllVoicesHaveNonEmptyFriendlyName) {
 }
 
 // ---------------------------------------------------------------------------
-// Default voice: reference says en-US-EmmaMultilingualNeural must exist
-// Reference: constants.py DEFAULT_VOICE = "en-US-EmmaMultilingualNeural"
+// Default voice: en-US-EmmaMultilingualNeural must be present in the voice list
+// (see EdgeServiceConfig::default_voice for the configured default).
 // ---------------------------------------------------------------------------
 
 TEST(RealVoiceList, DefaultVoiceEmmaIsPresent) {

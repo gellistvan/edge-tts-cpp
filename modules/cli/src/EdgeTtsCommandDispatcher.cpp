@@ -4,7 +4,7 @@
 #include "cli/VoiceFormatter.hpp"
 #include "common/Error.hpp"
 #include "core/Chunk.hpp"
-#include "subtitles/SubMaker.hpp"
+#include "subtitles/SubtitleBuilder.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -173,8 +173,8 @@ int EdgeTtsCommandDispatcher::dispatch_synthesize(const EdgeTtsArguments& args) 
         return 1;
     }
 
-    // 7. Route audio and collect boundaries for SubMaker.
-    subtitles::SubMaker submaker;
+    // 7. Route audio and collect boundaries for SubtitleBuilder.
+    subtitles::SubtitleBuilder submaker;
     std::vector<std::byte> audio_bytes_for_file;
 
     for (const auto& chunk : *chunks) {

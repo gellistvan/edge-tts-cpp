@@ -44,7 +44,7 @@ REQUIRED_HEADERS = [
     "include/core/Voice.hpp",
     "include/common/Error.hpp",
     "include/common/Result.hpp",
-    "include/subtitles/SubMaker.hpp",
+    "include/subtitles/SubtitleBuilder.hpp",
 ]
 
 # CMake package files that must be present.

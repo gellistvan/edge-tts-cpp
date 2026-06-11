@@ -50,7 +50,7 @@ ALLOWED_DEPS: dict[str, set[str]] = {
                       "communication"},
     # cli may depend on api (and transitively everything api exposes), plus media
     # directly (public header PlaybackCommandDispatcher.hpp includes AudioConverter)
-    # and subtitles directly (EdgeTtsCommandDispatcher.cpp uses SubMaker).
+    # and subtitles directly (EdgeTtsCommandDispatcher.cpp uses SubtitleBuilder).
     # cli must not reach past api into communication or serialization internals.
     "cli":           {"common", "core", "subtitles", "media", "api"},
     # apps/ executables sit above the cli layer and may include any module.
